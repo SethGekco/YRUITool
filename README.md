@@ -36,8 +36,16 @@ Early development. Building in reviewable slices.
     literal/formula auto-detection.
   - `script.py` — parse INI-flavored modifier scripts (see `docs/SCRIPTS.md`).
   - `runner.py` — apply a modifier script: resolve scope, substitute params,
-    evaluate formulas per-techno (chained), write with vanilla annotation.
-- **`yrbalance/ui/`** *(planned)* — PySide6 / Qt desktop app.
+    evaluate formulas per-techno (chained), write with vanilla annotation;
+    generator blocks (`@clone`/`@emit`/`@register`/`@patch`).
+  - `pipeline.py` — `run_balance`: turn a per-category `BalanceSpec` into the
+    Pass-1 stat/weapon edits + Pass-2 sight pass.
+- **`yrbalance/ui/`** — PySide6 desktop app.
+  - `controller.py` — Qt-free glue (load / preview / apply-and-save).
+  - `category_tab.py` — per-TechnoType ratio fields; Naval tab has a per-field
+    "same as Vehicles" link.
+  - `script_panel.py` — custom-script editor with import/export + preset dropdown.
+  - `main_window.py`, `app.py` — window assembly and entry point.
 - **`tests/`** — smoke + end-to-end tests (run against a real `rulesmd.ini`).
 
 The key design rule inherited from the original tool: all edits mutate a raw
@@ -69,11 +77,27 @@ inline `; vanilla=X` comments so every change is reversible and re-runnable.
    **generator blocks** (`[+ ... from ...]`) that emit + register new sections —
    this is how the host-squad / faction-platform / mind-control features will ship
    (as bundled example scripts rather than hardcoded Python).
-4. **GUI** — PySide6 app (look-and-feel spec TBD).
+4. **GUI** *(core done)* — PySide6 desktop app: a tab per TechnoType with ratio
+   fields, the Naval tab linking each field to Vehicles via a "same as Vehicles"
+   checkbox, a Global tab for cross-cutting features, and a bottom custom-script
+   panel (import/export/preview) for formula tweaks and generator scripts. One
+   "Apply and save" runs the whole thing. Remaining: in-tab TechLevel/cost-scaling
+   controls, the General/Gameplay/Super Weapons tabs, and a change preview.
+
+## Running the GUI
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+python -m yrbalance.ui
+```
 
 ## Running the tests
 
 ```sh
 ./tests/run_all.sh "/path/to/rulesmd.ini"
 ```
+
+The engine tests are pure standard library; the UI test needs the venv (PySide6)
+and runs headless via `QT_QPA_PLATFORM=offscreen`.
 

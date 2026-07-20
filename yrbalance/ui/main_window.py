@@ -1,0 +1,188 @@
+"""
+MainWindow — assembles the toolbar, the TechnoType tabs, and the bottom script
+panel, and wires "Apply and save" to the controller.
+"""
+
+import os
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTabWidget, QSplitter, QComboBox, QFileDialog, QMessageBox, QPlainTextEdit,
+)
+
+from ..engine import ModConfig, BalanceSpec
+from . import controller
+from .category_tab import CategoryTab
+from .script_panel import ScriptPanel
+
+# (key, label, is_building, linkable)
+TECHNO_TABS = [
+    ("inf", "Infantry", False, False),
+    ("veh", "Vehicle", False, False),
+    ("nav", "Naval", False, True),      # linkable to Vehicles
+    ("air", "Aircraft", False, False),
+    ("bld", "Building", True, False),
+    ("def", "Defensive", True, False),
+]
+
+
+def _preset_dirs():
+    here = os.path.dirname(os.path.abspath(__file__))
+    repo = os.path.dirname(os.path.dirname(here))
+    return [
+        os.path.join(repo, "presets", "examples"),
+        os.path.join(os.path.expanduser("~"), ".yrbalancetool", "presets"),
+    ]
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("YRBalanceTool")
+        self.resize(760, 720)
+
+        self.config = ModConfig.default()
+        self.source_path = None
+        self.out_path = None
+        self.section_map = None
+
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.addLayout(self._build_toolbar())
+
+        splitter = QSplitter(Qt.Vertical)
+
+        self.tabs = QTabWidget()
+        self.category_tabs = {}
+        for key, label, is_building, linkable in TECHNO_TABS:
+            tab = CategoryTab(key, is_building=is_building, linkable=linkable)
+            self.category_tabs[key] = tab
+            self.tabs.addTab(tab, label)
+        # Placeholder for cross-cutting features that span multiple categories.
+        self.tabs.addTab(self._placeholder(
+            "Global tab — for features that span more than one category\n"
+            "(building depth tree, cross-category cost scaling, and future\n"
+            "General / Gameplay / Super Weapons controls)."), "Global")
+        splitter.addWidget(self.tabs)
+
+        self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
+        self.script_panel.preview_requested.connect(self.preview_script)
+        splitter.addWidget(self.script_panel)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 2)
+        root.addWidget(splitter)
+
+        self.setCentralWidget(central)
+        self.statusBar().showMessage("Load a rulesmd.ini to begin.")
+
+    # ── Toolbar ──────────────────────────────────────────────────────────────
+    def _build_toolbar(self):
+        bar = QHBoxLayout()
+        self.load_btn = QPushButton("Load rules…")
+        self.load_btn.clicked.connect(self.load_rules)
+        bar.addWidget(self.load_btn)
+
+        self.file_label = QLabel("(no file loaded)")
+        self.file_label.setStyleSheet("color: gray;")
+        bar.addWidget(self.file_label)
+        bar.addStretch(1)
+
+        bar.addWidget(QLabel("Profile:"))
+        self.profile_box = QComboBox()
+        self.profile_box.addItem("Default", "default")
+        self.profile_box.addItem("Dying Earth", "dying_earth")
+        self.profile_box.currentIndexChanged.connect(self._change_profile)
+        bar.addWidget(self.profile_box)
+
+        self.apply_btn = QPushButton("Apply and save…")
+        self.apply_btn.setEnabled(False)
+        self.apply_btn.clicked.connect(self.apply_and_save)
+        bar.addWidget(self.apply_btn)
+        return bar
+
+    def _placeholder(self, text):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        label = QLabel(text)
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("color: gray;")
+        lay.addWidget(label)
+        return w
+
+    def _change_profile(self, index):
+        which = self.profile_box.itemData(index)
+        self.config = (ModConfig.dying_earth() if which == "dying_earth"
+                       else ModConfig.default())
+
+    # ── Actions ──────────────────────────────────────────────────────────────
+    def load_rules(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load rulesmd.ini", "", "INI files (*.ini);;All files (*)")
+        if not path:
+            return
+        try:
+            _lines, self.section_map = controller.load_rules(path)
+        except OSError as e:
+            QMessageBox.critical(self, "Load", f"Could not read:\n{e}")
+            return
+        self.source_path = path
+        self.out_path = None
+        self.file_label.setText(os.path.basename(path))
+        self.file_label.setStyleSheet("")
+        self.apply_btn.setEnabled(True)
+        self.statusBar().showMessage(
+            f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
+
+    def collect_spec(self):
+        veh_ratios = self.category_tabs["veh"].ratios()
+        cats = {}
+        for key, tab in self.category_tabs.items():
+            if key == "nav":
+                cats[key] = tab.ratios(link_source=veh_ratios)
+            else:
+                cats[key] = tab.ratios()
+        return BalanceSpec(categories=cats)
+
+    def preview_script(self):
+        ok, message = controller.preview_script(
+            self.section_map, self.script_panel.text(), self.config)
+        box = QMessageBox(self)
+        box.setWindowTitle("Script preview")
+        box.setIcon(QMessageBox.Information if ok else QMessageBox.Warning)
+        box.setText(message)
+        box.exec()
+
+    def apply_and_save(self):
+        if not self.source_path:
+            return
+        if not self.out_path:
+            base, ext = os.path.splitext(self.source_path)
+            default_out = f"{base}_edited{ext or '.ini'}"
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save edited rules", default_out,
+                "INI files (*.ini);;All files (*)")
+            if not path:
+                return
+            self.out_path = path
+
+        spec = self.collect_spec()
+        log = []
+        try:
+            summary, script_result = controller.apply_and_save(
+                self.source_path, self.out_path, spec,
+                script_text=self.script_panel.text(), config=self.config,
+                progress=log.append)
+        except Exception as e:  # surface engine/script errors to the user
+            QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
+            return
+
+        text = controller.summarize(summary, script_result)
+        self.statusBar().showMessage(f"Saved to {os.path.basename(self.out_path)}.")
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("Applied and saved")
+        dlg.setIcon(QMessageBox.Information)
+        dlg.setText(f"Saved to:\n{self.out_path}\n\n{text}")
+        if summary.weapon_conflict_text.strip():
+            dlg.setDetailedText(summary.weapon_conflict_text)
+        dlg.exec()

@@ -132,6 +132,12 @@ from .runner import (
     RunError,
     config_keywords,
 )
+from .pipeline import (
+    CategoryRatios,
+    BalanceSpec,
+    RunSummary,
+    run_balance,
+)
 
 __all__ = [
     # config
@@ -185,4 +191,6 @@ __all__ = [
     "TagOp", "ScriptError",
     # runner
     "run_script", "RunResult", "RunError", "config_keywords",
+    # pipeline
+    "CategoryRatios", "BalanceSpec", "RunSummary", "run_balance",
 ]

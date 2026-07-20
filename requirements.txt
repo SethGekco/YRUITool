@@ -1,0 +1,4 @@
+# Runtime dependencies for YRBalanceTool.
+# The engine (yrbalance/engine) is pure standard library — no deps.
+# The GUI (yrbalance/ui) needs Qt:
+PySide6-Essentials>=6.6
