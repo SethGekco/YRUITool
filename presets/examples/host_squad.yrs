@@ -1,0 +1,12 @@
+#name: Host Squad
+#desc: Clone each infantry into a player-buildable host; make the original AI-only
+#param: hosttech = 5
+
+[+ {NAME}{HOST_SUFFIX} from $INFANTRY]
+@clone source
+TechLevel = {hosttech}
+GroupAs = {NAME}
+@register InfantryTypes
+@patch source
+Prerequisite = {UNBUILDABLE}
+GroupAs = {NAME}

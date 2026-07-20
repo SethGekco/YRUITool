@@ -67,28 +67,42 @@ The host squad, faction platforms, and mind-control features are just scripts th
 
 ```ini
 #name: Host Squad
-#param: nums = 3
+#param: hosttech = 5
 
-[+ {NAME}_HOST from $INFANTRY]   ; for each infantry, make a clone named <NAME>_HOST
-Image = {NAME}                   ; tags for the generated section (formulas ok)
-AttachEffectTypes = AE_{NAME}
-TechLevel = 5
-@register InfantryTypes          ; add the clone to an index list
-@patch source                    ; then modify the ORIGINAL techno:
-  Prerequisite = $UNBUILDABLE    ; config keyword -> ModConfig.unbuildable_prereq
-  GroupAs = {NAME}
+[+ {NAME}{HOST_SUFFIX} from $INFANTRY]  ; for each infantry, make <NAME>_HOST
+@clone source                    ; start the new section as a copy of the infantry
+TechLevel = {hosttech}           ; then set/override tags on it (formulas ok)
+GroupAs = {NAME}
+@register InfantryTypes           ; add the clone to an index list
+@patch source                     ; switch to modifying the ORIGINAL techno:
+Prerequisite = {UNBUILDABLE}      ; config keyword -> ModConfig.unbuildable_prereq
+GroupAs = {NAME}
 ```
 
-- `[+ NAMEPATTERN from SCOPE]` — for each techno in SCOPE, create a section whose
-  name comes from NAMEPATTERN (using `{NAME}` etc.), with the tags below it.
-- `@register <IndexSection>` — add the generated section to a list (keys use the
-  `ModConfig` prefixes, e.g. `DEGB####`).
-- `@patch source` — switch to editing the original techno; tags below apply to it.
-- `$UNBUILDABLE`, `$PLATFORM_PREFIX`, etc. — config keywords resolve to the values
-  in the active `ModConfig`, so a generator isn't hardcoded to one mod.
+Header:
+- `[+ NAMEPATTERN from SCOPE]` — for each techno in SCOPE, run the body with
+  `{NAME}` = that techno and `{THIS}` = the generated section's name.
+- `[+ NAMEPATTERN]` (no `from`) — a single "once" section (e.g. a shared
+  AttachmentType). `{NAME}` is unavailable; `{THIS}` = the section name.
 
-The bundled Dying-Earth versions of host squad / faction platforms / mind control
-will ship as example generator scripts under `presets/examples/`.
+Directives:
+- `@clone SRC` — fill the current generated section from `SRC`'s body. `SRC` may be
+  a pattern; the alias `source` means the current `{NAME}` techno.
+- `@emit NAME` — start another fresh generated section as the current target (for
+  multi-section features like AttachEffect blocks).
+- `@register IDX [as PREFIX]` — add the current section to index list `IDX`
+  (keys `PREFIX####`; default prefix comes from `ModConfig`, e.g. `DEGB`/`DEAT`).
+- `@patch NAME` — switch to modifying an existing section (writes are annotated
+  with `; vanilla=`). `source` = the current `{NAME}` techno.
+
+Placeholders resolve from: `{param}`, `{NAME}`, `{THIS}`, and `{CONFIG}` keywords
+(`{UNBUILDABLE}`, `{PLATFORM_PREFIX}`, `{HOST_SUFFIX}`, …) — so a generator isn't
+hardcoded to one mod. Tags on a **generated** section are written plain; tags under
+`@patch` are annotated like the built-in passes.
+
+An iteration whose primary section already exists is skipped, so re-runs are
+idempotent. The bundled Dying-Earth versions of host squad / faction platforms /
+mind control ship as example generator scripts under `presets/examples/`.
 
 ## Where scripts live
 - `presets/examples/` — bundled, read-only examples (shipped with the tool).
