@@ -1,0 +1,8 @@
+#name: Glass Cannons
+#desc: Everything hits harder but dies faster — halve HP, double primary damage
+#param: hp_mult = 0.5
+#param: dmg_mult = 2.0
+
+[$UNIT]
+Strength = Strength * {hp_mult}
+Damage = Damage * {dmg_mult}

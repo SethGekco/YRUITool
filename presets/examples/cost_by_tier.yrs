@@ -1,0 +1,8 @@
+#name: Cost by Tech Tier
+#desc: Scale cost with tech level so late-game units cost more; soylent tracks it
+#param: factor = 100
+#param: refund = 0.5
+
+[$INFANTRY, $VEHICLE, $NAVAL, $AIRCRAFT]
+Cost = TechLevel * {factor}
+Soylent = Cost * {refund}

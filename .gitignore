@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+*.spec
+.DS_Store
+
+# Local game data / test artifacts — don't commit copyrighted rules files
+*.ini
+!examples/*.ini
