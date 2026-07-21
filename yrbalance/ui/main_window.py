@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         self.source_path = None
         self.out_path = None
         self.section_map = None
+        self.session = None  # controller.WorkingSession for the hybrid apply flow
 
         central = QWidget()
         root = QVBoxLayout(central)
@@ -149,6 +150,22 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
 
+        apply_menu = mb.addMenu("Apply")
+        apply_menu.addAction("Apply all → working copy", self.apply_working_all)
+        apply_menu.addAction("Apply current tab → working copy",
+                             self.apply_working_current)
+        apply_menu.addSeparator()
+        self.diff_action = apply_menu.addAction("Show working-copy diff…",
+                                                self.show_working_diff)
+        self.save_working_action = apply_menu.addAction("Save working copy…",
+                                                        self.save_working)
+        self.discard_action = apply_menu.addAction("Discard working copy",
+                                                   self.discard_working)
+        apply_menu.addSeparator()
+        apply_menu.addAction("Apply all and save… (one-shot)", self.apply_and_save)
+        for a in (self.diff_action, self.save_working_action, self.discard_action):
+            a.setEnabled(False)
+
         bp = mb.addMenu("Blueprint")
         bp.addAction("Save blueprint…", self.save_blueprint)
         bp.addAction("Load blueprint…", self.load_blueprint)
@@ -237,26 +254,37 @@ class MainWindow(QMainWindow):
             return
         self.source_path = path
         self.out_path = None
+        self.session = None
         self.file_label.setText(os.path.basename(path))
         self.file_label.setStyleSheet("")
         self.apply_btn.setEnabled(True)
         self.preview_btn.setEnabled(True)
+        self._refresh_working_state()
         self.settings.setValue("last_rules", path)
         self.reload_last_action.setEnabled(True)
         self.reload_last_action.setText(f"Reload {os.path.basename(path)}")
         self.statusBar().showMessage(
             f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
 
-    def collect_spec(self):
+    def collect_spec(self, only_keys=None):
         veh_ratios = self.category_tabs["veh"].ratios()
         cats = {}
         for key, tab in self.category_tabs.items():
+            if only_keys is not None and key not in only_keys:
+                continue
             if key == "nav":
                 cats[key] = tab.ratios(link_source=veh_ratios)
             else:
                 cats[key] = tab.ratios()
         return BalanceSpec(categories=cats,
                            range_threshold=self.global_tab.range_threshold_value())
+
+    def _current_category_key(self):
+        w = self.tabs.currentWidget()
+        for key, tab in self.category_tabs.items():
+            if tab is w:
+                return key
+        return None
 
     # ── Blueprint ────────────────────────────────────────────────────────────
     def to_blueprint_text(self, name="Untitled"):
@@ -344,6 +372,102 @@ class MainWindow(QMainWindow):
         scripts.append(self.script_panel.text())
         return [s for s in scripts if s and s.strip()]
 
+    # ── Hybrid working-copy apply ────────────────────────────────────────────
+    def _ensure_session(self):
+        if self.session is None or self.session.source_path != self.source_path:
+            self.session = controller.WorkingSession(self.source_path, self.config)
+        self.session.config = self.config
+        return self.session
+
+    def apply_working_all(self):
+        if not self.source_path:
+            QMessageBox.information(self, "Apply", "Load a rules file first.")
+            return
+        self._apply_working(self.collect_spec(), self.collect_scripts(), "all")
+
+    def apply_working_current(self):
+        if not self.source_path:
+            QMessageBox.information(self, "Apply", "Load a rules file first.")
+            return
+        key = self._current_category_key()
+        if key is None:
+            QMessageBox.information(
+                self, "Apply",
+                "The current tab isn't a TechnoType category. Switch to one "
+                "(Infantry … Defensive) to apply just that tab.")
+            return
+        self._apply_working(self.collect_spec(only_keys=[key]), [], f"{key} only")
+
+    def _apply_working(self, spec, scripts, label):
+        session = self._ensure_session()
+        try:
+            summary, results = session.apply(spec, scripts)
+        except Exception as e:
+            QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
+            return
+        self._refresh_working_state()
+        self.statusBar().showMessage(
+            f"Applied {label} to working copy — {session.change_count()} changed "
+            f"lines, unsaved. Save it from the Apply menu.")
+
+    def _refresh_working_state(self):
+        has = self.session is not None and self.session.lines is not None
+        for a in (self.diff_action, self.save_working_action, self.discard_action):
+            a.setEnabled(has)
+        star = " *" if (has and self.session.dirty) else ""
+        base = os.path.basename(self.source_path) if self.source_path else ""
+        self.setWindowTitle(f"YRBalanceTool — {base}{star}" if base else "YRBalanceTool")
+
+    def show_working_diff(self):
+        if self.session is None or self.session.lines is None:
+            return
+        self._diff_dialog("Working-copy diff",
+                          controller.summarize(self.session.summary, self.session.results),
+                          self.session.diff_text())
+
+    def save_working(self):
+        if self.session is None or self.session.lines is None:
+            return
+        base, ext = os.path.splitext(self.source_path)
+        default_out = self.out_path or f"{base}_edited{ext or '.ini'}"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save working copy", default_out,
+            "INI files (*.ini);;All files (*)")
+        if not path:
+            return
+        try:
+            self.session.save(path)
+        except OSError as e:
+            QMessageBox.critical(self, "Save", f"Could not write:\n{e}")
+            return
+        self.out_path = path
+        self._refresh_working_state()
+        self.statusBar().showMessage(f"Working copy saved to {os.path.basename(path)}.")
+
+    def discard_working(self):
+        self.session = None
+        self._refresh_working_state()
+        self.statusBar().showMessage("Working copy discarded.")
+
+    def _diff_dialog(self, title, summary_text, diff_text, offer_apply=False):
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(720, 560)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(summary_text))
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setFont(QFont("monospace", 9))
+        view.setPlainText(diff_text)
+        lay.addWidget(view, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        if offer_apply:
+            buttons.addButton("Apply and save…", QDialogButtonBox.AcceptRole)
+        buttons.rejected.connect(dlg.reject)
+        buttons.accepted.connect(dlg.accept)
+        lay.addWidget(buttons)
+        return dlg.exec()
+
     def preview_script(self):
         ok, message = controller.preview_script(
             self.section_map, self.script_panel.text(), self.config)
@@ -364,22 +488,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Preview", f"{type(e).__name__}: {e}")
             return
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Preview changes")
-        dlg.resize(720, 560)
-        lay = QVBoxLayout(dlg)
-        lay.addWidget(QLabel(controller.summarize(summary, results)))
-        view = QPlainTextEdit()
-        view.setReadOnly(True)
-        view.setFont(QFont("monospace", 9))
-        view.setPlainText(diff)
-        lay.addWidget(view, 1)
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        apply_now = buttons.addButton("Apply and save…", QDialogButtonBox.AcceptRole)
-        buttons.rejected.connect(dlg.reject)
-        buttons.accepted.connect(dlg.accept)
-        lay.addWidget(buttons)
-        if dlg.exec() == QDialog.Accepted:
+        if self._diff_dialog("Preview changes",
+                             controller.summarize(summary, results), diff,
+                             offer_apply=True) == QDialog.Accepted:
             self.apply_and_save()
 
     def apply_and_save(self):

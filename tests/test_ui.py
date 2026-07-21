@@ -152,8 +152,48 @@ def main(path):
     print(f"blueprint round-trip: {bp_ok}  {'OK' if bp_ok else 'FAIL'}")
     ok = ok and bp_ok
 
+    # ── Hybrid working-copy session ──────────────────────────────────────────
+    from yrbalance.engine import parse_type_list as _ptl
+    win3 = MainWindow()
+    win3.source_path = path
+    _lines, win3.section_map = controller.load_rules(path)
+    # Capture a vanilla infantry cost.
+    smw = win3.section_map
+    probe2 = next(t for t in _ptl(smw, "InfantryTypes")
+                  if get_val(smw, t, "Cost", "").isdigit() and int(get_val(smw, t, "Cost")) > 1)
+    van2 = int(get_val(smw, probe2, "Cost"))
+
+    # Apply infantry-only (cost x0.5) to the working copy; twice (idempotent).
+    win3.category_tabs["inf"].spins["cost"].setValue(0.5)
+    win3.tabs.setCurrentIndex(0)  # Infantry
+    win3.apply_working_current()
+    c_after_1 = _cur(win3.session.lines, probe2, "cost")
+    win3.apply_working_current()   # re-apply must NOT compound
+    c_after_2 = _cur(win3.session.lines, probe2, "cost")
+    idem_ok = c_after_1 == van2 // 2 and c_after_2 == van2 // 2
+    print(f"working copy idempotent: {van2}->{c_after_1}->{c_after_2} "
+          f"(expect {van2//2} both)  {'OK' if idem_ok else 'FAIL'}")
+    ok = ok and idem_ok
+
+    # Save the working copy, then discard.
+    with tempfile.TemporaryDirectory() as d:
+        out2 = os.path.join(d, "working.ini")
+        win3.session.save(out2)
+        saved_ok = os.path.isfile(out2) and not win3.session.dirty
+    win3.discard_working()
+    disc_ok = win3.session is None
+    print(f"working copy save+discard: saved={saved_ok}, discarded={disc_ok}  "
+          f"{'OK' if saved_ok and disc_ok else 'FAIL'}")
+    ok = ok and saved_ok and disc_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
+
+
+def _cur(lines, section, tag):
+    from yrbalance.engine import build_section_map, get_current_field_value_from_line
+    sm, _ = build_section_map(lines)
+    return get_current_field_value_from_line(lines[sm[section.lower()]["keys"][tag.lower()][0]])
 
 
 if __name__ == "__main__":

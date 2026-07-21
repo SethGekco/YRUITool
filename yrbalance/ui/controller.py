@@ -88,6 +88,60 @@ def preview_changes(source_path, spec, scripts=None, config=None,
     return summary, results, "\n".join(diff) if diff else "(no changes)"
 
 
+class WorkingSession:
+    """
+    A persistent in-memory edit built up across several applies. Each apply
+    regenerates the working copy from the pristine source, so re-applying never
+    compounds and feature ordering is always correct. Save writes the working copy.
+    """
+
+    def __init__(self, source_path, config=None):
+        self.source_path = source_path
+        self.config = config or ModConfig.default()
+        self.lines = None
+        self.summary = None
+        self.results = None
+        self.dirty = False
+
+    def apply(self, spec, scripts=None, param_values=None, progress=None):
+        lines, section_map = load_rules(self.source_path)
+        self.summary, self.results = apply_to_lines(
+            lines, section_map, spec, scripts, self.config, param_values, progress)
+        self.lines = lines
+        self.dirty = True
+        return self.summary, self.results
+
+    def diff_text(self, max_lines=600):
+        if self.lines is None:
+            return "(nothing applied yet)"
+        import difflib
+        src = parse_ini_lines(self.source_path)
+        diff = list(difflib.unified_diff(
+            [l.rstrip("\r\n") for l in src],
+            [l.rstrip("\r\n") for l in self.lines],
+            fromfile="vanilla", tofile="working", lineterm="", n=1))
+        if len(diff) > max_lines:
+            diff = diff[:max_lines] + [f"... (diff truncated at {max_lines} lines)"]
+        return "\n".join(diff) if diff else "(no changes)"
+
+    def change_count(self):
+        """Number of changed/added lines in the working copy (rough magnitude)."""
+        if self.lines is None:
+            return 0
+        import difflib
+        src = parse_ini_lines(self.source_path)
+        sm = difflib.SequenceMatcher(
+            None, [l.rstrip("\r\n") for l in src],
+            [l.rstrip("\r\n") for l in self.lines])
+        return sum(max(i2 - i1, j2 - j1)
+                   for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal")
+
+    def save(self, out_path):
+        with open(out_path, "w", encoding="utf-8", newline="") as f:
+            f.writelines(self.lines)
+        self.dirty = False
+
+
 def apply_and_save(source_path, out_path, spec, scripts=None, config=None,
                    param_values=None, progress=None):
     """
