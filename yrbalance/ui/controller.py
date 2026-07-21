@@ -64,6 +64,30 @@ def apply_to_lines(lines, section_map, spec, scripts=None, config=None,
     return summary, results
 
 
+def preview_changes(source_path, spec, scripts=None, config=None,
+                    param_values=None, max_diff_lines=600):
+    """
+    Apply spec + scripts to an in-memory copy of the source and return
+    (RunSummary, [RunResult], diff_text) without writing anything. diff_text is a
+    unified diff (capped) so the UI can show exactly what would change.
+    """
+    import difflib
+    src = parse_ini_lines(source_path)
+    working = list(src)
+    section_map, _ = build_section_map(working)
+    summary, results = apply_to_lines(working, section_map, spec, scripts, config,
+                                      param_values)
+    diff = list(difflib.unified_diff(
+        [l.rstrip("\r\n") for l in src],
+        [l.rstrip("\r\n") for l in working],
+        fromfile="vanilla", tofile="edited", lineterm="", n=1))
+    truncated = len(diff) > max_diff_lines
+    if truncated:
+        diff = diff[:max_diff_lines]
+        diff.append(f"... (diff truncated at {max_diff_lines} lines)")
+    return summary, results, "\n".join(diff) if diff else "(no changes)"
+
+
 def apply_and_save(source_path, out_path, spec, scripts=None, config=None,
                    param_values=None, progress=None):
     """

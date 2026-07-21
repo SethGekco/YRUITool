@@ -114,6 +114,14 @@ def main(path):
     print(f"script preview: ok={pok}  {'OK' if prev_ok else 'FAIL'}")
     ok = ok and prev_ok
 
+    # ── Change preview (diff) ────────────────────────────────────────────────
+    summary_p, results_p, diff = controller.preview_changes(
+        path, win.collect_spec(), win.collect_scripts(), win.config)
+    diff_ok = "-Cost=" in diff and "+Cost=" in diff and "Elite" in diff
+    print(f"change preview diff: has cost+elite changes={diff_ok}  "
+          f"{'OK' if diff_ok else 'FAIL'}")
+    ok = ok and diff_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

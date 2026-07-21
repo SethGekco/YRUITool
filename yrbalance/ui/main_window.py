@@ -6,9 +6,11 @@ panel, and wires "Apply and save" to the controller.
 import os
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QSplitter, QComboBox, QFileDialog, QMessageBox, QPlainTextEdit,
+    QDialog, QDialogButtonBox,
 )
 
 from ..engine import ModConfig, BalanceSpec
@@ -121,6 +123,11 @@ class MainWindow(QMainWindow):
         self.profile_box.currentIndexChanged.connect(self._change_profile)
         bar.addWidget(self.profile_box)
 
+        self.preview_btn = QPushButton("Preview changes")
+        self.preview_btn.setEnabled(False)
+        self.preview_btn.clicked.connect(self.preview_changes)
+        bar.addWidget(self.preview_btn)
+
         self.apply_btn = QPushButton("Apply and save…")
         self.apply_btn.setEnabled(False)
         self.apply_btn.clicked.connect(self.apply_and_save)
@@ -157,6 +164,7 @@ class MainWindow(QMainWindow):
         self.file_label.setText(os.path.basename(path))
         self.file_label.setStyleSheet("")
         self.apply_btn.setEnabled(True)
+        self.preview_btn.setEnabled(True)
         self.statusBar().showMessage(
             f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
 
@@ -184,6 +192,35 @@ class MainWindow(QMainWindow):
         box.setIcon(QMessageBox.Information if ok else QMessageBox.Warning)
         box.setText(message)
         box.exec()
+
+    def preview_changes(self):
+        if not self.source_path:
+            return
+        try:
+            summary, results, diff = controller.preview_changes(
+                self.source_path, self.collect_spec(), self.collect_scripts(),
+                self.config)
+        except Exception as e:
+            QMessageBox.critical(self, "Preview", f"{type(e).__name__}: {e}")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Preview changes")
+        dlg.resize(720, 560)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(controller.summarize(summary, results)))
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setFont(QFont("monospace", 9))
+        view.setPlainText(diff)
+        lay.addWidget(view, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        apply_now = buttons.addButton("Apply and save…", QDialogButtonBox.AcceptRole)
+        buttons.rejected.connect(dlg.reject)
+        buttons.accepted.connect(dlg.accept)
+        lay.addWidget(buttons)
+        if dlg.exec() == QDialog.Accepted:
+            self.apply_and_save()
 
     def apply_and_save(self):
         if not self.source_path:
