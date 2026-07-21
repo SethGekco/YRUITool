@@ -95,11 +95,28 @@ inline `; vanilla=X` comments so every change is reversible and re-runnable.
 
 ## Running the GUI
 
+Install it (gives a `yrbalancetool` command):
+
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
+pip install -e .
+yrbalancetool
+```
+
+Or without installing:
+
+```sh
 pip install -r requirements.txt
 python -m yrbalance.ui
 ```
+
+### Workflow
+Load a `rulesmd.ini`, set ratios per tab, then either **Preview changes** →
+**Apply and save** (one-shot), or use the **Apply** menu to build a **working
+copy** incrementally (apply all, or just the current tab), inspect the diff, and
+**Save working copy** when happy. Each apply regenerates from vanilla, so
+re-applying never compounds. Save/load the whole setup as a **blueprint**, and
+**File → Restore a file to vanilla** undoes a file's edits.
 
 ## Running the tests
 

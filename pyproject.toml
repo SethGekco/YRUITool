@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yrbalancetool"
+version = "0.1.0"
+description = "General-purpose balance editor for Red Alert 2: Yuri's Revenge"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["PySide6-Essentials>=6.6"]
+
+[project.optional-dependencies]
+# The engine is pure standard library; only the GUI needs Qt. Install the base
+# package for the engine + CLI use, or [gui] to pull Qt explicitly.
+gui = ["PySide6-Essentials>=6.6"]
+
+[project.scripts]
+yrbalancetool = "yrbalance.ui:main"
+
+[tool.setuptools.packages.find]
+include = ["yrbalance*"]
