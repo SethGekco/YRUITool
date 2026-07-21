@@ -5,7 +5,7 @@ panel, and wires "Apply and save" to the controller.
 
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -103,12 +103,45 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self._build_menu()
+        self.settings = QSettings("YRBalanceTool", "YRBalanceTool")
+        self._restore_settings()
         self.statusBar().showMessage("Load a rulesmd.ini to begin.")
+
+    # ── Settings persistence ─────────────────────────────────────────────────
+    def _restore_settings(self):
+        geo = self.settings.value("geometry")
+        if geo is not None:
+            self.restoreGeometry(geo)
+        profile = self.settings.value("profile", "default")
+        idx = self.profile_box.findData(profile)
+        if idx >= 0:
+            self.profile_box.setCurrentIndex(idx)
+        last = self.settings.value("last_rules", "")
+        if last and os.path.isfile(last):
+            self.reload_last_action.setEnabled(True)
+            self.reload_last_action.setText(f"Reload {os.path.basename(last)}")
+
+    def closeEvent(self, event):
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("profile", self.profile_box.currentData())
+        super().closeEvent(event)
+
+    def _last_dir(self):
+        last = self.settings.value("last_rules", "")
+        return os.path.dirname(last) if last else ""
+
+    def reload_last_rules(self):
+        last = self.settings.value("last_rules", "")
+        if last and os.path.isfile(last):
+            self._load_rules_path(last)
 
     def _build_menu(self):
         mb = self.menuBar()
         file_menu = mb.addMenu("File")
         file_menu.addAction("Load rules…", self.load_rules)
+        self.reload_last_action = file_menu.addAction("Reload last rules",
+                                                      self.reload_last_rules)
+        self.reload_last_action.setEnabled(False)
         file_menu.addAction("Restore a file to vanilla…", self.restore_to_vanilla)
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
@@ -164,9 +197,12 @@ class MainWindow(QMainWindow):
     # ── Actions ──────────────────────────────────────────────────────────────
     def load_rules(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Load rulesmd.ini", "", "INI files (*.ini);;All files (*)")
-        if not path:
-            return
+            self, "Load rulesmd.ini", self._last_dir(),
+            "INI files (*.ini);;All files (*)")
+        if path:
+            self._load_rules_path(path)
+
+    def _load_rules_path(self, path):
         try:
             _lines, self.section_map = controller.load_rules(path)
         except OSError as e:
@@ -178,6 +214,9 @@ class MainWindow(QMainWindow):
         self.file_label.setStyleSheet("")
         self.apply_btn.setEnabled(True)
         self.preview_btn.setEnabled(True)
+        self.settings.setValue("last_rules", path)
+        self.reload_last_action.setEnabled(True)
+        self.reload_last_action.setText(f"Reload {os.path.basename(path)}")
         self.statusBar().showMessage(
             f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
 
