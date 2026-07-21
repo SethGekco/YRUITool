@@ -1,5 +1,6 @@
 """Application entry point."""
 
+import os
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -11,6 +12,12 @@ def main(argv=None):
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("YRBalanceTool")
     window = MainWindow()
+    # Self-test (used to verify a frozen build): construct the window, report how
+    # many bundled preset scripts were found, and exit without showing the UI.
+    if os.environ.get("YRBT_SELFTEST"):
+        n = window.script_panel.preset_box.count() - 1  # minus the placeholder row
+        print(f"selftest OK: window built, {n} bundled preset script(s) found")
+        return 0
     window.show()
     return app.exec()
 

@@ -4,6 +4,7 @@ panel, and wires "Apply and save" to the controller.
 """
 
 import os
+import sys
 
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QFont, QPalette, QColor
@@ -32,12 +33,16 @@ TECHNO_TABS = [
 
 
 def _preset_dirs():
-    here = os.path.dirname(os.path.abspath(__file__))
-    repo = os.path.dirname(os.path.dirname(here))
-    return [
-        os.path.join(repo, "presets", "examples"),
-        os.path.join(os.path.expanduser("~"), ".yrbalancetool", "presets"),
-    ]
+    # Bundled examples: from the PyInstaller bundle when frozen, else the repo.
+    if getattr(sys, "frozen", False):
+        bundled = os.path.join(getattr(sys, "_MEIPASS", ""), "presets", "examples")
+    else:
+        here = os.path.dirname(os.path.abspath(__file__))
+        repo = os.path.dirname(os.path.dirname(here))
+        bundled = os.path.join(repo, "presets", "examples")
+    # A user presets dir the user can drop their own .yrs scripts into.
+    user = os.path.join(os.path.expanduser("~"), ".yrbalancetool", "presets")
+    return [bundled, user]
 
 
 class MainWindow(QMainWindow):

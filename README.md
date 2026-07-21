@@ -110,6 +110,20 @@ pip install -r requirements.txt
 python -m yrbalance.ui
 ```
 
+### Standalone executable (no Python needed)
+
+Build a single self-contained binary with PyInstaller:
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate && pip install -e .
+./build_exe.sh              # or: ./build_exe.sh --windowed  (no console window)
+./dist/yrbalancetool        # ~57 MB, bundles Python + Qt + the example scripts
+```
+
+Share `dist/yrbalancetool` with anyone on the same OS/arch — they just run it.
+Drop extra `.yrs` scripts into `~/.yrbalancetool/presets/` to have them show up in
+the dropdown.
+
 ### Workflow
 Load a `rulesmd.ini`, set ratios per tab, then either **Preview changes** →
 **Apply and save** (one-shot), or use the **Apply** menu to build a **working
