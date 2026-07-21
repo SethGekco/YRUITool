@@ -207,14 +207,22 @@ def redirect_unit_weapon_tag(lines, section_map, unit_name, tag, new_weapon_name
 def apply_weapon_fields(lines, section_map, weapon_name,
                         dmg_ratio, rng_ratio, rof_ratio,
                         registry, snapshots, weapon_pass,
-                        unit_name=None, tag=None):
+                        unit_name=None, tag=None, range_threshold=None):
     """
     Edit Damage=/Range=/ROF= on weapon_name from the vanilla snapshot.
 
     First edit: apply and record. Second edit, same ratios: skip. Second edit,
     different ratios: clone, redirect the unit tag, apply new ratios to the clone,
     report the conflict. weapon_pass is 'reg' or 'eli' (tracked separately).
+
+    range_threshold: if set, weapons whose vanilla Range is below it are left
+    unscaled on Range (protects melee / very short-range weapons like attack dogs).
     """
+    if range_threshold is not None:
+        vr = snapshots.get(weapon_name, {}).get("range")
+        if vr is not None and vr < range_threshold:
+            rng_ratio = 1.0
+
     registry_key = f"{weapon_name}::{weapon_pass}"
 
     if registry.already_edited(registry_key):
@@ -271,7 +279,8 @@ def apply_weapon_fields(lines, section_map, weapon_name,
 
 def inject_elite_slots_for_building(lines, section_map, building_name,
                                     snapshots, registry,
-                                    dmg_ratio, rng_ratio, rof_ratio):
+                                    dmg_ratio, rng_ratio, rof_ratio,
+                                    range_threshold=None):
     s = section_map.get(building_name.lower())
     if s is None:
         return
@@ -290,14 +299,20 @@ def inject_elite_slots_for_building(lines, section_map, building_name,
         if not reg_wname or reg_wname.lower() in ("none", ""):
             continue
 
+        eff_rng = rng_ratio
+        if range_threshold is not None:
+            vr = snapshots.get(reg_wname, {}).get("range")
+            if vr is not None and vr < range_threshold:
+                eff_rng = 1.0
+
         elite_wname = make_safe_weapon_name(reg_wname, "Elite", section_map)
         if elite_wname.lower() not in section_map:
             clone_weapon_section(
                 lines, section_map, reg_wname, elite_wname,
-                snapshots, dmg_ratio, rng_ratio, rof_ratio,
+                snapshots, dmg_ratio, eff_rng, rof_ratio,
                 clone_label="BuildingElite")
             registry.record(f"{elite_wname}::eli",
-                            dmg_ratio, rng_ratio, rof_ratio, "eli")
+                            dmg_ratio, eff_rng, rof_ratio, "eli")
 
         append_line_after_section_header(
             lines, section_map, building_name,

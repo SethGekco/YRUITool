@@ -122,9 +122,22 @@ def main(path):
           f"{'OK' if diff_ok else 'FAIL'}")
     ok = ok and diff_ok
 
+    # ── Global tab feeds range_threshold into the spec ───────────────────────
+    win.global_tab.range_protect.setChecked(True)
+    win.global_tab.range_threshold.setValue(3.5)
+    gt_ok = win.collect_spec().range_threshold == 3.5
+    win.global_tab.range_protect.setChecked(False)
+    gt_off = win.collect_spec().range_threshold is None
+    print(f"global range threshold: on=3.5 ({gt_ok}), off=None ({gt_off})  "
+          f"{'OK' if gt_ok and gt_off else 'FAIL'}")
+    ok = ok and gt_ok and gt_off
+    win.global_tab.range_protect.setChecked(True)
+    win.global_tab.range_threshold.setValue(3.0)
+
     # ── Blueprint round-trip ─────────────────────────────────────────────────
     # Current state: inf.cost=0.5, nav.strength unlinked=3.0, bld tl_recompute,
     # general has BuildSpeed row, script box has "Elite = yes".
+    win.global_tab.range_threshold.setValue(4.25)
     text = win.to_blueprint_text(name="Test")
     win2 = MainWindow()
     win2.apply_blueprint_text(text)
@@ -134,7 +147,8 @@ def main(path):
              and n2.strength == 3.0                       # unlinked override survived
              and s2.categories["bld"].tl_recompute
              and any("BuildSpeed" in s for s in win2.collect_scripts())
-             and "Elite" in win2.script_panel.text())
+             and "Elite" in win2.script_panel.text()
+             and win2.global_tab.range_threshold.value() == 4.25)
     print(f"blueprint round-trip: {bp_ok}  {'OK' if bp_ok else 'FAIL'}")
     ok = ok and bp_ok
 

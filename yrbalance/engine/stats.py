@@ -22,7 +22,7 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                        reg_dmg, reg_rng, reg_rof,
                        eli_dmg, eli_rng, eli_rof,
                        snapshots, registry, speed_max=None, soylent_ratio=1.0,
-                       progress=None):
+                       progress=None, range_threshold=None):
     if progress:
         progress(f"  [Pass 1] {label} ({len(type_list)} units)...")
     for t in type_list:
@@ -45,7 +45,8 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                 apply_weapon_fields(
                     lines, section_map, wname,
                     reg_dmg, reg_rng, reg_rof,
-                    registry, snapshots, "reg", unit_name=t, tag=tag)
+                    registry, snapshots, "reg", unit_name=t, tag=tag,
+                    range_threshold=range_threshold)
 
         for tag in ELITE_WEAPON_TAGS:
             wname = get_val(section_map, t, tag)
@@ -53,7 +54,8 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                 apply_weapon_fields(
                     lines, section_map, wname,
                     eli_dmg, eli_rng, eli_rof,
-                    registry, snapshots, "eli", unit_name=t, tag=tag)
+                    registry, snapshots, "eli", unit_name=t, tag=tag,
+                    range_threshold=range_threshold)
 
 
 def process_building_stats(lines, section_map, building_list, label,
@@ -61,7 +63,8 @@ def process_building_stats(lines, section_map, building_list, label,
                            debris_ratio, adjacent_ratio,
                            reg_dmg, reg_rng, reg_rof,
                            eli_dmg, eli_rng, eli_rof,
-                           snapshots, registry, progress=None):
+                           snapshots, registry, progress=None,
+                           range_threshold=None):
     if progress:
         progress(f"  [Pass 1] {label} ({len(building_list)} buildings)...")
     for t in building_list:
@@ -82,9 +85,10 @@ def process_building_stats(lines, section_map, building_list, label,
                 apply_weapon_fields(
                     lines, section_map, wname,
                     reg_dmg, reg_rng, reg_rof,
-                    registry, snapshots, "reg", unit_name=t, tag=tag)
+                    registry, snapshots, "reg", unit_name=t, tag=tag,
+                    range_threshold=range_threshold)
 
         if eli_dmg != 1.0 or eli_rng != 1.0 or eli_rof != 1.0:
             inject_elite_slots_for_building(
                 lines, section_map, t, snapshots, registry,
-                eli_dmg, eli_rng, eli_rof)
+                eli_dmg, eli_rng, eli_rof, range_threshold=range_threshold)

@@ -56,7 +56,8 @@ def _default_category_state():
 
 # ── Serialize ────────────────────────────────────────────────────────────────
 
-def serialize(category_states, form_states, script_text, name="Untitled"):
+def serialize(category_states, form_states, script_text, name="Untitled",
+              global_state=None):
     out = ["# YRBalanceTool blueprint",
            f"#name: {name}",
            f"#created: {datetime.date.today().isoformat()}",
@@ -102,6 +103,12 @@ def serialize(category_states, form_states, script_text, name="Untitled"):
             out.append(f"{prefix}{tag} = {value}")
         out.append("")
 
+    if global_state:
+        out.append("[Global]")
+        out.append(f"RangeProtect = {_yesno(global_state.get('range_protect', True))}")
+        out.append(f"RangeThreshold = {_fmt(global_state.get('range_threshold', 3.0))}")
+        out.append("")
+
     out.append("[Script]")
     out.append(script_text.rstrip("\n"))
     return "\n".join(out) + "\n"
@@ -110,12 +117,13 @@ def serialize(category_states, form_states, script_text, name="Untitled"):
 # ── Parse ────────────────────────────────────────────────────────────────────
 
 def parse(text):
-    """Return (meta, category_states, form_states, script_text)."""
+    """Return (meta, category_states, form_states, global_state, script_text)."""
     meta = {}
     category_states = {}
     form_states = {}
+    global_state = {}
     script_lines = []
-    mode = "header"  # "header" | ("category",key) | ("form",key) | "script"
+    mode = "header"  # "header" | ("category",k) | ("form",k) | "global" | "script"
 
     for raw in text.splitlines():
         if mode == "script":
@@ -131,6 +139,8 @@ def parse(text):
             low = inner.lower()
             if low == "script":
                 mode = "script"
+            elif low == "global":
+                mode = "global"
             elif low.startswith("form."):
                 key = FORM_LABEL_TO_KEY.get(inner[5:].strip().lower(),
                                             inner[5:].strip().lower())
@@ -150,12 +160,31 @@ def parse(text):
                 meta[k.strip().lower()] = v.strip()
             continue
 
-        if isinstance(mode, tuple) and mode[0] == "category":
+        if mode == "global":
+            _parse_global_line(global_state, line)
+        elif isinstance(mode, tuple) and mode[0] == "category":
             _parse_category_line(category_states[mode[1]], line)
         elif isinstance(mode, tuple) and mode[0] == "form":
             _parse_form_line(form_states[mode[1]], line)
 
-    return meta, category_states, form_states, "\n".join(script_lines).strip("\n")
+    return (meta, category_states, form_states, global_state,
+            "\n".join(script_lines).strip("\n"))
+
+
+def _parse_global_line(state, line):
+    if line.startswith("#"):
+        return
+    k, sep, v = line.partition("=")
+    if not sep:
+        return
+    kl = k.strip().lower()
+    if kl == "rangeprotect":
+        state["range_protect"] = _is_yes(v)
+    elif kl == "rangethreshold":
+        try:
+            state["range_threshold"] = float(v.strip())
+        except ValueError:
+            pass
 
 
 def _parse_category_line(state, line):

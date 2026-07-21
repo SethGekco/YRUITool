@@ -133,6 +133,38 @@ def main(path):
           f"GAPOWR TL={gapowr_tl}  {'OK' if tlrec_ok else 'FAIL'}")
     ok = ok and tlrec_ok
 
+    # ── Range threshold protects short-range weapons ────────────────────────
+    lines5 = parse_ini_lines(path)
+    sm5, _ = build_section_map(lines5)
+    wr = {}
+    for t in parse_type_list(sm5, "InfantryTypes"):
+        w = get_val(sm5, t, "Primary")
+        if w and w.lower() in sm5:
+            rv = get_val(sm5, w, "Range")
+            try:
+                wr[w] = float(rv)
+            except (TypeError, ValueError):
+                pass
+    below = [w for w, rv in wr.items() if rv < 3.0]
+    above = [w for w, rv in wr.items() if rv >= 3.0]
+    if below and above:
+        spec5 = BalanceSpec(categories={"inf": CategoryRatios(reg_rng=2.0)},
+                            range_threshold=3.0)
+        run_balance(lines5, sm5, spec5, config)
+        sm5b, _ = build_section_map(lines5)
+
+        def _cur_range(w):
+            return get_current_field_value_from_line(
+                lines5[sm5b[w.lower()]["keys"]["range"][0]])
+        wb, wa = below[0], above[0]
+        rb, ra = _cur_range(wb), _cur_range(wa)
+        rng_ok = rb == wr[wb] and abs(ra - round(wr[wa] * 2)) <= 1
+        print(f"range threshold: [{wb}] {wr[wb]}->{rb} (protected), "
+              f"[{wa}] {wr[wa]}->{ra} (x2)  {'OK' if rng_ok else 'FAIL'}")
+        ok = ok and rng_ok
+    else:
+        print("range threshold: insufficient sample, skipped")
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

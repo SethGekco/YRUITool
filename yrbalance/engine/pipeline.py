@@ -75,8 +75,11 @@ class CategoryRatios:
 
 @dataclass
 class BalanceSpec:
-    """A full balance request: category key -> CategoryRatios."""
+    """A full balance request: category key -> CategoryRatios, plus globals."""
     categories: dict = field(default_factory=dict)
+    # If set, weapons whose vanilla Range is below this are left unscaled on Range
+    # (protects melee / very short-range weapons across every category).
+    range_threshold: float = None
 
 
 @dataclass
@@ -149,7 +152,8 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
                 r.strength, stat_cost, r.buildtime, r.debris, r.adjacent,
                 r.reg_dmg, r.reg_rng, r.reg_rof,
                 r.eli_dmg, r.eli_rng, r.eli_rof,
-                snapshots, registry, progress=progress)
+                snapshots, registry, progress=progress,
+                range_threshold=spec.range_threshold)
         else:
             process_unit_stats(
                 lines, section_map, type_list, cat.label, cat.key,
@@ -157,7 +161,8 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
                 r.reg_dmg, r.reg_rng, r.reg_rof,
                 r.eli_dmg, r.eli_rng, r.eli_rof,
                 snapshots, registry,
-                speed_max=r.speed_max, soylent_ratio=r.soylent, progress=progress)
+                speed_max=r.speed_max, soylent_ratio=r.soylent, progress=progress,
+                range_threshold=spec.range_threshold)
         summary.per_category[key] = len(type_list)
 
     # ── Step 3: cost scaling (TechLevel / depth modes) ───────────────────────

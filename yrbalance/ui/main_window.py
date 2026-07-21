@@ -6,17 +6,18 @@ panel, and wires "Apply and save" to the controller.
 import os
 
 from PySide6.QtCore import Qt, QSettings
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPalette, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QSplitter, QComboBox, QFileDialog, QMessageBox, QPlainTextEdit,
-    QDialog, QDialogButtonBox,
+    QDialog, QDialogButtonBox, QApplication,
 )
 
 from ..engine import ModConfig, BalanceSpec, parse_ini_lines, restore_vanilla
 from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
+from .global_tab import GlobalTab
 from .script_panel import ScriptPanel
 
 # (key, label, is_building, linkable)
@@ -81,17 +82,16 @@ class MainWindow(QMainWindow):
         self.form_tabs["superweapons"] = SectionFormTab(
             "",
             seed_rows=[("RechargeTime", ""), ("Range", "")],
-            help_text="Set the section to a super-weapon (e.g. NUKE, IRONCURTAIN) "
-                      "and tweak its tags. One super-weapon per tab; use several "
-                      "or the custom script for more.")
+            help_text="Set the section to a super-weapon (e.g. NUKE) and tweak its "
+                      "tags. Target several at once by comma-separating them "
+                      "(NUKE, IRONCURTAIN) — the same tags apply to each.")
         self.tabs.addTab(self.form_tabs["general"], "General")
         self.tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
         self.tabs.addTab(self.form_tabs["superweapons"], "Super Weapons")
 
-        # Placeholder for cross-cutting features that span multiple categories.
-        self.tabs.addTab(self._placeholder(
-            "Global tab — for features that span more than one category "
-            "(future cross-category systems and presets)."), "Global")
+        # Global: settings that span more than one category.
+        self.global_tab = GlobalTab()
+        self.tabs.addTab(self.global_tab, "Global")
         splitter.addWidget(self.tabs)
 
         self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
@@ -120,10 +120,13 @@ class MainWindow(QMainWindow):
         if last and os.path.isfile(last):
             self.reload_last_action.setEnabled(True)
             self.reload_last_action.setText(f"Reload {os.path.basename(last)}")
+        if self.settings.value("dark", "false") == "true":
+            self.dark_action.setChecked(True)  # triggers _apply_theme
 
     def closeEvent(self, event):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("profile", self.profile_box.currentData())
+        self.settings.setValue("dark", "true" if self.dark_action.isChecked() else "false")
         super().closeEvent(event)
 
     def _last_dir(self):
@@ -149,6 +152,39 @@ class MainWindow(QMainWindow):
         bp = mb.addMenu("Blueprint")
         bp.addAction("Save blueprint…", self.save_blueprint)
         bp.addAction("Load blueprint…", self.load_blueprint)
+
+        view = mb.addMenu("View")
+        self.dark_action = view.addAction("Dark theme")
+        self.dark_action.setCheckable(True)
+        self.dark_action.toggled.connect(self._apply_theme)
+
+    def _apply_theme(self, dark):
+        app = QApplication.instance()
+        if app is None:
+            return
+        app.setStyle("Fusion")
+        if dark:
+            pal = QPalette()
+            base = QColor(53, 53, 53)
+            alt = QColor(42, 42, 42)
+            text = QColor(220, 220, 220)
+            hl = QColor(42, 130, 218)
+            pal.setColor(QPalette.Window, base)
+            pal.setColor(QPalette.WindowText, text)
+            pal.setColor(QPalette.Base, alt)
+            pal.setColor(QPalette.AlternateBase, base)
+            pal.setColor(QPalette.ToolTipBase, text)
+            pal.setColor(QPalette.ToolTipText, text)
+            pal.setColor(QPalette.Text, text)
+            pal.setColor(QPalette.Button, base)
+            pal.setColor(QPalette.ButtonText, text)
+            pal.setColor(QPalette.Highlight, hl)
+            pal.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+            pal.setColor(QPalette.Disabled, QPalette.Text, QColor(120, 120, 120))
+            pal.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(120, 120, 120))
+            app.setPalette(pal)
+        else:
+            app.setPalette(app.style().standardPalette())
 
     # ── Toolbar ──────────────────────────────────────────────────────────────
     def _build_toolbar(self):
@@ -179,15 +215,6 @@ class MainWindow(QMainWindow):
         self.apply_btn.clicked.connect(self.apply_and_save)
         bar.addWidget(self.apply_btn)
         return bar
-
-    def _placeholder(self, text):
-        w = QWidget()
-        lay = QVBoxLayout(w)
-        label = QLabel(text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("color: gray;")
-        lay.addWidget(label)
-        return w
 
     def _change_profile(self, index):
         which = self.profile_box.itemData(index)
@@ -228,23 +255,27 @@ class MainWindow(QMainWindow):
                 cats[key] = tab.ratios(link_source=veh_ratios)
             else:
                 cats[key] = tab.ratios()
-        return BalanceSpec(categories=cats)
+        return BalanceSpec(categories=cats,
+                           range_threshold=self.global_tab.range_threshold_value())
 
     # ── Blueprint ────────────────────────────────────────────────────────────
     def to_blueprint_text(self, name="Untitled"):
         cat_states = {k: t.get_state() for k, t in self.category_tabs.items()}
         form_states = {k: t.get_state() for k, t in self.form_tabs.items()}
         return blueprint.serialize(cat_states, form_states,
-                                   self.script_panel.text(), name=name)
+                                   self.script_panel.text(), name=name,
+                                   global_state=self.global_tab.get_state())
 
     def apply_blueprint_text(self, text):
-        _meta, cat_states, form_states, script = blueprint.parse(text)
+        _meta, cat_states, form_states, global_state, script = blueprint.parse(text)
         for k, tab in self.category_tabs.items():
             if k in cat_states:
                 tab.set_state(cat_states[k])
         for k, tab in self.form_tabs.items():
             if k in form_states:
                 tab.set_state(form_states[k])
+        if global_state:
+            self.global_tab.set_state(global_state)
         self.script_panel.editor.setPlainText(script)
         return _meta
 
