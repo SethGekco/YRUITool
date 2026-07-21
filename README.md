@@ -41,10 +41,12 @@ Early development. Building in reviewable slices.
   - `pipeline.py` — `run_balance`: turn a per-category `BalanceSpec` into the
     Pass-1 stat/weapon edits + Pass-2 sight pass.
 - **`yrbalance/ui/`** — PySide6 desktop app.
-  - `controller.py` — Qt-free glue (load / preview / apply-and-save).
-  - `category_tab.py` — per-TechnoType ratio fields; Naval tab has a per-field
-    "same as Vehicles" link.
+  - `controller.py` — Qt-free glue (load / preview / apply-and-save / diff).
+  - `category_tab.py` — per-TechnoType ratio fields + cost-scaling/TechLevel group;
+    Naval tab has a per-field "same as Vehicles" link; exact get/set state.
+  - `section_form_tab.py` — General/Gameplay/Super Weapons section-tag editor.
   - `script_panel.py` — custom-script editor with import/export + preset dropdown.
+  - `blueprint.py` — save/load the whole tool state as hand-editable text.
   - `main_window.py`, `app.py` — window assembly and entry point.
 - **`tests/`** — smoke + end-to-end tests (run against a real `rulesmd.ini`).
 
@@ -77,12 +79,19 @@ inline `; vanilla=X` comments so every change is reversible and re-runnable.
    **generator blocks** (`[+ ... from ...]`) that emit + register new sections —
    this is how the host-squad / faction-platform / mind-control features will ship
    (as bundled example scripts rather than hardcoded Python).
-4. **GUI** *(core done)* — PySide6 desktop app: a tab per TechnoType with ratio
-   fields, the Naval tab linking each field to Vehicles via a "same as Vehicles"
-   checkbox, a Global tab for cross-cutting features, and a bottom custom-script
-   panel (import/export/preview) for formula tweaks and generator scripts. One
-   "Apply and save" runs the whole thing. Remaining: in-tab TechLevel/cost-scaling
-   controls, the General/Gameplay/Super Weapons tabs, and a change preview.
+4. **GUI** *(done)* — PySide6 desktop app:
+   - A tab per TechnoType (Infantry/Vehicle/Naval/Aircraft/Building/Defensive)
+     with ratio fields; the Naval tab links each field to Vehicles via a
+     "same as Vehicles" checkbox.
+   - Per-tab "Cost scaling and TechLevel": cost mode (flat / ×TechLevel /
+     ×depth) + base, and Custom-TechLevel recompute/write/use.
+   - General / Gameplay / Super Weapons tabs (structured section-tag editors),
+     plus a Global placeholder for cross-cutting features.
+   - A bottom custom-script panel (import/export/preview + saved-script dropdown).
+   - "Preview changes" (unified diff before writing) and one "Apply and save".
+   - **Blueprints**: save/load the whole tool state as a hand-editable text file
+     (`Blueprint` menu). **Restore to vanilla** undoes a file's edits
+     (`File` menu). Window geometry / profile / last file persist across sessions.
 
 ## Running the GUI
 
