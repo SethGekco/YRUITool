@@ -83,10 +83,20 @@ def main(path):
                  if get_val(sm0, t, "Cost", "").isdigit() and int(get_val(sm0, t, "Cost")) > 1)
     van_cost = int(get_val(sm0, probe, "Cost"))
 
+    # A form tab compiles to a script and is gathered by collect_scripts.
+    gen = win.form_tabs["general"]
+    gen.section_edit.setText("General")
+    gen.add_row("BuildSpeed", "0.9", used=True)
+    scripts = win.collect_scripts()
+    form_ok = any("[General]" in s and "BuildSpeed" in s for s in scripts)
+    print(f"form tab -> script: {form_ok}  {'OK' if form_ok else 'FAIL'}")
+    ok = ok and form_ok
+
     with tempfile.TemporaryDirectory() as d:
         out = os.path.join(d, "rulesmd_edited.ini")
-        summary, script_result = controller.apply_and_save(
-            path, out, win.collect_spec(), script_text="", config=win.config)
+        summary, script_results = controller.apply_and_save(
+            path, out, win.collect_spec(), scripts=win.collect_scripts(),
+            config=win.config)
         wrote = os.path.isfile(out)
         lines2 = parse_ini_lines(out)
         sm2, _ = build_section_map(lines2)

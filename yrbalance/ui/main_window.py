@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..engine import ModConfig, BalanceSpec
 from . import controller
 from .category_tab import CategoryTab
+from .section_form_tab import SectionFormTab
 from .script_panel import ScriptPanel
 
 # (key, label, is_building, linkable)
@@ -59,11 +60,36 @@ class MainWindow(QMainWindow):
             tab = CategoryTab(key, is_building=is_building, linkable=linkable)
             self.category_tabs[key] = tab
             self.tabs.addTab(tab, label)
+
+        # Section-form tabs (structured tag edits on a single section).
+        self.form_tabs = {}
+        self.form_tabs["general"] = SectionFormTab(
+            "General",
+            seed_rows=[("BuildSpeed", ""), ("GrowthRate", ""),
+                       ("RepairStep", ""), ("RepairPercent", ""),
+                       ("VeteranRatio", "")],
+            help_text="Global [General] tags. Tick a row and set a value "
+                      "(literal like 0.9, or a formula like BuildSpeed * 0.9).")
+        self.form_tabs["gameplay"] = SectionFormTab(
+            "General",
+            seed_rows=[("AIHateDelay", ""), ("BuildupTime", ""),
+                       ("PlacementDelay", "")],
+            help_text="Gameplay-pacing tags. Change the section if a tag lives "
+                      "elsewhere (e.g. CombatDamage).")
+        self.form_tabs["superweapons"] = SectionFormTab(
+            "",
+            seed_rows=[("RechargeTime", ""), ("Range", "")],
+            help_text="Set the section to a super-weapon (e.g. NUKE, IRONCURTAIN) "
+                      "and tweak its tags. One super-weapon per tab; use several "
+                      "or the custom script for more.")
+        self.tabs.addTab(self.form_tabs["general"], "General")
+        self.tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
+        self.tabs.addTab(self.form_tabs["superweapons"], "Super Weapons")
+
         # Placeholder for cross-cutting features that span multiple categories.
         self.tabs.addTab(self._placeholder(
-            "Global tab — for features that span more than one category\n"
-            "(building depth tree, cross-category cost scaling, and future\n"
-            "General / Gameplay / Super Weapons controls)."), "Global")
+            "Global tab — for features that span more than one category "
+            "(future cross-category systems and presets)."), "Global")
         splitter.addWidget(self.tabs)
 
         self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
@@ -144,6 +170,12 @@ class MainWindow(QMainWindow):
                 cats[key] = tab.ratios()
         return BalanceSpec(categories=cats)
 
+    def collect_scripts(self):
+        """All script text to run: the form tabs first, then the custom box."""
+        scripts = [tab.to_script_text() for tab in self.form_tabs.values()]
+        scripts.append(self.script_panel.text())
+        return [s for s in scripts if s and s.strip()]
+
     def preview_script(self):
         ok, message = controller.preview_script(
             self.section_map, self.script_panel.text(), self.config)
@@ -167,17 +199,17 @@ class MainWindow(QMainWindow):
             self.out_path = path
 
         spec = self.collect_spec()
+        scripts = self.collect_scripts()
         log = []
         try:
-            summary, script_result = controller.apply_and_save(
+            summary, script_results = controller.apply_and_save(
                 self.source_path, self.out_path, spec,
-                script_text=self.script_panel.text(), config=self.config,
-                progress=log.append)
+                scripts=scripts, config=self.config, progress=log.append)
         except Exception as e:  # surface engine/script errors to the user
             QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
             return
 
-        text = controller.summarize(summary, script_result)
+        text = controller.summarize(summary, script_results)
         self.statusBar().showMessage(f"Saved to {os.path.basename(self.out_path)}.")
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Applied and saved")

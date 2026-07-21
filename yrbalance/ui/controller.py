@@ -46,34 +46,42 @@ def preview_script(section_map, script_text, config=None):
     return True, header + "\n" + "\n".join(lines)
 
 
-def apply_and_save(source_path, out_path, spec, script_text=None, config=None,
+def apply_to_lines(lines, section_map, spec, scripts=None, config=None,
                    param_values=None, progress=None):
     """
-    Re-load the source rules, apply the balance spec (Pass 1 + sight), then any
-    custom script, and write to out_path. Always re-loads from source so repeated
-    applies don't compound. Returns (RunSummary, script_RunResult|None).
+    Apply a spec + scripts to an already-loaded (lines, section_map) in place.
+    Returns (RunSummary, [RunResult]). Used by both apply_and_save and preview.
     """
     if config is None:
         config = ModConfig.default()
-
-    lines, section_map = load_rules(source_path)
     summary = run_balance(lines, section_map, spec, config, progress=progress)
+    results = []
+    for text in (scripts or []):
+        if text and text.strip():
+            script = parse_script(text)
+            results.append(run_script(lines, section_map, script, config,
+                                      param_values=param_values, progress=progress))
+    return summary, results
 
-    script_result = None
-    if script_text and script_text.strip():
-        script = parse_script(script_text)
-        script_result = run_script(lines, section_map, script, config,
-                                   param_values=param_values, progress=progress)
 
+def apply_and_save(source_path, out_path, spec, scripts=None, config=None,
+                   param_values=None, progress=None):
+    """
+    Re-load the source rules, apply the balance spec (Pass 1 + sight) and each
+    script, and write to out_path. Always re-loads from source so repeated applies
+    don't compound. Returns (RunSummary, [RunResult]).
+    """
+    lines, section_map = load_rules(source_path)
+    summary, results = apply_to_lines(lines, section_map, spec, scripts, config,
+                                      param_values, progress)
     # newline="" so each line's own \r\n / \n (preserved by the parser) is written
     # verbatim rather than translated by the platform.
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         f.writelines(lines)
+    return summary, results
 
-    return summary, script_result
 
-
-def summarize(summary, script_result):
+def summarize(summary, script_results):
     """Render a short human summary of an apply run."""
     out = []
     processed = {k: v for k, v in summary.per_category.items() if v}
@@ -81,14 +89,19 @@ def summarize(summary, script_result):
         out.append("Balance pass:")
         for k, n in processed.items():
             out.append(f"  {k}: {n} technos")
+    if summary.techlevels_written:
+        out.append(f"TechLevel written: {summary.techlevels_written}")
+    if summary.costs_scaled:
+        out.append(f"Costs scaled (TechLevel/depth): {summary.costs_scaled}")
     if summary.weapon_conflicts:
         out.append(f"Weapon conflicts resolved by cloning: {summary.weapon_conflicts}")
-    if script_result is not None:
-        out.append(f"Script: {script_result.tags_written} tags on "
-                   f"{script_result.technos_touched} technos, "
-                   f"{script_result.sections_created} sections created")
-        if script_result.skipped:
-            out.append(f"  {len(script_result.skipped)} tag(s) skipped")
+    total_tags = sum(r.tags_written for r in script_results)
+    total_secs = sum(r.sections_created for r in script_results)
+    total_skip = sum(len(r.skipped) for r in script_results)
+    if total_tags or total_secs:
+        out.append(f"Scripts: {total_tags} tags, {total_secs} sections created")
+        if total_skip:
+            out.append(f"  {total_skip} tag(s) skipped")
     if not out:
-        out.append("No changes (everything left at 1.0 and no script).")
+        out.append("No changes (everything left at 1.0 and no scripts).")
     return "\n".join(out)
