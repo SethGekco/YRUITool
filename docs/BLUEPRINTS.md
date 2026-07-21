@@ -37,6 +37,10 @@ Section = General
 BuildSpeed = 0.9       ; an active tag
 #GrowthRate =          ; a '#' row is inactive — uncomment to enable
 
+[Global]
+RangeProtect = yes     ; protect short-range weapons from Range scaling
+RangeThreshold = 3.0   ; skip Range scaling when vanilla Range is below this
+
 [Script]
 [$INFANTRY]
 Elite = yes
