@@ -75,6 +75,52 @@ def main(path):
           f"{'OK' if noop.is_noop(False) else 'FAIL'}")
     ok = ok and noop.is_noop(False)
 
+    # ── Cost mode: x TechLevel ──────────────────────────────────────────────
+    lines2 = parse_ini_lines(path)
+    sm2, _ = build_section_map(lines2)
+    tl_probe = next((t for t in parse_type_list(sm2, "InfantryTypes")
+                     if get_val(sm2, t, "Cost", "").isdigit()
+                     and get_val(sm2, t, "TechLevel", "").lstrip("-").isdigit()
+                     and int(get_val(sm2, t, "TechLevel")) >= 1), None)
+    if tl_probe:
+        vc = int(get_val(sm2, tl_probe, "Cost"))
+        vtl = int(get_val(sm2, tl_probe, "TechLevel"))
+        spec2 = BalanceSpec(categories={
+            "inf": CategoryRatios(cost=1.0, cost_mode="techlevel", cost_base="vanilla")})
+        s2 = run_balance(lines2, sm2, spec2, config)
+        sm2b, _ = build_section_map(lines2)
+        nc = get_current_field_value_from_line(
+            lines2[sm2b[tl_probe.lower()]["keys"]["cost"][0]])
+        good = nc == vc * vtl and s2.costs_scaled > 0
+        ok = ok and good
+        print(f"cost x TechLevel: [{tl_probe}] {vc} x TL{vtl} -> {nc} "
+              f"(exp {vc*vtl})  {'OK' if good else 'FAIL'}")
+
+    # ── Cost mode: x depth (buildings) ──────────────────────────────────────
+    lines3 = parse_ini_lines(path)
+    sm3, _ = build_section_map(lines3)
+    spec3 = BalanceSpec(categories={
+        "bld": CategoryRatios(cost=1.0, cost_mode="depth", cost_base="vanilla")})
+    s3 = run_balance(lines3, sm3, spec3, config)
+    depth_ok = s3.costs_scaled > 0
+    print(f"cost x depth (buildings): scaled {s3.costs_scaled}  "
+          f"{'OK' if depth_ok else 'FAIL'}")
+    ok = ok and depth_ok
+
+    # ── TechLevel recompute + write ─────────────────────────────────────────
+    lines4 = parse_ini_lines(path)
+    sm4, _ = build_section_map(lines4)
+    spec4 = BalanceSpec(categories={
+        "bld": CategoryRatios(tl_recompute=True, tl_write=True)})
+    s4 = run_balance(lines4, sm4, spec4, config)
+    sm4b, _ = build_section_map(lines4)
+    gapowr_tl = get_val(sm4b, "GAPOWR", "TechLevel") if "gapowr" in sm4b else None
+    # GAPOWR is depth-1 -> TechLevel 1 after recompute.
+    tlrec_ok = s4.techlevels_written > 0 and (gapowr_tl == "1" or gapowr_tl is None)
+    print(f"TechLevel recompute+write: wrote {s4.techlevels_written}, "
+          f"GAPOWR TL={gapowr_tl}  {'OK' if tlrec_ok else 'FAIL'}")
+    ok = ok and tlrec_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

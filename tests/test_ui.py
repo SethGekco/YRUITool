@@ -49,6 +49,27 @@ def main(path):
           f"strength={nav_r.strength} (own->3.0)  {'OK' if link_ok else 'FAIL'}")
     ok = ok and link_ok
 
+    # ── Cost mode + TechLevel controls flow into the spec ────────────────────
+    inf_tab = win.category_tabs["inf"]
+    idx = inf_tab.cost_mode.findData("techlevel")
+    inf_tab.cost_mode.setCurrentIndex(idx)
+    bld_tab = win.category_tabs["bld"]
+    bld_tab.tl_recompute.setChecked(True)
+    bld_tab.tl_write.setChecked(True)
+    depth_idx = bld_tab.cost_mode.findData("depth")
+    bld_tab.cost_mode.setCurrentIndex(depth_idx)
+    spec2 = win.collect_spec()
+    adv_ok = (spec2.categories["inf"].cost_mode == "techlevel"
+              and spec2.categories["bld"].tl_recompute
+              and spec2.categories["bld"].tl_write
+              and spec2.categories["bld"].cost_mode == "depth")
+    print(f"cost/TL controls -> spec: inf.cost_mode={spec2.categories['inf'].cost_mode}, "
+          f"bld.tl_recompute={spec2.categories['bld'].tl_recompute}, "
+          f"bld.cost_mode={spec2.categories['bld'].cost_mode}  {'OK' if adv_ok else 'FAIL'}")
+    ok = ok and adv_ok
+    # Reset for the apply test below.
+    inf_tab.cost_mode.setCurrentIndex(inf_tab.cost_mode.findData("flat"))
+
     # Infantry cost x0.5 for the apply test.
     win.category_tabs["inf"].spins["cost"].setValue(0.5)
 
