@@ -122,6 +122,22 @@ def main(path):
           f"{'OK' if diff_ok else 'FAIL'}")
     ok = ok and diff_ok
 
+    # ── Blueprint round-trip ─────────────────────────────────────────────────
+    # Current state: inf.cost=0.5, nav.strength unlinked=3.0, bld tl_recompute,
+    # general has BuildSpeed row, script box has "Elite = yes".
+    text = win.to_blueprint_text(name="Test")
+    win2 = MainWindow()
+    win2.apply_blueprint_text(text)
+    s2 = win2.collect_spec()
+    n2 = s2.categories["nav"]
+    bp_ok = (s2.categories["inf"].cost == 0.5
+             and n2.strength == 3.0                       # unlinked override survived
+             and s2.categories["bld"].tl_recompute
+             and any("BuildSpeed" in s for s in win2.collect_scripts())
+             and "Elite" in win2.script_panel.text())
+    print(f"blueprint round-trip: {bp_ok}  {'OK' if bp_ok else 'FAIL'}")
+    ok = ok and bp_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

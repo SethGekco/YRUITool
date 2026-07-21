@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox,
 )
 
-from ..engine import ModConfig, BalanceSpec
-from . import controller
+from ..engine import ModConfig, BalanceSpec, parse_ini_lines, restore_vanilla
+from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .script_panel import ScriptPanel
@@ -102,7 +102,20 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter)
 
         self.setCentralWidget(central)
+        self._build_menu()
         self.statusBar().showMessage("Load a rulesmd.ini to begin.")
+
+    def _build_menu(self):
+        mb = self.menuBar()
+        file_menu = mb.addMenu("File")
+        file_menu.addAction("Load rules…", self.load_rules)
+        file_menu.addAction("Restore a file to vanilla…", self.restore_to_vanilla)
+        file_menu.addSeparator()
+        file_menu.addAction("Quit", self.close)
+
+        bp = mb.addMenu("Blueprint")
+        bp.addAction("Save blueprint…", self.save_blueprint)
+        bp.addAction("Load blueprint…", self.load_blueprint)
 
     # ── Toolbar ──────────────────────────────────────────────────────────────
     def _build_toolbar(self):
@@ -177,6 +190,83 @@ class MainWindow(QMainWindow):
             else:
                 cats[key] = tab.ratios()
         return BalanceSpec(categories=cats)
+
+    # ── Blueprint ────────────────────────────────────────────────────────────
+    def to_blueprint_text(self, name="Untitled"):
+        cat_states = {k: t.get_state() for k, t in self.category_tabs.items()}
+        form_states = {k: t.get_state() for k, t in self.form_tabs.items()}
+        return blueprint.serialize(cat_states, form_states,
+                                   self.script_panel.text(), name=name)
+
+    def apply_blueprint_text(self, text):
+        _meta, cat_states, form_states, script = blueprint.parse(text)
+        for k, tab in self.category_tabs.items():
+            if k in cat_states:
+                tab.set_state(cat_states[k])
+        for k, tab in self.form_tabs.items():
+            if k in form_states:
+                tab.set_state(form_states[k])
+        self.script_panel.editor.setPlainText(script)
+        return _meta
+
+    def save_blueprint(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save blueprint", "balance.yrbp",
+            "Blueprint (*.yrbp *.txt);;All files (*)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += ".yrbp"
+        name = os.path.splitext(os.path.basename(path))[0]
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.to_blueprint_text(name=name))
+        except OSError as e:
+            QMessageBox.warning(self, "Blueprint", f"Could not write:\n{e}")
+            return
+        self.statusBar().showMessage(f"Blueprint saved to {os.path.basename(path)}.")
+
+    def load_blueprint(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load blueprint", "", "Blueprint (*.yrbp *.txt);;All files (*)")
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                self.apply_blueprint_text(f.read())
+        except OSError as e:
+            QMessageBox.warning(self, "Blueprint", f"Could not read:\n{e}")
+            return
+        self.statusBar().showMessage(f"Blueprint loaded from {os.path.basename(path)}.")
+
+    def restore_to_vanilla(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose an edited rules file to restore", "",
+            "INI files (*.ini);;All files (*)")
+        if not path:
+            return
+        try:
+            lines = parse_ini_lines(path)
+            reverted = restore_vanilla(lines)
+        except OSError as e:
+            QMessageBox.critical(self, "Restore", f"Could not read:\n{e}")
+            return
+        base, ext = os.path.splitext(path)
+        out, _ = QFileDialog.getSaveFileName(
+            self, "Save restored rules", f"{base}_vanilla{ext or '.ini'}",
+            "INI files (*.ini);;All files (*)")
+        if not out:
+            return
+        try:
+            with open(out, "w", encoding="utf-8", newline="") as f:
+                f.writelines(lines)
+        except OSError as e:
+            QMessageBox.critical(self, "Restore", f"Could not write:\n{e}")
+            return
+        QMessageBox.information(
+            self, "Restore to vanilla",
+            f"Reverted {reverted} edited values to vanilla.\n\nSaved to:\n{out}\n\n"
+            "Note: sections/tags added by generator scripts are not removed.")
 
     def collect_scripts(self):
         """All script text to run: the form tabs first, then the custom box."""

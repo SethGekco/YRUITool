@@ -138,6 +138,7 @@ from .pipeline import (
     RunSummary,
     run_balance,
 )
+from .restore import restore_vanilla
 
 __all__ = [
     # config
@@ -193,4 +194,6 @@ __all__ = [
     "run_script", "RunResult", "RunError", "config_keywords",
     # pipeline
     "CategoryRatios", "BalanceSpec", "RunSummary", "run_balance",
+    # restore
+    "restore_vanilla",
 ]

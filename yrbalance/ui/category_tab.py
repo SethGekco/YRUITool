@@ -182,3 +182,44 @@ class CategoryTab(QWidget):
         if r.cost_mode == "depth" and not self.is_building:
             r.cost_mode = "flat"
         return r
+
+    # ── Exact widget state (for blueprints / persistence) ────────────────────
+    def get_state(self):
+        return {
+            "fields": {attr: spin.value() for attr, spin in self.spins.items()},
+            "links": {attr: cb.isChecked() for attr, cb in self.links.items()},
+            "sight_equal": self.sight_equal.isChecked(),
+            "sight_equal_link": (self.sight_equal_link.isChecked()
+                                 if self.sight_equal_link is not None else None),
+            "cost_mode": self.cost_mode.currentData(),
+            "cost_base": self.cost_base.currentData(),
+            "tl_recompute": self.tl_recompute.isChecked(),
+            "tl_write": self.tl_write.isChecked(),
+            "tl_use": self.tl_use.isChecked(),
+            "adv_link": (self.adv_link.isChecked()
+                         if self.adv_link is not None else None),
+        }
+
+    def set_state(self, state):
+        for attr, value in state.get("fields", {}).items():
+            if attr in self.spins:
+                self.spins[attr].setValue(float(value))
+        for attr, linked in state.get("links", {}).items():
+            if attr in self.links:
+                self.links[attr].setChecked(bool(linked))
+        self.sight_equal.setChecked(bool(state.get("sight_equal", False)))
+        if self.sight_equal_link is not None and state.get("sight_equal_link") is not None:
+            self.sight_equal_link.setChecked(bool(state["sight_equal_link"]))
+        self._set_combo(self.cost_mode, state.get("cost_mode", "flat"))
+        self._set_combo(self.cost_base, state.get("cost_base", "vanilla"))
+        self.tl_recompute.setChecked(bool(state.get("tl_recompute", False)))
+        self.tl_write.setChecked(bool(state.get("tl_write", False)))
+        self.tl_use.setChecked(bool(state.get("tl_use", False)))
+        if self.adv_link is not None and state.get("adv_link") is not None:
+            self.adv_link.setChecked(bool(state["adv_link"]))
+
+    @staticmethod
+    def _set_combo(combo, data):
+        idx = combo.findData(data)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)

@@ -75,6 +75,18 @@ def main(path):
           f"{'OK' if noop.is_noop(False) else 'FAIL'}")
     ok = ok and noop.is_noop(False)
 
+    # ── Restore to vanilla (undo) ───────────────────────────────────────────
+    from yrbalance.engine import restore_vanilla
+    reverted = restore_vanilla(lines)  # `lines` still has the inf/bld edits above
+    smr, _ = build_section_map(lines)
+    restore_ok = reverted > 0 and all(
+        get_current_field_value_from_line(lines[smr[t.lower()]["keys"]["cost"][0]]) == van[t][1]
+        and get_current_field_value_from_line(lines[smr[t.lower()]["keys"]["strength"][0]]) == van[t][0]
+        for t in inf)
+    print(f"restore vanilla: reverted {reverted} values, probes back to vanilla="
+          f"{restore_ok}  {'OK' if restore_ok else 'FAIL'}")
+    ok = ok and restore_ok
+
     # ── Cost mode: x TechLevel ──────────────────────────────────────────────
     lines2 = parse_ini_lines(path)
     sm2, _ = build_section_map(lines2)
