@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from .config import ModConfig
 from .ini_model import get_val
 from .selectors import build_category_lists
-from .operations import reset_session_state, do_sight_pass
+from .operations import reset_session_state, do_sight_pass, apply_soylent_fraction
 from .weapons import build_weapon_snapshots, WeaponRegistry
 from .stats import process_unit_stats, process_building_stats
 from .techlevel import (
@@ -47,9 +47,15 @@ class CategoryRatios:
     eli_rof: float = 1.0
     sight: float = 1.0
     sight_equal: bool = False
+    # Fallback when sight_equal is on but a unit has no weapon.
+    sight_no_weapon_mode: str = "leave"   # 'leave' | 'multiplier' | 'minimum'
+    sight_no_weapon_value: float = 1.0
     speed_max: float = None
     debris: float = 1.0
     adjacent: float = 1.0
+    # Soylent: 'legacy' = vanilla_cost * cost_ratio * soylent; 'cost_fraction' =
+    # (final Cost) * soylent, applied after cost scaling.
+    soylent_mode: str = "legacy"
     # Cost scaling: 'flat' uses the Cost ratio directly; 'techlevel' scales by
     # TechLevel x ratio; 'depth' (buildings) scales by (depth+1) x ratio.
     cost_mode: str = "flat"
@@ -68,7 +74,8 @@ class CategoryRatios:
         if is_building:
             extra = self.debris == self.adjacent == 1.0
         else:
-            extra = (self.speed == self.soylent == 1.0 and self.speed_max is None)
+            extra = (self.speed == self.soylent == 1.0 and self.speed_max is None
+                     and self.soylent_mode == "legacy")
         sight_noop = (not self.sight_equal) and self.sight == 1.0
         return base and extra and sight_noop
 
@@ -162,7 +169,8 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
                 r.eli_dmg, r.eli_rng, r.eli_rof,
                 snapshots, registry,
                 speed_max=r.speed_max, soylent_ratio=r.soylent, progress=progress,
-                range_threshold=spec.range_threshold)
+                range_threshold=spec.range_threshold,
+                do_soylent=(r.soylent_mode == "legacy"))
         summary.per_category[key] = len(type_list)
 
     # ── Step 3: cost scaling (TechLevel / depth modes) ───────────────────────
@@ -182,6 +190,14 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
             summary.costs_scaled += apply_tl_cost_scaling(
                 lines, section_map, type_list, r.cost, r.cost_base, tl_source)
 
+    # ── Step 3b: cost-fraction soylent (after final costs are written) ───────
+    for key, r in spec.categories.items():
+        cat = config.category_by_key(key)
+        if cat is None or cat.is_building or r.soylent_mode != "cost_fraction":
+            continue
+        for name in cat_lists.get(key, []):
+            apply_soylent_fraction(lines, section_map, name, r.soylent)
+
     # ── Step 4: sight (after all weapon ranges are finalized) ────────────────
     for key, r in spec.categories.items():
         cat = config.category_by_key(key)
@@ -189,7 +205,9 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
             continue
         if r.sight_equal or r.sight != 1.0:
             do_sight_pass(lines, section_map, cat_lists.get(key, []),
-                          r.sight_equal, r.sight)
+                          r.sight_equal, r.sight,
+                          no_weapon_mode=r.sight_no_weapon_mode,
+                          no_weapon_value=r.sight_no_weapon_value)
 
     summary.weapon_conflicts = len(registry.conflicts)
     summary.weapon_conflict_text = registry.format_summary()

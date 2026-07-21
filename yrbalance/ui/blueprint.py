@@ -49,7 +49,9 @@ def _is_yes(s):
 
 def _default_category_state():
     return {"fields": {}, "links": {}, "sight_equal": False,
-            "sight_equal_link": None, "cost_mode": "flat", "cost_base": "vanilla",
+            "sight_equal_link": None, "sight_nw_mode": "leave",
+            "sight_nw_value": 1.0, "soylent_cost_frac": None,
+            "cost_mode": "flat", "cost_base": "vanilla",
             "tl_recompute": False, "tl_write": False, "tl_use": False,
             "adv_link": None}
 
@@ -81,6 +83,10 @@ def serialize(category_states, form_states, script_text, name="Untitled",
             out.append("Sight.Equal = link")
         else:
             out.append(f"Sight.Equal = {_yesno(state['sight_equal'])}")
+        out.append(f"Sight.NoWeapon = {state.get('sight_nw_mode', 'leave')}")
+        out.append(f"Sight.NoWeaponValue = {_fmt(state.get('sight_nw_value', 1.0))}")
+        if state.get("soylent_cost_frac") is not None:
+            out.append(f"Soylent.CostFraction = {_yesno(state['soylent_cost_frac'])}")
         if linkable:
             out.append(f"AdvGroup = {'link' if state.get('adv_link') else 'own'}")
         out.append(f"CostMode = {state['cost_mode']}")
@@ -200,6 +206,15 @@ def _parse_category_line(state, line):
             state["sight_equal_link"] = True
         else:
             state["sight_equal"] = _is_yes(v)
+    elif kl == "sight.noweapon":
+        state["sight_nw_mode"] = v
+    elif kl == "sight.noweaponvalue":
+        try:
+            state["sight_nw_value"] = float(v)
+        except ValueError:
+            pass
+    elif kl == "soylent.costfraction":
+        state["soylent_cost_frac"] = _is_yes(v)
     elif kl == "advgroup":
         state["adv_link"] = (v.lower() == "link")
     elif kl == "costmode":

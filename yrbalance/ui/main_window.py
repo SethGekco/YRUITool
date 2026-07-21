@@ -19,16 +19,16 @@ from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
-from .script_panel import ScriptPanel
+from .script_panel import ScriptPanel, show_script_help
 
-# (key, label, is_building, linkable)
+# (key, label, is_building, linkable, link_label)
 TECHNO_TABS = [
-    ("inf", "Infantry", False, False),
-    ("veh", "Vehicle", False, False),
-    ("nav", "Naval", False, True),      # linkable to Vehicles
-    ("air", "Aircraft", False, False),
-    ("bld", "Building", True, False),
-    ("def", "Defensive", True, False),
+    ("inf", "Infantry", False, False, ""),
+    ("veh", "Vehicle", False, False, ""),
+    ("nav", "Naval", False, True, "Vehicles"),
+    ("air", "Aircraft", False, False, ""),
+    ("bld", "Building", True, False, ""),
+    ("def", "Defensive", True, True, "Buildings"),
 ]
 
 
@@ -65,8 +65,9 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.category_tabs = {}
-        for key, label, is_building, linkable in TECHNO_TABS:
-            tab = CategoryTab(key, is_building=is_building, linkable=linkable)
+        for key, label, is_building, linkable, link_label in TECHNO_TABS:
+            tab = CategoryTab(key, is_building=is_building, linkable=linkable,
+                              link_label=link_label or "Vehicles")
             self.category_tabs[key] = tab
             self.tabs.addTab(tab, label)
 
@@ -180,6 +181,17 @@ class MainWindow(QMainWindow):
         self.dark_action.setCheckable(True)
         self.dark_action.toggled.connect(self._apply_theme)
 
+        help_menu = mb.addMenu("Help")
+        help_menu.addAction("Custom script help…", lambda: show_script_help(self))
+        help_menu.addAction("About YRBalanceTool", self._show_about)
+
+    def _show_about(self):
+        QMessageBox.about(
+            self, "About YRBalanceTool",
+            "YRBalanceTool — general-purpose balance editor for\n"
+            "Red Alert 2: Yuri's Revenge.\n\n"
+            "Docs: README.md, docs/SCRIPTS.md, docs/BLUEPRINTS.md.")
+
     def _apply_theme(self, dark):
         app = QApplication.instance()
         if app is None:
@@ -272,15 +284,15 @@ class MainWindow(QMainWindow):
             f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
 
     def collect_spec(self, only_keys=None):
+        # Compute link sources first (Naval <- Vehicle, Defensive <- Building).
         veh_ratios = self.category_tabs["veh"].ratios()
+        bld_ratios = self.category_tabs["bld"].ratios()
+        link_sources = {"nav": veh_ratios, "def": bld_ratios}
         cats = {}
         for key, tab in self.category_tabs.items():
             if only_keys is not None and key not in only_keys:
                 continue
-            if key == "nav":
-                cats[key] = tab.ratios(link_source=veh_ratios)
-            else:
-                cats[key] = tab.ratios()
+            cats[key] = tab.ratios(link_source=link_sources.get(key))
         return BalanceSpec(categories=cats,
                            range_threshold=self.global_tab.range_threshold_value())
 

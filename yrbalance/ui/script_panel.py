@@ -12,9 +12,11 @@ import os
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QComboBox, QFileDialog, QMessageBox,
+    QComboBox, QFileDialog, QMessageBox, QDialog, QTextBrowser, QDialogButtonBox,
 )
 from PySide6.QtGui import QFont
+
+from .help_text import SCRIPT_HELP_HTML
 
 _PLACEHOLDER = (
     "[$INFANTRY, $VEHICLE]\n"
@@ -42,13 +44,17 @@ class ScriptPanel(QWidget):
         header.addWidget(self.preset_box)
         header.addStretch(1)
 
+        self.help_btn = QPushButton("?")
+        self.help_btn.setFixedWidth(28)
+        self.help_btn.setToolTip("What can I type here?")
+        self.help_btn.clicked.connect(self.show_help)
         self.import_btn = QPushButton("Import…")
         self.export_btn = QPushButton("Export…")
         self.preview_btn = QPushButton("Preview")
         self.import_btn.clicked.connect(self.import_script)
         self.export_btn.clicked.connect(self.export_script)
         self.preview_btn.clicked.connect(self.preview_requested.emit)
-        for b in (self.import_btn, self.export_btn, self.preview_btn):
+        for b in (self.help_btn, self.import_btn, self.export_btn, self.preview_btn):
             header.addWidget(b)
         layout.addLayout(header)
 
@@ -134,3 +140,23 @@ class ScriptPanel(QWidget):
 
     def text(self):
         return self.editor.toPlainText()
+
+    def show_help(self):
+        show_script_help(self)
+
+
+def show_script_help(parent):
+    """Open the custom-script help dialog (shared by the panel and the Help menu)."""
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Custom script help")
+    dlg.resize(640, 620)
+    lay = QVBoxLayout(dlg)
+    browser = QTextBrowser()
+    browser.setOpenExternalLinks(False)
+    browser.setHtml(SCRIPT_HELP_HTML)
+    lay.addWidget(browser)
+    buttons = QDialogButtonBox(QDialogButtonBox.Close)
+    buttons.rejected.connect(dlg.reject)
+    buttons.accepted.connect(dlg.accept)
+    lay.addWidget(buttons)
+    dlg.exec()

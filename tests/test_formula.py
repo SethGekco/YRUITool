@@ -28,6 +28,8 @@ def main():
     # Evaluation.
     check("TechLevel * BuildLimit * 100", evaluate("TechLevel * BuildLimit * 100", vars), 800)
     check("Cost * 0.5", evaluate("Cost * 0.5", vars), 400)
+    check("brackets as grouping", evaluate("20 * [Cost / TechLevel]", vars), 4000)
+    check("parens still work", evaluate("20 * (Cost / TechLevel)", vars), 4000)
     check("min(Cost, 500)", evaluate("min(Cost, 500)", vars), 500)
     check("clamp(TechLevel*3, 1, 10)", evaluate("clamp(TechLevel * 3, 1, 10)", vars), 10)
     check("round(Cost/300)", evaluate("round(Cost / 300)", vars), 3)

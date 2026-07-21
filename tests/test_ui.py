@@ -49,6 +49,27 @@ def main(path):
           f"strength={nav_r.strength} (own->3.0)  {'OK' if link_ok else 'FAIL'}")
     ok = ok and link_ok
 
+    # ── Defensive links to Building (like Naval to Vehicle) ──────────────────
+    win.category_tabs["bld"].spins["strength"].setValue(1.5)
+    def_r = win.collect_spec().categories["def"]
+    def_link_ok = def_r.strength == 1.5   # linked by default
+    print(f"defensive links to building: strength={def_r.strength} (->1.5)  "
+          f"{'OK' if def_link_ok else 'FAIL'}")
+    ok = ok and def_link_ok
+
+    # ── Sight no-weapon + soylent-fraction controls flow into the spec ───────
+    it = win.category_tabs["inf"]
+    it.sight_nw_mode.setCurrentIndex(it.sight_nw_mode.findData("minimum"))
+    it.sight_nw_value.setValue(9.0)
+    it.soylent_cost_frac.setChecked(True)
+    ir = win.collect_spec().categories["inf"]
+    nw_ok = (ir.sight_no_weapon_mode == "minimum" and ir.sight_no_weapon_value == 9.0
+             and ir.soylent_mode == "cost_fraction")
+    print(f"sight-nw + soylent-fraction -> spec: {nw_ok}  {'OK' if nw_ok else 'FAIL'}")
+    ok = ok and nw_ok
+    it.soylent_cost_frac.setChecked(False)
+    it.sight_nw_mode.setCurrentIndex(it.sight_nw_mode.findData("leave"))
+
     # ── Cost mode + TechLevel controls flow into the spec ────────────────────
     inf_tab = win.category_tabs["inf"]
     idx = inf_tab.cost_mode.findData("techlevel")

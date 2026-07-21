@@ -165,6 +165,45 @@ def main(path):
     else:
         print("range threshold: insufficient sample, skipped")
 
+    # ── Soylent = fraction of final cost ────────────────────────────────────
+    lines6 = parse_ini_lines(path)
+    sm6, _ = build_section_map(lines6)
+    soy_probe = next((t for t in parse_type_list(sm6, "InfantryTypes")
+                      if get_val(sm6, t, "Cost", "").isdigit()
+                      and get_val(sm6, t, "Soylent") is not None), None)
+    if soy_probe:
+        vc = int(get_val(sm6, soy_probe, "Cost"))
+        spec6 = BalanceSpec(categories={
+            "inf": CategoryRatios(cost=2.0, soylent=0.5, soylent_mode="cost_fraction")})
+        run_balance(lines6, sm6, spec6, config)
+        sm6b, _ = build_section_map(lines6)
+        new_soy = get_current_field_value_from_line(
+            lines6[sm6b[soy_probe.lower()]["keys"]["soylent"][0]])
+        exp = round(vc * 2 * 0.5)  # final cost (x2) * 0.5
+        soy_ok = new_soy == exp
+        print(f"soylent cost-fraction: [{soy_probe}] cost {vc}x2, Soylent={new_soy} "
+              f"(exp {exp})  {'OK' if soy_ok else 'FAIL'}")
+        ok = ok and soy_ok
+
+    # ── Sight no-weapon minimum fallback ────────────────────────────────────
+    lines7 = parse_ini_lines(path)
+    sm7, _ = build_section_map(lines7)
+    from yrbalance.engine import do_sight_pass, reset_session_state
+    noweap = next((t for t in parse_type_list(sm7, "InfantryTypes")
+                   if not get_val(sm7, t, "Primary")
+                   and get_val(sm7, t, "Sight") is not None), None)
+    if noweap:
+        reset_session_state()
+        do_sight_pass(lines7, sm7, [noweap], sight_equal=True, sight_ratio=1.0,
+                      no_weapon_mode="minimum", no_weapon_value=12.0)
+        sm7b, _ = build_section_map(lines7)
+        s_new = get_current_field_value_from_line(
+            lines7[sm7b[noweap.lower()]["keys"]["sight"][0]])
+        nw_ok = s_new >= 12
+        print(f"sight no-weapon minimum: [{noweap}] Sight={s_new} (>=12)  "
+              f"{'OK' if nw_ok else 'FAIL'}")
+        ok = ok and nw_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

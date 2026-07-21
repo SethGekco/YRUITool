@@ -317,24 +317,81 @@ def apply_sight_equal_to_range(lines, section_map, type_name, weapon_name):
     return True
 
 
-# Weapon tags consulted when sight_equal needs a fallback weapon. Imported lazily
-# from weapons to avoid a hard import cycle at module load.
-def do_sight_pass(lines, section_map, type_list, sight_equal, sight_ratio):
-    """Second-pass sight handling: set Sight equal to weapon range, or scale it."""
+def _first_weapon(section_map, type_name):
+    """Return the unit's first usable weapon name (Primary preferred), or None."""
     from .weapons import REGULAR_WEAPON_TAGS
+    primary = get_val(section_map, type_name, "Primary")
+    if primary and primary.lower() not in ("none", ""):
+        return primary
+    for tag in REGULAR_WEAPON_TAGS:
+        wname = get_val(section_map, type_name, tag)
+        if wname and wname.lower() not in ("none", ""):
+            return wname
+    return None
+
+
+def _apply_sight_no_weapon(lines, section_map, type_name, mode, value):
+    """Fallback Sight for a weapon-less unit in sight-equal mode."""
+    if mode == "multiplier":
+        if value != 1.0:
+            apply_tag_ratio(lines, section_map, type_name, "Sight", value)
+        return
+    if mode == "minimum":
+        s = section_map.get(type_name.lower())
+        entry = s["keys"].get("sight") if s else None
+        if entry is None:
+            return
+        li, kr, vr = entry
+        orig = vr.split(";")[0].strip()
+        try:
+            cur = float(orig)
+        except ValueError:
+            return
+        if cur < value:
+            new_v = int(value) if value == int(value) else value
+            modify_line(lines, li, kr,
+                        f"{new_v}; last_value={orig} ; method=sight_min ; vanilla={orig}")
+
+
+def do_sight_pass(lines, section_map, type_list, sight_equal, sight_ratio,
+                  no_weapon_mode="leave", no_weapon_value=1.0):
+    """
+    Second-pass sight handling. In sight_equal mode, Sight is set to the unit's
+    weapon range; weapon-less units use no_weapon_mode ('leave'|'multiplier'|
+    'minimum') with no_weapon_value. Otherwise Sight is scaled by sight_ratio.
+    """
     for t in type_list:
         if t in _sight_done:
             continue
         if sight_equal:
-            primary = get_val(section_map, t, "Primary")
-            if primary:
-                apply_sight_equal_to_range(lines, section_map, t, primary)
-            else:
-                for tag in REGULAR_WEAPON_TAGS:
-                    wname = get_val(section_map, t, tag)
-                    if wname and wname.lower() not in ("none", ""):
-                        apply_sight_equal_to_range(lines, section_map, t, wname)
-                        break
+            wname = _first_weapon(section_map, t)
+            applied = False
+            if wname:
+                applied = apply_sight_equal_to_range(lines, section_map, t, wname)
+            if not applied:
+                _apply_sight_no_weapon(lines, section_map, t,
+                                       no_weapon_mode, no_weapon_value)
         elif sight_ratio != 1.0:
             apply_tag_ratio(lines, section_map, t, "Sight", sight_ratio)
         _sight_done.add(t)
+
+
+def apply_soylent_fraction(lines, section_map, type_name, factor):
+    """Set Soylent = round(current Cost * factor). Skips units with no Soylent tag."""
+    s = section_map.get(type_name.lower())
+    if s is None:
+        return
+    soy = s["keys"].get("soylent")
+    if soy is None:
+        return
+    # Read the CURRENT written cost (the cache's value string is the pre-edit one,
+    # so read the live line via the robust rescanning reader).
+    from .costscaling import get_three_costs
+    _vanilla, _pre, current = get_three_costs(lines, section_map, type_name)
+    if current is None:
+        return
+    li, kr, vr = soy
+    orig = vr.split(";")[0].strip()
+    new_val = scale_int(int(current), factor)
+    modify_line(lines, li, kr,
+                f"{new_val};{orig} Edit by AI script ; vanilla_cost={current}")

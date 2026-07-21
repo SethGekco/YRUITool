@@ -40,9 +40,14 @@ _ALLOWED_NODES = (
 )
 
 
+def _brackets_to_parens(expr):
+    """Allow [] as grouping synonyms for () — e.g. 20 * [Cost / TechLevel]."""
+    return expr.replace("[", "(").replace("]", ")")
+
+
 def _parse(expr):
     try:
-        return ast.parse(expr.strip(), mode="eval")
+        return ast.parse(_brackets_to_parens(expr.strip()), mode="eval")
     except SyntaxError as e:
         raise FormulaError(f"could not parse expression: {expr!r} ({e})")
 

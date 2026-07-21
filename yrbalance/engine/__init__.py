@@ -61,6 +61,7 @@ from .operations import (
     apply_debris,
     apply_adjacent,
     apply_soylent,
+    apply_soylent_fraction,
     get_current_range_from_lines,
     apply_sight_equal_to_range,
     do_sight_pass,
@@ -164,8 +165,8 @@ __all__ = [
     # operations
     "set_rerun_context", "set_category", "reset_session_state",
     "apply_tag_ratio", "apply_speed_capped", "apply_buildtime", "apply_debris",
-    "apply_adjacent", "apply_soylent", "get_current_range_from_lines",
-    "apply_sight_equal_to_range", "do_sight_pass",
+    "apply_adjacent", "apply_soylent", "apply_soylent_fraction",
+    "get_current_range_from_lines", "apply_sight_equal_to_range", "do_sight_pass",
     # typelists
     "parse_type_list", "split_vehicles_naval", "split_buildings_defensive",
     # weapons

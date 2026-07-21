@@ -91,6 +91,32 @@ class CategoryTab(QWidget):
         sight_row.setColumnStretch(1, 1)
         outer.addLayout(sight_row)
 
+        # Sight fallback when a unit has no weapon (sight-equal mode only).
+        nw_row = QHBoxLayout()
+        nw_row.addWidget(QLabel("If no weapon:"))
+        self.sight_nw_mode = QComboBox()
+        self.sight_nw_mode.addItem("leave Sight as-is", "leave")
+        self.sight_nw_mode.addItem("multiply Sight by", "multiplier")
+        self.sight_nw_mode.addItem("minimum Sight of", "minimum")
+        nw_row.addWidget(self.sight_nw_mode)
+        self.sight_nw_value = QDoubleSpinBox()
+        self.sight_nw_value.setRange(0.0, 100.0)
+        self.sight_nw_value.setSingleStep(0.5)
+        self.sight_nw_value.setDecimals(2)
+        self.sight_nw_value.setValue(1.0)
+        nw_row.addWidget(self.sight_nw_value)
+        nw_row.addStretch(1)
+        outer.addLayout(nw_row)
+
+        # Soylent-as-fraction-of-final-cost (units only).
+        if not is_building:
+            self.soylent_cost_frac = QCheckBox(
+                "Soylent = the Soylent value above × final Cost "
+                "(instead of the vanilla-cost formula)")
+            outer.addWidget(self.soylent_cost_frac)
+        else:
+            self.soylent_cost_frac = None
+
         outer.addWidget(self._build_advanced(link_label))
         outer.addStretch(1)
 
@@ -158,12 +184,20 @@ class CategoryTab(QWidget):
             else:
                 setattr(r, attr, spin.value())
 
-        if (self.linkable and link_source is not None
-                and self.sight_equal_link is not None
-                and self.sight_equal_link.isChecked()):
+        sight_linked = (self.linkable and link_source is not None
+                        and self.sight_equal_link is not None
+                        and self.sight_equal_link.isChecked())
+        if sight_linked:
             r.sight_equal = link_source.sight_equal
+            r.sight_no_weapon_mode = link_source.sight_no_weapon_mode
+            r.sight_no_weapon_value = link_source.sight_no_weapon_value
         else:
             r.sight_equal = self.sight_equal.isChecked()
+            r.sight_no_weapon_mode = self.sight_nw_mode.currentData()
+            r.sight_no_weapon_value = self.sight_nw_value.value()
+
+        if self.soylent_cost_frac is not None and self.soylent_cost_frac.isChecked():
+            r.soylent_mode = "cost_fraction"
 
         # Cost scaling + TechLevel group.
         if link_source is not None and self._adv_linked():
@@ -191,6 +225,10 @@ class CategoryTab(QWidget):
             "sight_equal": self.sight_equal.isChecked(),
             "sight_equal_link": (self.sight_equal_link.isChecked()
                                  if self.sight_equal_link is not None else None),
+            "sight_nw_mode": self.sight_nw_mode.currentData(),
+            "sight_nw_value": self.sight_nw_value.value(),
+            "soylent_cost_frac": (self.soylent_cost_frac.isChecked()
+                                  if self.soylent_cost_frac is not None else None),
             "cost_mode": self.cost_mode.currentData(),
             "cost_base": self.cost_base.currentData(),
             "tl_recompute": self.tl_recompute.isChecked(),
@@ -210,6 +248,12 @@ class CategoryTab(QWidget):
         self.sight_equal.setChecked(bool(state.get("sight_equal", False)))
         if self.sight_equal_link is not None and state.get("sight_equal_link") is not None:
             self.sight_equal_link.setChecked(bool(state["sight_equal_link"]))
+        if "sight_nw_mode" in state:
+            self._set_combo(self.sight_nw_mode, state["sight_nw_mode"])
+        if "sight_nw_value" in state:
+            self.sight_nw_value.setValue(float(state["sight_nw_value"]))
+        if self.soylent_cost_frac is not None and state.get("soylent_cost_frac") is not None:
+            self.soylent_cost_frac.setChecked(bool(state["soylent_cost_frac"]))
         self._set_combo(self.cost_mode, state.get("cost_mode", "flat"))
         self._set_combo(self.cost_base, state.get("cost_base", "vanilla"))
         self.tl_recompute.setChecked(bool(state.get("tl_recompute", False)))

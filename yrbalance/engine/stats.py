@@ -22,7 +22,7 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                        reg_dmg, reg_rng, reg_rof,
                        eli_dmg, eli_rng, eli_rof,
                        snapshots, registry, speed_max=None, soylent_ratio=1.0,
-                       progress=None, range_threshold=None):
+                       progress=None, range_threshold=None, do_soylent=True):
     if progress:
         progress(f"  [Pass 1] {label} ({len(type_list)} units)...")
     for t in type_list:
@@ -30,9 +30,10 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
             apply_tag_ratio(lines, section_map, t, "Strength", strength_ratio)
         if cost_ratio != 1.0:
             apply_tag_ratio(lines, section_map, t, "Cost", cost_ratio)
-        # Soylent derives from vanilla cost * cost_ratio * soylent_ratio.
+        # Legacy soylent derives from vanilla cost * cost_ratio * soylent_ratio.
+        # (The cost-fraction mode is handled by the pipeline after cost scaling.)
         vanilla_cost = get_val(section_map, t, "Cost")
-        if vanilla_cost and (cost_ratio != 1.0 or soylent_ratio != 1.0):
+        if do_soylent and vanilla_cost and (cost_ratio != 1.0 or soylent_ratio != 1.0):
             apply_soylent(lines, section_map, t, vanilla_cost, cost_ratio, soylent_ratio)
         if speed_ratio != 1.0 or speed_max is not None:
             apply_speed_capped(lines, section_map, t, speed_ratio, speed_max)
