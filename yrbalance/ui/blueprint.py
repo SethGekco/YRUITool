@@ -28,10 +28,12 @@ KEY_LABEL = {
 }
 LABEL_KEY = {v.lower(): k for k, v in KEY_LABEL.items()}
 
-FORM_ORDER = ["general", "gameplay", "superweapons"]
-FORM_LABELS = {"general": "General", "gameplay": "Gameplay",
-               "superweapons": "SuperWeapons"}
+FORM_ORDER = ["general", "ai", "gameplay"]
+FORM_LABELS = {"general": "General", "ai": "AI", "gameplay": "Gameplay",
+               "superweapons": "SuperWeapons"}  # superweapons kept for old blueprints
 FORM_LABEL_TO_KEY = {v.lower(): k for k, v in FORM_LABELS.items()}
+
+_GLOBAL_CAT_KEYS = ["inf", "veh", "nav", "air", "bld", "def"]
 
 
 def _fmt(v):
@@ -111,6 +113,13 @@ def serialize(category_states, form_states, script_text, name="Untitled",
 
     if global_state:
         out.append("[Global]")
+        ratios = global_state.get("ratios", {})
+        out.append(f"Ratio.Strength = {_fmt(ratios.get('strength', 1.0))}")
+        out.append(f"Ratio.Cost = {_fmt(ratios.get('cost', 1.0))}")
+        out.append(f"Ratio.Speed = {_fmt(ratios.get('speed', 1.0))}")
+        apply_to = global_state.get("apply_to", {})
+        checked = [k for k in _GLOBAL_CAT_KEYS if apply_to.get(k, True)]
+        out.append("ApplyTo = " + (",".join(checked) if checked else "none"))
         out.append(f"RangeProtect = {_yesno(global_state.get('range_protect', True))}")
         out.append(f"RangeThreshold = {_fmt(global_state.get('range_threshold', 3.0))}")
         out.append("")
@@ -184,13 +193,23 @@ def _parse_global_line(state, line):
     if not sep:
         return
     kl = k.strip().lower()
+    v = v.strip()
     if kl == "rangeprotect":
         state["range_protect"] = _is_yes(v)
     elif kl == "rangethreshold":
         try:
-            state["range_threshold"] = float(v.strip())
+            state["range_threshold"] = float(v)
         except ValueError:
             pass
+    elif kl.startswith("ratio."):
+        which = kl.split(".", 1)[1]
+        try:
+            state.setdefault("ratios", {})[which] = float(v)
+        except ValueError:
+            pass
+    elif kl == "applyto":
+        checked = {t.strip().lower() for t in v.split(",")}
+        state["apply_to"] = {key: (key in checked) for key in _GLOBAL_CAT_KEYS}
 
 
 def _parse_category_line(state, line):

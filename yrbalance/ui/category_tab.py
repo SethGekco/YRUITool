@@ -104,6 +104,10 @@ class CategoryTab(QWidget):
         self.sight_nw_value.setSingleStep(0.5)
         self.sight_nw_value.setDecimals(2)
         self.sight_nw_value.setValue(1.0)
+        self.sight_nw_value.setEnabled(False)  # default mode is "leave"
+        self.sight_nw_mode.currentIndexChanged.connect(
+            lambda: self.sight_nw_value.setEnabled(
+                self.sight_nw_mode.currentData() != "leave"))
         nw_row.addWidget(self.sight_nw_value)
         nw_row.addStretch(1)
         outer.addLayout(nw_row)

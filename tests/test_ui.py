@@ -155,6 +155,29 @@ def main(path):
     win.global_tab.range_protect.setChecked(True)
     win.global_tab.range_threshold.setValue(3.0)
 
+    # ── Tab order/naming ─────────────────────────────────────────────────────
+    labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
+    expected = ["Global", "General", "AI", "Gameplay", "Infantry", "Vehicles",
+                "Naval", "Aircraft", "Structures", "Defenses", "History",
+                "Custom Script"]
+    struct_ok = labels == expected
+    print(f"tab order/naming: {struct_ok}  {'OK' if struct_ok else 'FAIL ' + str(labels)}")
+    ok = ok and struct_ok
+
+    # ── Global ratios compound into checked categories ───────────────────────
+    win.global_tab.g_spins["strength"].setValue(1.5)
+    win.category_tabs["inf"].spins["strength"].setValue(2.0)
+    comp = win.collect_spec().categories["inf"].strength
+    win.global_tab.cat_checks["inf"].setChecked(False)
+    comp_off = win.collect_spec().categories["inf"].strength
+    comp_ok = abs(comp - 3.0) < 1e-9 and abs(comp_off - 2.0) < 1e-9
+    print(f"global compounding: checked=2.0*1.5={comp}, unchecked={comp_off}  "
+          f"{'OK' if comp_ok else 'FAIL'}")
+    ok = ok and comp_ok
+    win.global_tab.cat_checks["inf"].setChecked(True)
+    win.global_tab.g_spins["strength"].setValue(1.0)
+    win.category_tabs["inf"].spins["strength"].setValue(1.0)
+
     # ── Blueprint round-trip ─────────────────────────────────────────────────
     # Current state: inf.cost=0.5, nav.strength unlinked=3.0, bld tl_recompute,
     # general has BuildSpeed row, script box has "Elite = yes".
@@ -186,7 +209,7 @@ def main(path):
 
     # Apply infantry-only (cost x0.5) to the working copy; twice (idempotent).
     win3.category_tabs["inf"].spins["cost"].setValue(0.5)
-    win3.tabs.setCurrentIndex(0)  # Infantry
+    win3.tabs.setCurrentWidget(win3.category_tabs["inf"])
     win3.apply_working_current()
     c_after_1 = _cur(win3.session.lines, probe2, "cost")
     win3.apply_working_current()   # re-apply must NOT compound

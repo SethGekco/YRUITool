@@ -19,7 +19,7 @@ from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
-from .script_panel import ScriptPanel, show_script_help
+from .script_panel import ScriptPanel, ScriptTab, show_script_help
 
 # (key, label, is_building, linkable, link_label)
 TECHNO_TABS = [
@@ -61,52 +61,63 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.addLayout(self._build_toolbar())
 
-        splitter = QSplitter(Qt.Vertical)
-
         self.tabs = QTabWidget()
+
+        # Build the tab widgets.
+        self.global_tab = GlobalTab()
         self.category_tabs = {}
-        for key, label, is_building, linkable, link_label in TECHNO_TABS:
-            tab = CategoryTab(key, is_building=is_building, linkable=linkable,
-                              link_label=link_label or "Vehicles")
-            self.category_tabs[key] = tab
-            self.tabs.addTab(tab, label)
+        for key, _label, is_building, linkable, link_label in TECHNO_TABS:
+            self.category_tabs[key] = CategoryTab(
+                key, is_building=is_building, linkable=linkable,
+                link_label=link_label or "Vehicles")
 
         # Section-form tabs (structured tag edits on a single section).
-        self.form_tabs = {}
-        self.form_tabs["general"] = SectionFormTab(
-            "General",
-            seed_rows=[("BuildSpeed", ""), ("GrowthRate", ""),
-                       ("RepairStep", ""), ("RepairPercent", ""),
-                       ("VeteranRatio", "")],
-            help_text="Global [General] tags. Tick a row and set a value "
-                      "(literal like 0.9, or a formula like BuildSpeed * 0.9).")
-        self.form_tabs["gameplay"] = SectionFormTab(
-            "General",
-            seed_rows=[("AIHateDelay", ""), ("BuildupTime", ""),
-                       ("PlacementDelay", "")],
-            help_text="Gameplay-pacing tags. Change the section if a tag lives "
-                      "elsewhere (e.g. CombatDamage).")
-        self.form_tabs["superweapons"] = SectionFormTab(
-            "",
-            seed_rows=[("RechargeTime", ""), ("Range", "")],
-            help_text="Set the section to a super-weapon (e.g. NUKE) and tweak its "
-                      "tags. Target several at once by comma-separating them "
-                      "(NUKE, IRONCURTAIN) — the same tags apply to each.")
-        self.tabs.addTab(self.form_tabs["general"], "General")
-        self.tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
-        self.tabs.addTab(self.form_tabs["superweapons"], "Super Weapons")
+        self.form_tabs = {
+            "general": SectionFormTab(
+                "General",
+                seed_rows=[("BuildSpeed", ""), ("GrowthRate", ""),
+                           ("RepairStep", ""), ("RepairPercent", ""),
+                           ("VeteranRatio", "")],
+                help_text="[General] tags. Tick a row and set a value (literal "
+                          "like 0.9, or a formula like BuildSpeed * 0.9). A "
+                          "full auto-populated list of [General] tags is planned."),
+            "ai": SectionFormTab(
+                "AI",
+                seed_rows=[("RelaxedStray", "3.0"), ("BaseBias", "2"),
+                           ("BaseDefenseDelay", "0.25"),
+                           ("AIAlternateProductionCreditCutoff", "1000")],
+                help_text="[AI] tags (and AI-relevant [General] tags — change the "
+                          "section as needed). See modenc.renegadeprojects.com/AI."),
+            "gameplay": SectionFormTab(
+                "CombatDamage",
+                seed_rows=[("BallisticScatter", ""), ("TreeStrength", "")],
+                help_text="Gameplay sections like [CombatDamage], [Radiation], "
+                          "etc. Change the section field to target another one."),
+        }
 
-        # Global: settings that span more than one category.
-        self.global_tab = GlobalTab()
-        self.tabs.addTab(self.global_tab, "Global")
-        splitter.addWidget(self.tabs)
+        self.history_tab = self._placeholder(
+            "History — a per-change log with individual undo, filtering, and a "
+            "stored vanilla reference is planned. For now, use File → Restore a "
+            "file to vanilla, and the session ticket next to your rules file.")
 
         self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
         self.script_panel.preview_requested.connect(self.preview_script)
-        splitter.addWidget(self.script_panel)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        root.addWidget(splitter)
+        self.script_tab = ScriptTab(self.script_panel)
+
+        # Add tabs in the requested order.
+        self.tabs.addTab(self.global_tab, "Global")
+        self.tabs.addTab(self.form_tabs["general"], "General")
+        self.tabs.addTab(self.form_tabs["ai"], "AI")
+        self.tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
+        self.tabs.addTab(self.category_tabs["inf"], "Infantry")
+        self.tabs.addTab(self.category_tabs["veh"], "Vehicles")
+        self.tabs.addTab(self.category_tabs["nav"], "Naval")
+        self.tabs.addTab(self.category_tabs["air"], "Aircraft")
+        self.tabs.addTab(self.category_tabs["bld"], "Structures")
+        self.tabs.addTab(self.category_tabs["def"], "Defenses")
+        self.tabs.addTab(self.history_tab, "History")
+        self.tabs.addTab(self.script_tab, "Custom Script")
+        root.addWidget(self.tabs)
 
         self.setCentralWidget(central)
         self._build_menu()
@@ -250,6 +261,16 @@ class MainWindow(QMainWindow):
         bar.addWidget(self.apply_btn)
         return bar
 
+    def _placeholder(self, text):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("color: gray;")
+        lay.addWidget(label)
+        return w
+
     def _change_profile(self, index):
         which = self.profile_box.itemData(index)
         self.config = (ModConfig.dying_earth() if which == "dying_earth"
@@ -293,6 +314,15 @@ class MainWindow(QMainWindow):
             if only_keys is not None and key not in only_keys:
                 continue
             cats[key] = tab.ratios(link_source=link_sources.get(key))
+
+        # Global ratios compound (multiply) into each checked category.
+        g = self.global_tab.global_ratios()
+        for key, r in cats.items():
+            if self.global_tab.applies_to(key):
+                r.strength *= g["strength"]
+                r.cost *= g["cost"]
+                r.speed *= g["speed"]
+
         return BalanceSpec(categories=cats,
                            range_threshold=self.global_tab.range_threshold_value())
 
@@ -384,8 +414,9 @@ class MainWindow(QMainWindow):
             "Note: sections/tags added by generator scripts are not removed.")
 
     def collect_scripts(self):
-        """All script text to run: the form tabs first, then the custom box."""
-        scripts = [tab.to_script_text() for tab in self.form_tabs.values()]
+        """All script text to run: the form tabs (General/AI/Gameplay), then the box."""
+        scripts = [self.form_tabs[k].to_script_text()
+                   for k in ("general", "ai", "gameplay")]
         scripts.append(self.script_panel.text())
         return [s for s in scripts if s and s.strip()]
 

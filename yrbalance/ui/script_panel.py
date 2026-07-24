@@ -9,10 +9,11 @@ save, and calls preview via the controller.
 
 import os
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
     QComboBox, QFileDialog, QMessageBox, QDialog, QTextBrowser, QDialogButtonBox,
+    QSplitter,
 )
 from PySide6.QtGui import QFont
 
@@ -143,6 +144,42 @@ class ScriptPanel(QWidget):
 
     def show_help(self):
         show_script_help(self)
+
+
+class ScriptTab(QWidget):
+    """The Custom Script tab: a manual pane (resizable / hideable) above the
+    script editor, split by a draggable handle."""
+
+    def __init__(self, script_panel, parent=None):
+        super().__init__(parent)
+        self.script_panel = script_panel
+
+        outer = QVBoxLayout(self)
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("Manual and glossary"))
+        bar.addStretch(1)
+        self.toggle_btn = QPushButton("Hide manual")
+        self.toggle_btn.clicked.connect(self._toggle_manual)
+        bar.addWidget(self.toggle_btn)
+        outer.addLayout(bar)
+
+        self.splitter = QSplitter(Qt.Vertical)
+        self.manual = QTextBrowser()
+        self.manual.setHtml(SCRIPT_HELP_HTML)
+        self.splitter.addWidget(self.manual)
+        self.splitter.addWidget(script_panel)
+        self.splitter.setCollapsible(0, True)
+        self.splitter.setStretchFactor(0, 2)
+        self.splitter.setStretchFactor(1, 3)
+        outer.addWidget(self.splitter, 1)
+
+    def _toggle_manual(self):
+        if self.manual.isVisible():
+            self.manual.hide()
+            self.toggle_btn.setText("Show manual")
+        else:
+            self.manual.show()
+            self.toggle_btn.setText("Hide manual")
 
 
 def show_script_help(parent):
