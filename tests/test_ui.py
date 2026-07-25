@@ -39,7 +39,7 @@ def main(path):
     veh.spins["cost"].setValue(0.5)
     veh.spins["strength"].setValue(2.0)
     # Naval: keep cost linked (inherits 0.5), unlink strength and set 3.0.
-    nav.links["strength"].setChecked(False)
+    nav.link_checks["strength"].setChecked(False)
     nav.spins["strength"].setValue(3.0)
 
     spec = win.collect_spec()

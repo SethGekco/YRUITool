@@ -14,9 +14,11 @@ reads/writes those dicts from/to its widgets.
 import datetime
 
 CATEGORY_ORDER = ["inf", "veh", "nav", "air", "bld", "def"]
-CATEGORY_LABELS = {"inf": "Infantry", "veh": "Vehicle", "nav": "Naval",
-                   "air": "Aircraft", "bld": "Building", "def": "Defensive"}
+CATEGORY_LABELS = {"inf": "Infantry", "veh": "Vehicles", "nav": "Naval",
+                   "air": "Aircraft", "bld": "Structures", "def": "Defenses"}
 LABEL_TO_CAT = {v.lower(): k for k, v in CATEGORY_LABELS.items()}
+# Tolerate the older display names in existing blueprints.
+LABEL_TO_CAT.update({"vehicle": "veh", "building": "bld", "defensive": "def"})
 
 KEY_LABEL = {
     "strength": "Strength", "cost": "Cost", "speed": "Speed",
@@ -50,12 +52,10 @@ def _is_yes(s):
 
 
 def _default_category_state():
-    return {"fields": {}, "links": {}, "sight_equal": False,
-            "sight_equal_link": None, "sight_nw_mode": "leave",
-            "sight_nw_value": 1.0, "soylent_cost_frac": None,
-            "cost_mode": "flat", "cost_base": "vanilla",
-            "tl_recompute": False, "tl_write": False, "tl_use": False,
-            "adv_link": None}
+    return {"same_as": None, "links": {}, "fields": {}, "sight_equal": False,
+            "sight_nw_mode": "leave", "sight_nw_value": 1.0,
+            "soylent_cost_frac": None, "cost_mode": "flat", "cost_base": "vanilla",
+            "tl_recompute": False, "tl_write": False, "tl_use": False}
 
 
 # ── Serialize ────────────────────────────────────────────────────────────────
@@ -74,28 +74,21 @@ def serialize(category_states, form_states, script_text, name="Untitled",
         if state is None:
             continue
         out.append(f"[{CATEGORY_LABELS[cat_key]}]")
-        linkable = bool(state.get("links"))
+        out.append(f"SameAs = {state.get('same_as') or 'none'}")
         for attr, val in state["fields"].items():
-            label = KEY_LABEL.get(attr, attr)
-            if linkable and state["links"].get(attr):
-                out.append(f"{label} = link")
-            else:
-                out.append(f"{label} = {_fmt(val)}")
-        if linkable and state.get("sight_equal_link"):
-            out.append("Sight.Equal = link")
-        else:
-            out.append(f"Sight.Equal = {_yesno(state['sight_equal'])}")
+            out.append(f"{KEY_LABEL.get(attr, attr)} = {_fmt(val)}")
+        out.append(f"CostMode = {state.get('cost_mode', 'flat')}")
+        out.append(f"CostBase = {state.get('cost_base', 'vanilla')}")
+        out.append(f"Sight.Equal = {_yesno(state.get('sight_equal', False))}")
         out.append(f"Sight.NoWeapon = {state.get('sight_nw_mode', 'leave')}")
         out.append(f"Sight.NoWeaponValue = {_fmt(state.get('sight_nw_value', 1.0))}")
         if state.get("soylent_cost_frac") is not None:
             out.append(f"Soylent.CostFraction = {_yesno(state['soylent_cost_frac'])}")
-        if linkable:
-            out.append(f"AdvGroup = {'link' if state.get('adv_link') else 'own'}")
-        out.append(f"CostMode = {state['cost_mode']}")
-        out.append(f"CostBase = {state['cost_base']}")
-        out.append(f"TL.Recompute = {_yesno(state['tl_recompute'])}")
-        out.append(f"TL.Write = {_yesno(state['tl_write'])}")
-        out.append(f"TL.Use = {_yesno(state['tl_use'])}")
+        out.append(f"TL.Recompute = {_yesno(state.get('tl_recompute', False))}")
+        out.append(f"TL.Write = {_yesno(state.get('tl_write', False))}")
+        out.append(f"TL.Use = {_yesno(state.get('tl_use', False))}")
+        for lid, checked in state.get("links", {}).items():
+            out.append(f"Link.{lid} = {_yesno(checked)}")
         out.append("")
 
     for form_key in FORM_ORDER:
@@ -220,11 +213,10 @@ def _parse_category_line(state, line):
         return
     k, v = k.strip(), v.strip()
     kl = k.lower()
-    if kl == "sight.equal":
-        if v.lower() == "link":
-            state["sight_equal_link"] = True
-        else:
-            state["sight_equal"] = _is_yes(v)
+    if kl == "sameas":
+        state["same_as"] = None if v.lower() in ("none", "") else v.lower()
+    elif kl == "sight.equal":
+        state["sight_equal"] = _is_yes(v)
     elif kl == "sight.noweapon":
         state["sight_nw_mode"] = v
     elif kl == "sight.noweaponvalue":
@@ -234,8 +226,6 @@ def _parse_category_line(state, line):
             pass
     elif kl == "soylent.costfraction":
         state["soylent_cost_frac"] = _is_yes(v)
-    elif kl == "advgroup":
-        state["adv_link"] = (v.lower() == "link")
     elif kl == "costmode":
         state["cost_mode"] = v
     elif kl == "costbase":
@@ -246,16 +236,13 @@ def _parse_category_line(state, line):
         state["tl_write"] = _is_yes(v)
     elif kl == "tl.use":
         state["tl_use"] = _is_yes(v)
+    elif kl.startswith("link."):
+        state["links"][kl.split(".", 1)[1]] = _is_yes(v)
     else:
         attr = LABEL_KEY.get(kl)
-        if attr is None:
-            return
-        if v.lower() == "link":
-            state["links"][attr] = True
-        else:
+        if attr is not None:
             try:
                 state["fields"][attr] = float(v)
-                state["links"][attr] = False
             except ValueError:
                 pass
 

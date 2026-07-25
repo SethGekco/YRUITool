@@ -21,14 +21,14 @@ from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
 from .script_panel import ScriptPanel, ScriptTab, show_script_help
 
-# (key, label, is_building, linkable, link_label)
+# (key, display label, is_building, linkable, link_label)
 TECHNO_TABS = [
     ("inf", "Infantry", False, False, ""),
-    ("veh", "Vehicle", False, False, ""),
+    ("veh", "Vehicles", False, False, ""),
     ("nav", "Naval", False, True, "Vehicles"),
     ("air", "Aircraft", False, False, ""),
-    ("bld", "Building", True, False, ""),
-    ("def", "Defensive", True, True, "Buildings"),
+    ("bld", "Structures", True, False, ""),
+    ("def", "Defenses", True, True, "Structures"),
 ]
 
 
@@ -70,6 +70,13 @@ class MainWindow(QMainWindow):
             self.category_tabs[key] = CategoryTab(
                 key, is_building=is_building, linkable=linkable,
                 link_label=link_label or "Vehicles")
+        # Populate each tab's "Same as X" dropdown with the other categories.
+        cat_display = [(k, lbl) for k, lbl, *_ in TECHNO_TABS]
+        for key, tab in self.category_tabs.items():
+            tab.set_link_options([(k, lbl) for k, lbl in cat_display if k != key])
+        # Defaults: Naval inherits Vehicles, Defenses inherits Structures.
+        self.category_tabs["nav"].set_link_source("veh")
+        self.category_tabs["def"].set_link_source("bld")
 
         # Section-form tabs (structured tag edits on a single section).
         self.form_tabs = {
@@ -305,15 +312,17 @@ class MainWindow(QMainWindow):
             f"Loaded {len(self.section_map)} sections from {os.path.basename(path)}.")
 
     def collect_spec(self, only_keys=None):
-        # Compute link sources first (Naval <- Vehicle, Defensive <- Building).
-        veh_ratios = self.category_tabs["veh"].ratios()
-        bld_ratios = self.category_tabs["bld"].ratios()
-        link_sources = {"nav": veh_ratios, "def": bld_ratios}
+        # Pass 1: each tab's own ("independent") ratios, used as link sources.
+        self_ratios = {key: tab.ratios(link_source=None)
+                       for key, tab in self.category_tabs.items()}
+        # Pass 2: resolve each tab against its selected "Same as X" source.
         cats = {}
         for key, tab in self.category_tabs.items():
             if only_keys is not None and key not in only_keys:
                 continue
-            cats[key] = tab.ratios(link_source=link_sources.get(key))
+            src_key = tab.link_source_key()
+            cats[key] = tab.ratios(link_source=self_ratios.get(src_key)
+                                   if src_key else None)
 
         # Global ratios compound (multiply) into each checked category.
         g = self.global_tab.global_ratios()
