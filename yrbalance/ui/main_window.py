@@ -19,7 +19,41 @@ from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
+from .dynamic_section_tab import DynamicSectionTab
 from .script_panel import ScriptPanel, ScriptTab, show_script_help
+
+VOICE_RESTORE_SCRIPT = """\
+[CLNT]
+VoiceSelect = ClintSelect
+VoiceMove = ClintMove
+VoiceAttack = ClintAttackCommand
+VoiceFeedback = ClintFear
+VoiceSpecialAttack = ClintMove
+DieSound = ClintDie
+
+[ARND]
+VoiceSelect = ArnoldSelect
+VoiceMove = ArnoldMove
+VoiceAttack = ArnoldAttackCommand
+VoiceFeedback = ArnoldFear
+VoiceSpecialAttack = ArnoldMove
+DieSound = ArnoldDie
+
+[STLN]
+VoiceSelect = SlySelect
+VoiceMove = SlyMove
+VoiceAttack = SlyAttackCommand
+VoiceFeedback = SlyFear
+VoiceSpecialAttack = SlyMove
+DieSound = SlyDie
+"""
+
+# [General] tags to hide from the General tab (obsolete or hardcoded in RA2/YR).
+# Intentionally small for now — to be curated against ModENC.
+GENERAL_EXCLUDE = set()
+
+GAMEPLAY_SECTIONS = ["CombatDamage", "Radiation", "ElevationModel", "AudioVisual",
+                     "SpecialWeapons", "CrateRules", "JumpjetControls"]
 
 # (key, display label, is_building, linkable, link_label)
 TECHNO_TABS = [
@@ -78,16 +112,15 @@ class MainWindow(QMainWindow):
         self.category_tabs["nav"].set_link_source("veh")
         self.category_tabs["def"].set_link_source("bld")
 
-        # Section-form tabs (structured tag edits on a single section).
+        # General / Gameplay auto-populate from the loaded rules; AI is a small
+        # curated form (spans [AI] plus some [General] tags).
         self.form_tabs = {
-            "general": SectionFormTab(
-                "General",
-                seed_rows=[("BuildSpeed", ""), ("GrowthRate", ""),
-                           ("RepairStep", ""), ("RepairPercent", ""),
-                           ("VeteranRatio", "")],
-                help_text="[General] tags. Tick a row and set a value (literal "
-                          "like 0.9, or a formula like BuildSpeed * 0.9). A "
-                          "full auto-populated list of [General] tags is planned."),
+            "general": DynamicSectionTab(
+                sections=["General"], editable_section=False,
+                exclude=GENERAL_EXCLUDE,
+                help_text="Every [General] tag from your loaded rules, defaulting "
+                          "to the imported value. Tick a row (or edit a value, "
+                          "which auto-ticks it) to apply it."),
             "ai": SectionFormTab(
                 "AI",
                 seed_rows=[("RelaxedStray", "3.0"), ("BaseBias", "2"),
@@ -95,11 +128,15 @@ class MainWindow(QMainWindow):
                            ("AIAlternateProductionCreditCutoff", "1000")],
                 help_text="[AI] tags (and AI-relevant [General] tags — change the "
                           "section as needed). See modenc.renegadeprojects.com/AI."),
-            "gameplay": SectionFormTab(
-                "CombatDamage",
-                seed_rows=[("BallisticScatter", ""), ("TreeStrength", "")],
-                help_text="Gameplay sections like [CombatDamage], [Radiation], "
-                          "etc. Change the section field to target another one."),
+            "gameplay": DynamicSectionTab(
+                sections=GAMEPLAY_SECTIONS, editable_section=True,
+                help_text="Non-TechnoType gameplay sections. Pick or type a section "
+                          "([CombatDamage], [Radiation], a super-weapon, …); its "
+                          "tags load from your rules.",
+                extra_toggles=[(
+                    "voices",
+                    "Restore hero voices to vanilla (CLNT / ARND / STLN)",
+                    VOICE_RESTORE_SCRIPT)]),
         }
 
         self.history_tab = self._placeholder(
@@ -305,6 +342,10 @@ class MainWindow(QMainWindow):
         self.apply_btn.setEnabled(True)
         self.preview_btn.setEnabled(True)
         self._refresh_working_state()
+        # Populate the dynamic (General / Gameplay) tabs from the loaded rules.
+        for tab in self.form_tabs.values():
+            if isinstance(tab, DynamicSectionTab):
+                tab.set_rules(self.section_map)
         self.settings.setValue("last_rules", path)
         self.reload_last_action.setEnabled(True)
         self.reload_last_action.setText(f"Reload {os.path.basename(path)}")

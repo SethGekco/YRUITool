@@ -104,14 +104,34 @@ def main(path):
                  if get_val(sm0, t, "Cost", "").isdigit() and int(get_val(sm0, t, "Cost")) > 1)
     van_cost = int(get_val(sm0, probe, "Cost"))
 
-    # A form tab compiles to a script and is gathered by collect_scripts.
-    gen = win.form_tabs["general"]
-    gen.section_edit.setText("General")
-    gen.add_row("BuildSpeed", "0.9", used=True)
+    # The AI form tab compiles to a script and is gathered by collect_scripts.
+    ai = win.form_tabs["ai"]
+    ai.section_edit.setText("AI")
+    ai.add_row("RelaxedStray", "3.5", used=True)
     scripts = win.collect_scripts()
-    form_ok = any("[General]" in s and "BuildSpeed" in s for s in scripts)
-    print(f"form tab -> script: {form_ok}  {'OK' if form_ok else 'FAIL'}")
+    form_ok = any("[AI]" in s and "RelaxedStray" in s for s in scripts)
+    print(f"AI form tab -> script: {form_ok}  {'OK' if form_ok else 'FAIL'}")
     ok = ok and form_ok
+
+    # The dynamic General tab populates from the loaded rules and compiles.
+    gen = win.form_tabs["general"]
+    gen.set_rules(sm0)
+    gen_rows = len(gen._rows)
+    if gen._rows:
+        gen._rows[0][0].setChecked(True)  # tick the first tag
+    gen_script = gen.to_script_text()
+    dyn_ok = gen_rows > 50 and "[General]" in gen_script
+    print(f"dynamic General tab: {gen_rows} tags populated, compiles={('[General]' in gen_script)}  "
+          f"{'OK' if dyn_ok else 'FAIL'}")
+    ok = ok and dyn_ok
+
+    # Gameplay voice-restore toggle emits the CLNT/ARND/STLN script.
+    gp = win.form_tabs["gameplay"]
+    gp.toggles["voices"][0].setChecked(True)
+    voice_ok = "[CLNT]" in gp.to_script_text() and "ClintSelect" in gp.to_script_text()
+    print(f"voice-restore toggle: {voice_ok}  {'OK' if voice_ok else 'FAIL'}")
+    ok = ok and voice_ok
+    gp.toggles["voices"][0].setChecked(False)
 
     with tempfile.TemporaryDirectory() as d:
         out = os.path.join(d, "rulesmd_edited.ini")
@@ -190,7 +210,7 @@ def main(path):
     bp_ok = (s2.categories["inf"].cost == 0.5
              and n2.strength == 3.0                       # unlinked override survived
              and s2.categories["bld"].tl_recompute
-             and any("BuildSpeed" in s for s in win2.collect_scripts())
+             and any("RelaxedStray" in s for s in win2.collect_scripts())
              and "Elite" in win2.script_panel.text()
              and win2.global_tab.range_threshold.value() == 4.25)
     print(f"blueprint round-trip: {bp_ok}  {'OK' if bp_ok else 'FAIL'}")

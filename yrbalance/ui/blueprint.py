@@ -102,6 +102,8 @@ def serialize(category_states, form_states, script_text, name="Untitled",
                 continue
             prefix = "" if used else "#"
             out.append(f"{prefix}{tag} = {value}")
+        for tid, checked in fstate.get("toggles", {}).items():
+            out.append(f"Toggle.{tid} = {_yesno(checked)}")
         out.append("")
 
     if global_state:
@@ -152,7 +154,7 @@ def parse(text):
             elif low.startswith("form."):
                 key = FORM_LABEL_TO_KEY.get(inner[5:].strip().lower(),
                                             inner[5:].strip().lower())
-                form_states[key] = {"section": "", "rows": []}
+                form_states[key] = {"section": "", "rows": [], "toggles": {}}
                 mode = ("form", key)
             elif low in LABEL_TO_CAT:
                 cat = LABEL_TO_CAT[low]
@@ -258,5 +260,7 @@ def _parse_form_line(fstate, line):
     k, v = k.strip(), v.strip()
     if k.lower() == "section":
         fstate["section"] = v
+    elif k.lower().startswith("toggle."):
+        fstate.setdefault("toggles", {})[k.split(".", 1)[1]] = _is_yes(v)
     elif k:
         fstate["rows"].append((used, k, v))
