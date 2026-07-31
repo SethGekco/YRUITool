@@ -20,6 +20,7 @@ from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
 from .dynamic_section_tab import DynamicSectionTab
+from .history_tab import HistoryTab
 from .script_panel import ScriptPanel, ScriptTab, show_script_help
 
 VOICE_RESTORE_SCRIPT = """\
@@ -89,6 +90,7 @@ class MainWindow(QMainWindow):
         self.source_path = None
         self.out_path = None
         self.section_map = None
+        self.lines = None    # loaded rules lines (for the History tab)
         self.session = None  # controller.WorkingSession for the hybrid apply flow
 
         central = QWidget()
@@ -139,10 +141,7 @@ class MainWindow(QMainWindow):
                     VOICE_RESTORE_SCRIPT)]),
         }
 
-        self.history_tab = self._placeholder(
-            "History — a per-change log with individual undo, filtering, and a "
-            "stored vanilla reference is planned. For now, use File → Restore a "
-            "file to vanilla, and the session ticket next to your rules file.")
+        self.history_tab = HistoryTab()
 
         self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
         self.script_panel.preview_requested.connect(self.preview_script)
@@ -330,7 +329,7 @@ class MainWindow(QMainWindow):
 
     def _load_rules_path(self, path):
         try:
-            _lines, self.section_map = controller.load_rules(path)
+            self.lines, self.section_map = controller.load_rules(path)
         except OSError as e:
             QMessageBox.critical(self, "Load", f"Could not read:\n{e}")
             return
@@ -346,7 +345,27 @@ class MainWindow(QMainWindow):
         for tab in self.form_tabs.values():
             if isinstance(tab, DynamicSectionTab):
                 tab.set_rules(self.section_map)
+        # History tab: scan the loaded rules for tool-annotated changes.
+        self.history_tab.set_rules(self.lines, self.section_map, self.config)
+        self._archive_rules(path)
         self.settings.setValue("last_rules", path)
+
+    def _archive_rules(self, path):
+        """Keep a copy of the loaded rules as a historical record (once per file)."""
+        try:
+            import hashlib
+            archive_dir = os.path.join(os.path.expanduser("~"),
+                                       ".yrbalancetool", "history")
+            os.makedirs(archive_dir, exist_ok=True)
+            with open(path, "rb") as f:
+                digest = hashlib.sha256(f.read()).hexdigest()[:8]
+            base = os.path.splitext(os.path.basename(path))[0]
+            dest = os.path.join(archive_dir, f"{base}_{digest}.ini")
+            if not os.path.exists(dest):
+                with open(path, "rb") as src, open(dest, "wb") as out:
+                    out.write(src.read())
+        except OSError:
+            pass  # archiving is best-effort
         self.reload_last_action.setEnabled(True)
         self.reload_last_action.setText(f"Reload {os.path.basename(path)}")
         self.statusBar().showMessage(

@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from yrbalance.ui.main_window import MainWindow
@@ -249,6 +250,28 @@ def main(path):
     print(f"working copy save+discard: saved={saved_ok}, discarded={disc_ok}  "
           f"{'OK' if saved_ok and disc_ok else 'FAIL'}")
     ok = ok and saved_ok and disc_ok
+
+    # ── History tab: scan + per-change undo ──────────────────────────────────
+    from yrbalance.engine import (run_balance as _rb, BalanceSpec as _BS,
+                                  CategoryRatios as _CR)
+    hlines = parse_ini_lines(path)
+    hsm, _ = build_section_map(hlines)
+    _rb(hlines, hsm, _BS(categories={"inf": _CR(cost=0.5)}), win.config)
+    hsm2, _ = build_section_map(hlines)
+    win.history_tab.set_rules(hlines, hsm2, win.config)
+    n_changes = len(win.history_tab._changes)
+    tree = win.history_tab.tree
+    top = tree.topLevelItem(0)
+    leaf = top.child(0) if (top and top.childCount()) else None
+    undone = False
+    if leaf is not None:
+        win.history_tab._undo_item(leaf)
+        idx = leaf.data(0, Qt.UserRole)
+        undone = bool(win.history_tab._changes[idx].get("_reverted"))
+    hist_ok = n_changes > 0 and undone
+    print(f"history tab: {n_changes} changes scanned, undo works={undone}  "
+          f"{'OK' if hist_ok else 'FAIL'}")
+    ok = ok and hist_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
