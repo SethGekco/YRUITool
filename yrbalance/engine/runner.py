@@ -34,6 +34,7 @@ from .sections import (
     new_registration_state, register_in_list,
 )
 from .selectors import resolve_scope
+from .filters import FilterContext, filter_technos
 from .config import ModConfig
 from .formula import evaluate, looks_like_formula, strip_quotes, FormulaError
 from .techlevel import get_effective_tl
@@ -161,8 +162,9 @@ def _apply_tag_op(lines, section_map, target, op, subs, variables, annotate, res
 # ── Modify blocks ────────────────────────────────────────────────────────────
 
 def _run_modify_block(lines, section_map, block, subs_base, config, annotate,
-                      result, progress):
+                      result, progress, filter_ctx):
     technos = resolve_scope(section_map, block.scope, config)
+    technos = filter_technos(technos, block.filter, filter_ctx)
     touched = 0
     for name in technos:
         variables = _numeric_variables(section_map, name)
@@ -256,11 +258,15 @@ def _is_generated_product(src, pre, suf):
 
 
 def _run_generator_block(lines, section_map, block, subs_base, config,
-                         reg_state, result, progress):
+                         reg_state, result, progress, filter_ctx):
     pattern, foreach = _parse_gen_header(block.scope)
     guard_pre, guard_suf = _pattern_affixes(pattern, subs_base)
 
-    sources = resolve_scope(section_map, foreach, config) if foreach is not None else [None]
+    if foreach is not None:
+        sources = filter_technos(resolve_scope(section_map, foreach, config),
+                                 block.filter, filter_ctx)
+    else:
+        sources = [None]
 
     made = 0
     for src in sources:
@@ -387,16 +393,18 @@ def run_script(lines, section_map, script, config=None, param_values=None,
     subs_base = {**config_keywords(config), **params}
     annotate_default = not script.raw_mode
     reg_state = new_registration_state()
+    filter_ctx = FilterContext(section_map)
     result = RunResult()
     touched = 0
 
     for block in script.blocks:
         if block.is_generator:
             _run_generator_block(lines, section_map, block, subs_base, config,
-                                 reg_state, result, progress)
+                                 reg_state, result, progress, filter_ctx)
         else:
             touched += _run_modify_block(lines, section_map, block, subs_base,
-                                         config, annotate_default, result, progress)
+                                         config, annotate_default, result, progress,
+                                         filter_ctx)
 
     result.technos_touched = touched
     return result

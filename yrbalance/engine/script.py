@@ -13,6 +13,8 @@ clear error if asked to run one, so scripts stay forward-compatible.
 import re
 from dataclasses import dataclass, field
 
+from .filters import Filter, parse_condition
+
 
 class ScriptError(Exception):
     """Raised for malformed modifier scripts."""
@@ -31,6 +33,7 @@ class TargetBlock:
     ops: list = field(default_factory=list)
     is_generator: bool = False
     header: str = ""   # original header text (for generator parsing later)
+    filter: Filter = field(default_factory=Filter)  # INCLUDE/EXCLUDE conditions
 
 
 @dataclass
@@ -71,10 +74,30 @@ def parse_script(text):
     """Parse modifier-script text into a ModifierScript. Raises ScriptError."""
     script = ModifierScript()
     current = None
+    filter_mode = None  # None | "include" | "exclude"
 
     for i, raw_line in enumerate(text.splitlines(), start=1):
         line = raw_line.strip()
         if not line:
+            continue
+
+        # INCLUDE / EXCLUDE region markers.
+        mark = re.match(r"^\{\s*(/?)(exclude|include)\s*\}$", line, re.IGNORECASE)
+        if mark:
+            if current is None:
+                raise ScriptError(f"line {i}: {{{mark.group(2)}}} before any [scope]")
+            filter_mode = None if mark.group(1) == "/" else mark.group(2).lower()
+            continue
+
+        # Condition lines inside an INCLUDE/EXCLUDE region.
+        if filter_mode is not None and current is not None and not line.startswith("#"):
+            content = _strip_inline_comment(line)
+            if content:
+                cond = parse_condition(content)
+                if cond is not None:
+                    target = (current.filter.excludes if filter_mode == "exclude"
+                              else current.filter.includes)
+                    target.append(cond)
             continue
 
         # Metadata.
@@ -112,6 +135,7 @@ def parse_script(text):
                 scope=inner.lstrip("+").strip() if is_gen else inner,
                 is_generator=is_gen, header=inner)
             script.blocks.append(current)
+            filter_mode = None
             continue
 
         # Generator directive (only valid inside a generator block).

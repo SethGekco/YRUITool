@@ -127,6 +127,14 @@ from .script import (
     TagOp,
     ScriptError,
 )
+from .filters import (
+    Condition,
+    Filter,
+    FilterContext,
+    parse_condition,
+    evaluate as evaluate_condition,
+    filter_technos,
+)
 from .runner import (
     run_script,
     RunResult,
@@ -191,6 +199,9 @@ __all__ = [
     # script
     "parse_script", "load_script_file", "ModifierScript", "TargetBlock",
     "TagOp", "ScriptError",
+    # filters
+    "Condition", "Filter", "FilterContext", "parse_condition",
+    "evaluate_condition", "filter_technos",
     # runner
     "run_script", "RunResult", "RunError", "config_keywords",
     # pipeline

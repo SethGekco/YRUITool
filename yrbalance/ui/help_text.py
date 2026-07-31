@@ -54,6 +54,29 @@ to later formulas (so <code>Soylent = Cost * 0.5</code> uses the new Cost).</li>
 #param: factor = 100    ; a fill-in value, used as {factor}
 #raw: true              ; write plain values (no ; vanilla= annotation)</pre>
 
+<h3>Filtering — INCLUDE / EXCLUDE</h3>
+<p>Narrow which technos in the scope a block touches. Put an
+<code>{EXCLUDE}…{/EXCLUDE}</code> or <code>{INCLUDE}…{/INCLUDE}</code> region
+anywhere in the block (top, middle, or bottom) with one condition per line:</p>
+<pre>[$INFANTRY]
+{EXCLUDE}
+TechLevel = -1        ; exactly -1
+TechLevel = &lt;1         ; less than 1 (0, -1, …)  — also &gt; &lt;= &gt;=
+BuildLimit = 0        ; exactly 0
+BuildLimit = !        ; has a BuildLimit at all
+Prerequisite = dummy  ; unbuildable (also 'impossible')
+Prerequisite = NeutralTechBuildings   ; needs a [General] neutral tech building
+Primary = M60         ; primary weapon is M60
+[ADOG]                ; this specific section
+{/EXCLUDE}
+Elite = yes</pre>
+<ul>
+<li><b>EXCLUDE</b> drops a techno that matches <i>any</i> listed condition.</li>
+<li><b>INCLUDE</b> is a whitelist: a techno is kept only if it matches at least
+one condition. Several regions stack.</li>
+<li>Where the same tag is written more than once, the <b>last</b> value wins.</li>
+</ul>
+
 <h3>Generators (advanced — make new sections)</h3>
 <p>Host squads, platforms, AttachEffects, etc. use a <code>[+ PATTERN from
 SCOPE]</code> header with <code>@clone</code>, <code>@emit</code>,
