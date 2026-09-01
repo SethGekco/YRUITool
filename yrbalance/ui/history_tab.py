@@ -114,6 +114,12 @@ class HistoryTab(QWidget):
             for idx, ch in groups[gval]:
                 self._add_leaf(parent, idx, ch)
         self.tree.expandAll()
+        if not self._changes:
+            self.status.setText(
+                "No YRBalanceTool edits found in this file yet. History fills in "
+                "after you Apply changes (or when you load a file the tool has "
+                "already edited — it reads the '; vanilla=' annotations).")
+            return
         reverted = sum(1 for c in self._changes if c.get("_reverted"))
         self.status.setText(
             f"{total} change(s) shown, {len(self._changes)} total, "

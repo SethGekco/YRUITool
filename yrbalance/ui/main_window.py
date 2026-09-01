@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QApplication, QLineEdit,
 )
 
-from ..engine import ModConfig, BalanceSpec, parse_ini_lines, restore_vanilla
+from ..engine import (
+    ModConfig, BalanceSpec, parse_ini_lines, build_section_map, restore_vanilla,
+)
 from . import controller, blueprint
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
@@ -569,6 +571,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
             return
         self._refresh_working_state()
+        # Reflect the applied edits in the History tab.
+        try:
+            sm, _ = build_section_map(session.lines)
+            self.history_tab.set_rules(session.lines, sm, self.config)
+        except Exception:
+            pass
         self.statusBar().showMessage(
             f"Applied {label} to working copy — {session.change_count()} changed "
             f"lines, unsaved. Save it from the Apply menu.")
@@ -679,6 +687,13 @@ class MainWindow(QMainWindow):
         except Exception as e:  # surface engine/script errors to the user
             QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
             return
+
+        # Refresh the History tab from the file we just wrote.
+        try:
+            olines, osm = controller.load_rules(self.out_path)
+            self.history_tab.set_rules(olines, osm, self.config)
+        except OSError:
+            pass
 
         text = controller.summarize(summary, script_results)
         self.statusBar().showMessage(f"Saved to {os.path.basename(self.out_path)}.")
