@@ -6,12 +6,12 @@ panel, and wires "Apply and save" to the controller.
 import os
 import sys
 
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QDir
 from PySide6.QtGui import QFont, QPalette, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QSplitter, QComboBox, QFileDialog, QMessageBox, QPlainTextEdit,
-    QDialog, QDialogButtonBox, QApplication,
+    QDialog, QDialogButtonBox, QApplication, QLineEdit,
 )
 
 from ..engine import ModConfig, BalanceSpec, parse_ini_lines, restore_vanilla
@@ -163,6 +163,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self.tabs)
 
         self.setCentralWidget(central)
+        self.setAcceptDrops(True)  # drag a rules file onto the window to load it
         self._build_menu()
         self.settings = QSettings("YRBalanceTool", "YRBalanceTool")
         self._restore_settings()
@@ -193,6 +194,26 @@ class MainWindow(QMainWindow):
     def _last_dir(self):
         last = self.settings.value("last_rules", "")
         return os.path.dirname(last) if last else ""
+
+    # ── Drag and drop a rules file onto the window ───────────────────────────
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            p = url.toLocalFile()
+            if not p:
+                continue
+            if os.path.isdir(p):
+                cand = os.path.join(p, "rulesmd.ini")
+                if not os.path.isfile(cand):
+                    continue
+                p = cand
+            if os.path.isfile(p):
+                self._load_rules_path(p)
+                event.acceptProposedAction()
+                return
 
     def reload_last_rules(self):
         last = self.settings.value("last_rules", "")
@@ -281,10 +302,12 @@ class MainWindow(QMainWindow):
         self.load_btn.clicked.connect(self.load_rules)
         bar.addWidget(self.load_btn)
 
-        self.file_label = QLabel("(no file loaded)")
-        self.file_label.setStyleSheet("color: gray;")
-        bar.addWidget(self.file_label)
-        bar.addStretch(1)
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText(
+            "…or paste a full path here and press Enter (or drag a file onto the window)")
+        self.path_edit.setClearButtonEnabled(True)
+        self.path_edit.returnPressed.connect(self._load_from_path_edit)
+        bar.addWidget(self.path_edit, 1)
 
         bar.addWidget(QLabel("Profile:"))
         self.profile_box = QComboBox()
@@ -321,11 +344,35 @@ class MainWindow(QMainWindow):
 
     # ── Actions ──────────────────────────────────────────────────────────────
     def load_rules(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load rulesmd.ini", self._last_dir(),
-            "INI files (*.ini);;All files (*)")
-        if path:
-            self._load_rules_path(path)
+        # A non-native dialog so we can force hidden files/folders (e.g. .wine)
+        # to be visible — the native dialog hides them unless the user knows Ctrl+H.
+        dlg = QFileDialog(self, "Load rules", self._last_dir())
+        dlg.setFileMode(QFileDialog.ExistingFile)
+        dlg.setNameFilters(["INI files (*.ini)", "All files (*)"])
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+        dlg.setFilter(dlg.filter() | QDir.Filter.Hidden)
+        if dlg.exec() == QDialog.Accepted:
+            files = dlg.selectedFiles()
+            if files:
+                self._load_rules_path(files[0])
+
+    def _load_from_path_edit(self):
+        """Load a path typed or pasted into the toolbar field (~ and dirs OK)."""
+        raw = self.path_edit.text().strip().strip('"').strip("'")
+        if not raw:
+            return
+        path = os.path.expanduser(raw)
+        if os.path.isdir(path):
+            cand = os.path.join(path, "rulesmd.ini")
+            if os.path.isfile(cand):
+                path = cand
+            else:
+                QMessageBox.warning(self, "Load", f"No rulesmd.ini in:\n{path}")
+                return
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Load", f"File not found:\n{path}")
+            return
+        self._load_rules_path(path)
 
     def _load_rules_path(self, path):
         try:
@@ -336,8 +383,7 @@ class MainWindow(QMainWindow):
         self.source_path = path
         self.out_path = None
         self.session = None
-        self.file_label.setText(os.path.basename(path))
-        self.file_label.setStyleSheet("")
+        self.path_edit.setText(path)
         self.apply_btn.setEnabled(True)
         self.preview_btn.setEnabled(True)
         self._refresh_working_state()
