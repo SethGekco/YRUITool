@@ -6,7 +6,7 @@ panel, and wires "Apply and save" to the controller.
 import os
 import sys
 
-from PySide6.QtCore import Qt, QSettings, QDir
+from PySide6.QtCore import Qt, QSettings, QDir, QTimer
 from PySide6.QtGui import QFont, QPalette, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -170,6 +170,14 @@ class MainWindow(QMainWindow):
         self.settings = QSettings("YRBalanceTool", "YRBalanceTool")
         self._restore_settings()
         self.statusBar().showMessage("Load a rulesmd.ini to begin.")
+        # Reopen the last file shortly after the window appears.
+        QTimer.singleShot(0, self._auto_load_last)
+
+    def _auto_load_last(self):
+        last = self.settings.value("last_rules", "")
+        if last and os.path.isfile(last):
+            self._load_rules_path(last)
+            self.statusBar().showMessage(f"Reopened {os.path.basename(last)}.")
 
     # ── Settings persistence ─────────────────────────────────────────────────
     def _restore_settings(self):
@@ -350,7 +358,10 @@ class MainWindow(QMainWindow):
         # to be visible — the native dialog hides them unless the user knows Ctrl+H.
         dlg = QFileDialog(self, "Load rules", self._last_dir())
         dlg.setFileMode(QFileDialog.ExistingFile)
-        dlg.setNameFilters(["INI files (*.ini)", "All files (*)"])
+        # Default to just rulesmd.ini (+ folders); the other filters are there if
+        # the file is named differently.
+        dlg.setNameFilters(["Rules file (rulesmd.ini)", "INI files (*.ini)",
+                            "All files (*)"])
         dlg.setOption(QFileDialog.DontUseNativeDialog, True)
         dlg.setFilter(dlg.filter() | QDir.Filter.Hidden)
         if dlg.exec() == QDialog.Accepted:
