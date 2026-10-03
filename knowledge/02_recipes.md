@@ -22,6 +22,16 @@ Cheaper early-game, pricier late-game (scale around tier 5):
 Cost = Cost * (0.6 + 0.1 * TechLevel)
 ```
 
+Set a whole category's stat from a formula — use the category scope, do NOT
+enumerate each section. "Set every building's Cost to (Strength / 2) + 100":
+```
+[$BUILDING]
+Cost = (Strength / 2) + 100
+```
+(Formulas can reference the section's own tags like `Strength`, `TechLevel`,
+`BuildLimit`. One `[scope]` header, then each `Tag = value` on its own line —
+never `[SECTION] Tag = value` on a single line.)
+
 ## Durability and firepower
 Double all unit HP:
 ```
@@ -86,6 +96,29 @@ Edit a weapon directly (by its section name):
 Damage = Damage * 1.2
 ROF = ROF * 0.9
 ```
+
+## Weapons have no category scope
+There is **no `$WEAPON` scope** — only TechnoType categories ($INFANTRY, $VEHICLE,
+…) exist, and units do NOT carry `Damage`/`ROF`/`Range` (their weapons do). So you
+cannot write `[$ALL]` and filter on `Damage` — that matches nothing. Target weapons
+by naming their `[WeaponType]` sections (comma-separate several in one header). You
+can filter on a *weapon's own* tags because the filter reads each scoped section:
+"Halve the ROF of these weapons when Damage > 50, never touch Damage=1"
+```
+[M60, Vulcan, 120mm, DogJaw]
+{EXCLUDE}
+Damage = 1
+{/EXCLUDE}
+{INCLUDE}
+Damage > 50
+{/INCLUDE}
+ROF = ROF * 0.5
+```
+(In YR, `ROF` is the cooldown between shots — a *lower* ROF means faster firing, so
+`ROF * 0.5` makes these weapons fire twice as fast.) To sweep **every** weapon in
+the mod instead of named ones, use the per-category damage / ROF / range modifiers
+in the unit tabs — those follow each unit's weapon references (including
+`OccupyWeapon`) automatically; the script DSL only edits weapons you name.
 
 A [General] tweak:
 ```
