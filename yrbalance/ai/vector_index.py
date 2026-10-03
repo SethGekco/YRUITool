@@ -12,8 +12,16 @@ re-embedded; a change of embedding model triggers a full rebuild).
 """
 
 import os
+import re
 import json
 import math
+
+
+def _is_curated(fn):
+    """Our hand-authored encyclopedia docs (NN_*.md): recipes, cheatsheet,
+    invariants, glossary. These teach *how* to write scripts and must not be
+    drowned out in retrieval by the bulk raw-INI reference dumps."""
+    return bool(re.match(r"\d\d_.*\.(md|markdown)$", fn, re.I))
 
 
 def chunk_text(text, size=900, overlap=150):
@@ -130,9 +138,19 @@ class KnowledgeIndex:
                 scored.append((cosine(qv, ch["vec"]), fn, ch["text"]))
         scored.sort(key=lambda x: x[0], reverse=True)
 
+        # Reserve one slot for the best curated recipe/cheatsheet chunk when none
+        # made the top-k on raw similarity — otherwise bulk INI dumps crowd the
+        # instructional docs out entirely for structural queries.
+        ranked = scored[:top_k]
+        if ranked and not any(_is_curated(fn) for _, fn, _ in ranked):
+            best_cur = next((x for x in scored if _is_curated(x[1])), None)
+            if best_cur is not None:
+                ranked = ranked[:max(1, top_k) - 1] + [best_cur]
+                ranked.sort(key=lambda x: x[0], reverse=True)
+
         parts, total = [], 0
         sources = {}  # name -> best score, insertion-ordered (best first)
-        for score, fn, text in scored[:top_k]:
+        for score, fn, text in ranked:
             chunk = f"### {fn} (relevance {score:.2f})\n{text.strip()}\n"
             if total + len(chunk) > max_chars:
                 chunk = chunk[: max(0, max_chars - total)]
