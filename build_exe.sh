@@ -23,6 +23,7 @@ pyinstaller --noconfirm --clean --onefile $WINDOWED \
     --name yrbalancetool \
     --paths . \
     --add-data "presets/examples:presets/examples" \
+    --add-data "knowledge:knowledge" \
     --add-data "docs:docs" \
     packaging/launcher.py
 

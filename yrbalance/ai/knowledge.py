@@ -39,6 +39,22 @@ class KnowledgeStore:
             i += 1
         return os.path.join(self.read_dir, f"{stem}_{i}{ext}")
 
+    def seed_bundled(self, bundled_dir):
+        """Copy bundled reference docs into read/ (once, by name). Returns names added."""
+        if not bundled_dir or not os.path.isdir(bundled_dir):
+            return []
+        added = []
+        for fn in sorted(os.listdir(bundled_dir)):
+            src = os.path.join(bundled_dir, fn)
+            if not os.path.isfile(src):
+                continue
+            dest = os.path.join(self.read_dir, fn)
+            if os.path.exists(dest):
+                continue
+            shutil.copy2(src, dest)
+            added.append(fn)
+        return added
+
     def add_doc(self, name, text):
         """Write text directly into the read/ store (for fetched pages, chats).
         Returns the path. Sanitizes the name and ensures a .txt/.md extension."""

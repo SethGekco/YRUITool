@@ -113,6 +113,29 @@ def main(path):
               f"{'OK' if add_ok else 'FAIL'}")
         ok = ok and add_ok
 
+    # ── Bundled encyclopedia seeding ─────────────────────────────────────────
+    with tempfile.TemporaryDirectory() as d:
+        bundled = os.path.join(d, "bundled")
+        os.makedirs(bundled)
+        with open(os.path.join(bundled, "guide.md"), "w") as f:
+            f.write("DSL guide: scopes, formulas, filters.")
+        ks4 = KnowledgeStore(base_dir=os.path.join(d, "kb"))
+        added = ks4.seed_bundled(bundled)
+        again = ks4.seed_bundled(bundled)  # idempotent
+        seed_ok = (added == ["guide.md"] and again == []
+                   and os.path.isfile(os.path.join(ks4.read_dir, "guide.md")))
+        print(f"seed bundled encyclopedia: added={added}, reseed={again}  "
+              f"{'OK' if seed_ok else 'FAIL'}")
+        ok = ok and seed_ok
+
+    # The repo ships a starter encyclopedia.
+    import yrbalance
+    kdir = os.path.join(os.path.dirname(os.path.dirname(yrbalance.__file__)), "knowledge")
+    enc_ok = os.path.isdir(kdir) and len([f for f in os.listdir(kdir)
+                                          if f.endswith(".md")]) >= 3
+    print(f"bundled encyclopedia present: {enc_ok}  {'OK' if enc_ok else 'FAIL'}")
+    ok = ok and enc_ok
+
     # ── Embeddings + retrieval index ─────────────────────────────────────────
     from yrbalance.ai.vector_index import KnowledgeIndex, chunk_text, cosine
 
@@ -137,19 +160,23 @@ def main(path):
         index = KnowledgeIndex(ks3, FakeEmbedClient(), embed_model="fake")
         n = index.rebuild()
         ndocs, nchunks = index.stats()
-        retrieved = index.retrieve("garrison occupy weapon", top_k=1)
+        retrieved, sources = index.retrieve("garrison occupy weapon", top_k=1)
+        src_ok = sources and sources[0]["name"].lower().startswith("garrison")
         idx_ok = (n >= 2 and ndocs == 2 and "OccupyWeapon" in retrieved
-                  and "Cost controls" not in retrieved and not index.is_stale())
-        print(f"index build+retrieve: {ndocs} docs/{nchunks} chunks, "
-              f"top hit has garrison={'OccupyWeapon' in retrieved}  "
-              f"{'OK' if idx_ok else 'FAIL'}")
+                  and "Cost controls" not in retrieved and not index.is_stale()
+                  and src_ok)
+        print(f"index build+retrieve: {ndocs} docs/{nchunks} chunks, top hit garrison, "
+              f"source cited={bool(src_ok)}  {'OK' if idx_ok else 'FAIL'}")
         ok = ok and idx_ok
 
-        # Eva uses retrieval when an index is attached.
+        # Eva uses retrieval and reports sources.
         eva3 = Eva(client, ks3, model="x", index=index, top_k=1)
-        ktext = eva3._knowledge_text("how do garrison weapons work?")
-        eva_idx_ok = "OccupyWeapon" in ktext and "Cost controls" not in ktext
-        print(f"eva uses retrieval: {eva_idx_ok}  {'OK' if eva_idx_ok else 'FAIL'}")
+        ktext, ksrc = eva3._knowledge_text("how do garrison weapons work?")
+        reply = eva3.ask("how do garrison weapons work?", section_map)
+        eva_idx_ok = ("OccupyWeapon" in ktext and "Cost controls" not in ktext
+                      and reply.sources and reply.sources[0]["name"])
+        print(f"eva uses retrieval + cites: {bool(eva_idx_ok)}  "
+              f"{'OK' if eva_idx_ok else 'FAIL'}")
         ok = ok and eva_idx_ok
 
     # rules_summary is bounded and mentions scopes.

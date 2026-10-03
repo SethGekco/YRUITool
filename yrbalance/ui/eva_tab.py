@@ -8,6 +8,7 @@ if it's unreachable, a friendly message explains what to do.
 """
 
 import os
+import sys
 
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -25,6 +26,14 @@ from ..ai.fetch import fetch_url
 from ..ai.vector_index import KnowledgeIndex
 
 _DEFAULT_URL = "http://localhost:11434"
+
+
+def _bundled_knowledge_dir():
+    """The bundled starter encyclopedia dir (from the PyInstaller bundle or repo)."""
+    if getattr(sys, "frozen", False):
+        return os.path.join(getattr(sys, "_MEIPASS", ""), "knowledge")
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(os.path.dirname(os.path.dirname(here)), "knowledge")
 
 
 class _Worker(QThread):
@@ -48,6 +57,7 @@ class EvaTab(QWidget):
         self.mw = main_window
         self.settings = QSettings("YRBalanceTool", "YRBalanceTool")
         self.knowledge = KnowledgeStore()
+        self.knowledge.seed_bundled(_bundled_knowledge_dir())  # starter encyclopedia
         self.history = []
         self._workers = []
         self._last_script = ""
@@ -269,6 +279,13 @@ class EvaTab(QWidget):
         self._busy(False)
         self.history.append({"role": "assistant", "content": reply.text})
         self._append("Eva", reply.text)
+        if reply.sources:
+            def _fmt(s):
+                sc = s.get("score")
+                return s["name"] + (f" ({sc:.2f})" if sc is not None else "")
+            cited = ", ".join(_fmt(s) for s in reply.sources)
+            self.transcript.append(
+                f"<i>Sources consulted: {cited}</i><br>")
         if reply.script:
             self._last_script = reply.script
             self.script_view.setPlainText(reply.script)

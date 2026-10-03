@@ -8,7 +8,7 @@ section/tag names), and the user's knowledge docs.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..engine import (
     build_category_lists, get_val, parse_script, ScriptError, ModConfig,
@@ -55,6 +55,7 @@ class EvaReply:
     script: str = ""          # extracted modifier script (may be "")
     valid: bool = False       # did the script parse?
     error: str = ""           # parse error, if any
+    sources: list = field(default_factory=list)  # [{name, score}] consulted
 
 
 def _code_block(text):
@@ -102,17 +103,22 @@ class Eva:
         self.top_k = top_k
 
     def _knowledge_text(self, query):
-        """Relevant knowledge: retrieval if an index exists, else the capped dump."""
+        """Return (context_text, sources): retrieval if an index exists, else the
+        capped dump (whose sources are all ingested docs)."""
         if self.index is not None:
             try:
-                retrieved = self.index.retrieve(query, top_k=self.top_k)
-                if retrieved.strip():
-                    return retrieved
+                text, sources = self.index.retrieve(query, top_k=self.top_k)
+                if text.strip():
+                    return text, sources
             except Exception:
                 pass  # fall back to the plain dump
         if self.knowledge is not None:
-            return self.knowledge.context_text()
-        return ""
+            text = self.knowledge.context_text()
+            sources = ([{"name": n, "score": None}
+                        for n, _ in self.knowledge.list_docs()]
+                       if text.strip() else [])
+            return text, sources
+        return "", []
 
     def system_prompt(self, rules_text, knowledge_text):
         parts = [
@@ -128,7 +134,7 @@ class Eva:
 
     def ask(self, user_message, section_map=None, config=None, history=None):
         rules_text = rules_summary(section_map, config)
-        knowledge_text = self._knowledge_text(user_message)
+        knowledge_text, sources = self._knowledge_text(user_message)
         messages = [{"role": "system",
                      "content": self.system_prompt(rules_text, knowledge_text)}]
         messages += history or []
@@ -136,7 +142,7 @@ class Eva:
 
         content = self.client.chat(messages, self.model, num_ctx=self.num_ctx)
         script = _code_block(content)
-        reply = EvaReply(text=content, script=script)
+        reply = EvaReply(text=content, script=script, sources=sources)
         if script:
             try:
                 parse_script(script)

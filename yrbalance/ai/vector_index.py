@@ -115,10 +115,14 @@ class KnowledgeIndex:
         return embedded
 
     def retrieve(self, query, top_k=6, max_chars=6000):
-        """Return the most relevant chunk text for a query (empty if no index)."""
+        """
+        Return (context_text, sources) for a query. sources is a list of
+        {"name", "score"} for the docs whose chunks were included, best first.
+        Empty ("", []) if there is no index.
+        """
         docs = self.data.get("docs", {})
         if not docs:
-            return ""
+            return "", []
         qv = self.client.embed([query], self.embed_model)[0]
         scored = []
         for fn, d in docs.items():
@@ -127,6 +131,7 @@ class KnowledgeIndex:
         scored.sort(key=lambda x: x[0], reverse=True)
 
         parts, total = [], 0
+        sources = {}  # name -> best score, insertion-ordered (best first)
         for score, fn, text in scored[:top_k]:
             chunk = f"### {fn} (relevance {score:.2f})\n{text.strip()}\n"
             if total + len(chunk) > max_chars:
@@ -134,6 +139,8 @@ class KnowledgeIndex:
             if chunk:
                 parts.append(chunk)
                 total += len(chunk)
+                sources[fn] = max(sources.get(fn, score), score)
             if total >= max_chars:
                 break
-        return "\n".join(parts)
+        source_list = [{"name": n, "score": sc} for n, sc in sources.items()]
+        return "\n".join(parts), source_list

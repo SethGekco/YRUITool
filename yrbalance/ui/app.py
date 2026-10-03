@@ -16,7 +16,9 @@ def main(argv=None):
     # many bundled preset scripts were found, and exit without showing the UI.
     if os.environ.get("YRBT_SELFTEST"):
         n = window.script_panel.preset_box.count() - 1  # minus the placeholder row
-        print(f"selftest OK: window built, {n} bundled preset script(s) found")
+        kdocs = len(window.eva_tab.knowledge.list_docs())
+        print(f"selftest OK: window built, {n} bundled preset script(s), "
+              f"{kdocs} knowledge doc(s)")
         return 0
     window.show()
     return app.exec()
