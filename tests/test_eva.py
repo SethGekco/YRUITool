@@ -113,6 +113,45 @@ def main(path):
               f"{'OK' if add_ok else 'FAIL'}")
         ok = ok and add_ok
 
+    # ── Embeddings + retrieval index ─────────────────────────────────────────
+    from yrbalance.ai.vector_index import KnowledgeIndex, chunk_text, cosine
+
+    class FakeEmbedClient:
+        VOCAB = ["occupy", "cost", "dog", "garrison", "techlevel", "weapon"]
+
+        def embed(self, texts, model):
+            return [[1.0 if w in t.lower() else 0.0 for w in self.VOCAB]
+                    for t in texts]
+
+    ch = chunk_text("x" * 2000, size=900, overlap=150)
+    chunk_ok = len(ch) >= 2 and all(len(c) <= 900 for c in ch)
+    cos_ok = abs(cosine([1, 0], [1, 0]) - 1.0) < 1e-9 and cosine([1, 0], [0, 1]) == 0
+    print(f"chunking/cosine: chunks={len(ch)}, cos_ok={cos_ok}  "
+          f"{'OK' if chunk_ok and cos_ok else 'FAIL'}")
+    ok = ok and chunk_ok and cos_ok
+
+    with tempfile.TemporaryDirectory() as d:
+        ks3 = KnowledgeStore(base_dir=d)
+        ks3.add_doc("garrison", "OccupyWeapon is the garrison weapon for infantry.")
+        ks3.add_doc("economy", "Cost controls how expensive a unit is to build.")
+        index = KnowledgeIndex(ks3, FakeEmbedClient(), embed_model="fake")
+        n = index.rebuild()
+        ndocs, nchunks = index.stats()
+        retrieved = index.retrieve("garrison occupy weapon", top_k=1)
+        idx_ok = (n >= 2 and ndocs == 2 and "OccupyWeapon" in retrieved
+                  and "Cost controls" not in retrieved and not index.is_stale())
+        print(f"index build+retrieve: {ndocs} docs/{nchunks} chunks, "
+              f"top hit has garrison={'OccupyWeapon' in retrieved}  "
+              f"{'OK' if idx_ok else 'FAIL'}")
+        ok = ok and idx_ok
+
+        # Eva uses retrieval when an index is attached.
+        eva3 = Eva(client, ks3, model="x", index=index, top_k=1)
+        ktext = eva3._knowledge_text("how do garrison weapons work?")
+        eva_idx_ok = "OccupyWeapon" in ktext and "Cost controls" not in ktext
+        print(f"eva uses retrieval: {eva_idx_ok}  {'OK' if eva_idx_ok else 'FAIL'}")
+        ok = ok and eva_idx_ok
+
     # rules_summary is bounded and mentions scopes.
     rs = rules_summary(section_map)
     print(f"rules summary: {len(rs)} chars, has counts={'Category counts' in rs}")

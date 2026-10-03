@@ -92,31 +92,49 @@ def rules_summary(section_map, config=None, max_general=1500):
 
 
 class Eva:
-    def __init__(self, client, knowledge, model):
+    def __init__(self, client, knowledge, model, index=None, num_ctx=None,
+                 top_k=6):
         self.client = client
         self.knowledge = knowledge
         self.model = model
+        self.index = index          # KnowledgeIndex for retrieval (optional)
+        self.num_ctx = num_ctx      # model context window (optional)
+        self.top_k = top_k
 
-    def system_prompt(self, rules_text):
+    def _knowledge_text(self, query):
+        """Relevant knowledge: retrieval if an index exists, else the capped dump."""
+        if self.index is not None:
+            try:
+                retrieved = self.index.retrieve(query, top_k=self.top_k)
+                if retrieved.strip():
+                    return retrieved
+            except Exception:
+                pass  # fall back to the plain dump
+        if self.knowledge is not None:
+            return self.knowledge.context_text()
+        return ""
+
+    def system_prompt(self, rules_text, knowledge_text):
         parts = [
             "You are Eva, an assistant that writes YRBalanceTool modifier scripts "
             "to rebalance Command & Conquer: Red Alert 2 Yuri's Revenge rules.",
             "\n== MODIFIER SCRIPT DSL ==\n" + DSL_REFERENCE,
             "\n== LOADED RULES SUMMARY ==\n" + rules_text,
         ]
-        if self.knowledge is not None:
-            kctx = self.knowledge.context_text()
-            if kctx.strip():
-                parts.append("\n== REFERENCE DOCS (user-provided) ==\n" + kctx)
+        if knowledge_text.strip():
+            parts.append("\n== REFERENCE (most relevant to the request) ==\n"
+                         + knowledge_text)
         return "\n".join(parts)
 
     def ask(self, user_message, section_map=None, config=None, history=None):
         rules_text = rules_summary(section_map, config)
-        messages = [{"role": "system", "content": self.system_prompt(rules_text)}]
+        knowledge_text = self._knowledge_text(user_message)
+        messages = [{"role": "system",
+                     "content": self.system_prompt(rules_text, knowledge_text)}]
         messages += history or []
         messages.append({"role": "user", "content": user_message})
 
-        content = self.client.chat(messages, self.model)
+        content = self.client.chat(messages, self.model, num_ctx=self.num_ctx)
         script = _code_block(content)
         reply = EvaReply(text=content, script=script)
         if script:

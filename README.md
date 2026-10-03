@@ -153,9 +153,18 @@ ollama pull llama3.1        # or qwen2.5, mistral, etc.
 ```
 
 Then in the app: open the **Eva** tab → **Refresh models** → pick one → ask away.
-Drop reference docs (.txt/.md) into `~/.yrbalancetool/knowledge/inbox/` and hit
-**Scan inbox** — Eva reads them (moving each to `…/knowledge/read/`) and uses them
-as grounding. Eva needs no extra Python packages (it talks to Ollama over HTTP).
+
+**Teaching Eva:** drop reference docs (.txt/.md) into
+`~/.yrbalancetool/knowledge/inbox/` and hit **Scan inbox**, paste a tutorial/wiki
+URL into **Learn from URL**, or hit **Remember this chat** — each becomes part of
+her knowledge (moved to `…/knowledge/read/`).
+
+**Scaling memory (RAG):** for big libraries, pull an embedding model
+(`ollama pull nomic-embed-text`) and hit **Rebuild memory index**. Eva then
+*retrieves* only the most relevant chunks per question, so the knowledge base can
+grow without limit. Tune **Top-K** (how many chunks) and **Context** (the model's
+window — bigger = more working memory per reply, slower, more RAM). Eva needs no
+extra Python packages (it talks to Ollama over HTTP).
 
 ## Running the tests
 

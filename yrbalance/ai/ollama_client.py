@@ -44,13 +44,17 @@ class OllamaClient:
                 f"Could not reach Ollama at {self.base_url}. Is it running? ({e})")
         return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
 
-    def chat(self, messages, model, temperature=0.2):
-        """Send a chat request; return the assistant's text content."""
+    def chat(self, messages, model, temperature=0.2, num_ctx=None):
+        """Send a chat request; return the assistant's text content.
+        num_ctx raises the model's context window (bigger = more memory, slower)."""
+        options = {"temperature": temperature}
+        if num_ctx:
+            options["num_ctx"] = int(num_ctx)
         payload = {
             "model": model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature},
+            "options": options,
         }
         try:
             data = self._transport(f"{self.base_url}/api/chat", payload=payload,
@@ -58,3 +62,27 @@ class OllamaClient:
         except (urllib.error.URLError, OSError, ValueError) as e:
             raise OllamaError(f"Ollama request failed: {e}")
         return data.get("message", {}).get("content", "")
+
+    def embed(self, texts, model):
+        """Return an embedding vector per text. Tries the batch /api/embed endpoint,
+        falling back to per-text /api/embeddings for older Ollama."""
+        try:
+            data = self._transport(f"{self.base_url}/api/embed",
+                                   payload={"model": model, "input": texts},
+                                   method="POST", timeout=self.timeout)
+            vecs = data.get("embeddings")
+            if vecs:
+                return vecs
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+        out = []
+        try:
+            for t in texts:
+                data = self._transport(
+                    f"{self.base_url}/api/embeddings",
+                    payload={"model": model, "prompt": t},
+                    method="POST", timeout=self.timeout)
+                out.append(data.get("embedding", []))
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            raise OllamaError(f"Embedding request failed (model '{model}'): {e}")
+        return out

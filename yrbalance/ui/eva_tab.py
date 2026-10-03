@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QSettings, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QPlainTextEdit, QTextBrowser, QLineEdit, QMessageBox,
+    QPlainTextEdit, QTextBrowser, QLineEdit, QMessageBox, QSpinBox,
 )
 
 import datetime
@@ -22,6 +22,7 @@ from ..ai.ollama_client import OllamaClient, OllamaError
 from ..ai.knowledge import KnowledgeStore
 from ..ai.eva import Eva
 from ..ai.fetch import fetch_url
+from ..ai.vector_index import KnowledgeIndex
 
 _DEFAULT_URL = "http://localhost:11434"
 
@@ -48,7 +49,7 @@ class EvaTab(QWidget):
         self.settings = QSettings("YRBalanceTool", "YRBalanceTool")
         self.knowledge = KnowledgeStore()
         self.history = []
-        self._worker = None
+        self._workers = []
         self._last_script = ""
 
         outer = QVBoxLayout(self)
@@ -123,10 +124,36 @@ class EvaTab(QWidget):
         urow.addWidget(self.learn_btn)
         outer.addLayout(urow)
 
+        # ── Memory (retrieval) row ──
+        mrow = QHBoxLayout()
+        mrow.addWidget(QLabel("Embed model:"))
+        self.embed_edit = QLineEdit(
+            self.settings.value("eva_embed_model", "nomic-embed-text"))
+        self.embed_edit.setMaximumWidth(160)
+        mrow.addWidget(self.embed_edit)
+        mrow.addWidget(QLabel("Top-K:"))
+        self.topk_spin = QSpinBox()
+        self.topk_spin.setRange(1, 50)
+        self.topk_spin.setValue(int(self.settings.value("eva_topk", 6)))
+        mrow.addWidget(self.topk_spin)
+        mrow.addWidget(QLabel("Context:"))
+        self.ctx_spin = QSpinBox()
+        self.ctx_spin.setRange(512, 131072)
+        self.ctx_spin.setSingleStep(1024)
+        self.ctx_spin.setValue(int(self.settings.value("eva_num_ctx", 8192)))
+        self.ctx_spin.setSuffix(" tok")
+        self.ctx_spin.setToolTip("Model context window — bigger = more memory per "
+                                 "reply, but slower and more RAM.")
+        mrow.addWidget(self.ctx_spin)
+        self.rebuild_idx_btn = QPushButton("Rebuild memory index")
+        self.rebuild_idx_btn.clicked.connect(self._rebuild_index)
+        mrow.addWidget(self.rebuild_idx_btn)
+        mrow.addStretch(1)
+        outer.addLayout(mrow)
+
         # ── Knowledge row ──
         krow = QHBoxLayout()
         self.know_label = QLabel()
-        self._update_know_label()
         krow.addWidget(self.know_label, 1)
         remember_btn = QPushButton("Remember this chat")
         remember_btn.clicked.connect(self._remember_chat)
@@ -145,20 +172,48 @@ class EvaTab(QWidget):
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
 
+        # Retrieval index (persisted alongside the knowledge folder).
+        self.index = KnowledgeIndex(self.knowledge, self._client(),
+                                    self._embed_model())
+        self._update_know_label()
+
     # ── Helpers ──────────────────────────────────────────────────────────────
     def _client(self):
         url = self.url_edit.text().strip() or _DEFAULT_URL
         self.settings.setValue("eva_url", url)
         return OllamaClient(base_url=url)
 
+    def _embed_model(self):
+        m = self.embed_edit.text().strip() or "nomic-embed-text"
+        self.settings.setValue("eva_embed_model", m)
+        return m
+
+    def _sync_index(self):
+        self.index.client = self._client()
+        self.index.embed_model = self._embed_model()
+
     def _eva(self):
         model = self.model_box.currentText().strip()
         self.settings.setValue("eva_model", model)
-        return Eva(self._client(), self.knowledge, model)
+        self.settings.setValue("eva_topk", self.topk_spin.value())
+        self.settings.setValue("eva_num_ctx", self.ctx_spin.value())
+        self._sync_index()
+        return Eva(self._client(), self.knowledge, model, index=self.index,
+                   num_ctx=self.ctx_spin.value(), top_k=self.topk_spin.value())
+
+    def _run(self, fn, on_done, on_fail):
+        w = _Worker(fn)
+        self._workers.append(w)
+        w.done.connect(on_done)
+        w.failed.connect(on_fail)
+        w.finished.connect(lambda: self._workers.remove(w)
+                           if w in self._workers else None)
+        w.start()
 
     def _busy(self, busy):
         for w in (self.send_btn, self.refresh_btn, self.input,
-                  getattr(self, "learn_btn", None), getattr(self, "url_learn", None)):
+                  getattr(self, "learn_btn", None), getattr(self, "url_learn", None),
+                  getattr(self, "rebuild_idx_btn", None)):
             if w is not None:
                 w.setEnabled(not busy)
 
@@ -171,10 +226,7 @@ class EvaTab(QWidget):
         client = self._client()
         self._busy(True)
         self.status.setText("Contacting Ollama…")
-        self._worker = _Worker(client.list_models)
-        self._worker.done.connect(self._models_loaded)
-        self._worker.failed.connect(self._ollama_failed)
-        self._worker.start()
+        self._run(client.list_models, self._models_loaded, self._ollama_failed)
 
     def _models_loaded(self, models):
         self._busy(False)
@@ -210,11 +262,8 @@ class EvaTab(QWidget):
         section_map = self.mw.section_map
         self._busy(True)
         self.status.setText("Eva is thinking… (local models can take a while)")
-        self._worker = _Worker(
-            lambda: eva.ask(msg, section_map, history=self.history[:-1]))
-        self._worker.done.connect(self._reply)
-        self._worker.failed.connect(self._ollama_failed)
-        self._worker.start()
+        self._run(lambda: eva.ask(msg, section_map, history=self.history[:-1]),
+                  self._reply, self._ollama_failed)
 
     def _reply(self, reply):
         self._busy(False)
@@ -266,10 +315,38 @@ class EvaTab(QWidget):
 
     def _update_know_label(self):
         docs = self.knowledge.list_docs()
-        if docs:
-            self.know_label.setText(f"Knowledge: {len(docs)} doc(s) ingested.")
-        else:
+        idx = getattr(self, "index", None)
+        if not docs:
             self.know_label.setText("Knowledge: none yet (drop files in the inbox).")
+            return
+        if idx is None:
+            self.know_label.setText(f"Knowledge: {len(docs)} doc(s).")
+            return
+        ndocs, nchunks = idx.stats()
+        stale = " — stale, Rebuild memory index" if idx.is_stale() else ""
+        self.know_label.setText(
+            f"Knowledge: {len(docs)} doc(s), index {nchunks} chunk(s){stale}.")
+
+    def _rebuild_index(self):
+        self._sync_index()
+        self._busy(True)
+        self.status.setText("Building memory index (embedding docs — may take a "
+                            "while)…")
+        self._run(self.index.rebuild, self._index_built, self._index_failed)
+
+    def _index_built(self, n_new):
+        self._busy(False)
+        ndocs, nchunks = self.index.stats()
+        self._update_know_label()
+        self.status.setText(
+            f"Memory index ready: {ndocs} doc(s), {nchunks} chunk(s) "
+            f"({n_new} newly embedded). Eva now retrieves the most relevant bits.")
+
+    def _index_failed(self, msg):
+        self._busy(False)
+        self.status.setText(
+            f"Could not build the index: {msg}\nPull an embedding model first, "
+            "e.g.  ollama pull nomic-embed-text")
 
     def _learn_url(self):
         url = self.url_learn.text().strip()
@@ -277,10 +354,8 @@ class EvaTab(QWidget):
             return
         self._busy(True)
         self.status.setText(f"Fetching {url} …")
-        self._worker = _Worker(lambda: fetch_url(url))
-        self._worker.done.connect(lambda r: self._learned(url, r))
-        self._worker.failed.connect(self._learn_failed)
-        self._worker.start()
+        self._run(lambda: fetch_url(url),
+                  lambda r: self._learned(url, r), self._learn_failed)
 
     def _learned(self, url, result):
         self._busy(False)
