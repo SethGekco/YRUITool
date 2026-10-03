@@ -23,12 +23,15 @@ Phobos extension. Phobos and Ares are different extensions — don't assume a Ph
 flag works under Ares or vice versa.
 
 ## KratosPP
-Another extension; its docs are in this knowledge base as `kratos_*.txt` (where
-present). Flags from those docs need KratosPP loaded.
+Another extension. Its official docs (translated to English) are in this knowledge
+base as `kratos_usage.md` (modder-facing tag/AE reference — the useful one for
+balancing), `kratos_dev.md` (how to build/extend the DLL), and `kratos_design.md`
+(internal architecture). Flags/logics from those docs — the AttachEffect (AE)
+system, Stand, AntiMissile, GiftBox, Vector, etc. — need KratosPP loaded.
 
 ## Rule of thumb for Eva
 1. In `07_yr_supported_flags.md` → vanilla YR, safe everywhere.
 2. In `08_ra2_supported_flags.md` → vanilla RA2 (usually also YR).
 3. In `09_ares_flags.md` → needs Ares/Antares.
-4. Documented only in `phobos_*.txt` / `kratos_*.txt` → needs that extension.
+4. Documented only in `phobos_*.txt` / `kratos_*.md` → needs that extension.
 5. Otherwise → say you're unsure; point to ModENC or the extension's docs.
