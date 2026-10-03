@@ -23,6 +23,7 @@ from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
 from .dynamic_section_tab import DynamicSectionTab
 from .history_tab import HistoryTab
+from .eva_tab import EvaTab
 from .script_panel import ScriptPanel, ScriptTab, show_script_help
 
 VOICE_RESTORE_SCRIPT = """\
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
         self.script_panel = ScriptPanel(presets_dirs=_preset_dirs())
         self.script_panel.preview_requested.connect(self.preview_script)
         self.script_tab = ScriptTab(self.script_panel)
+        self.eva_tab = EvaTab(self)
 
         # Add tabs in the requested order.
         self.tabs.addTab(self.global_tab, "Global")
@@ -163,6 +165,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.category_tabs["def"], "Defenses")
         self.tabs.addTab(self.history_tab, "History")
         self.tabs.addTab(self.script_tab, "Custom Script")
+        self.tabs.addTab(self.eva_tab, "Eva")
         root.addWidget(self.tabs)
 
         self.setCentralWidget(central)
@@ -679,6 +682,23 @@ class MainWindow(QMainWindow):
                              controller.summarize(summary, results), diff,
                              offer_apply=True) == QDialog.Accepted:
             self.apply_and_save()
+
+    def preview_script_text(self, script_text):
+        """Preview a single script on its own (used by Eva). Diff only."""
+        if not self.source_path:
+            QMessageBox.information(self, "Preview", "Load a rules file first.")
+            return
+        if not script_text.strip():
+            return
+        try:
+            summary, results, diff = controller.preview_changes(
+                self.source_path, BalanceSpec(categories={}), [script_text],
+                self.config)
+        except Exception as e:
+            QMessageBox.critical(self, "Preview", f"{type(e).__name__}: {e}")
+            return
+        self._diff_dialog("Eva script preview",
+                          controller.summarize(summary, results), diff)
 
     def apply_and_save(self):
         if not self.source_path:

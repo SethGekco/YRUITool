@@ -210,10 +210,18 @@ def main(path):
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     expected = ["Global", "General", "AI", "Gameplay", "Infantry", "Vehicles",
                 "Naval", "Aircraft", "Structures", "Defenses", "History",
-                "Custom Script"]
+                "Custom Script", "Eva"]
     struct_ok = labels == expected
     print(f"tab order/naming: {struct_ok}  {'OK' if struct_ok else 'FAIL ' + str(labels)}")
     ok = ok and struct_ok
+
+    # ── Eva: send a generated script to the Custom Script tab ────────────────
+    win.eva_tab.script_view.setPlainText("[$INFANTRY]\nElite = yes\n")
+    win.eva_tab._send_to_custom()
+    eva_ok = ("Elite = yes" in win.script_panel.text()
+              and win.tabs.currentWidget() is win.script_tab)
+    print(f"eva -> custom script: {eva_ok}  {'OK' if eva_ok else 'FAIL'}")
+    ok = ok and eva_ok
 
     # ── Global ratios compound into checked categories ───────────────────────
     win.global_tab.g_spins["strength"].setValue(1.5)

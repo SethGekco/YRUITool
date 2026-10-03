@@ -8,6 +8,8 @@ pass=0; fail=0
 
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
 no_rules=(test_ticket test_formula)
+# test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
+need_rules+=(test_eva)
 
 for f in "${need_rules[@]}"; do
     printf '%-18s ' "$f"

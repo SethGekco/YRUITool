@@ -132,6 +132,25 @@ copy** incrementally (apply all, or just the current tab), inspect the diff, and
 re-applying never compounds. Save/load the whole setup as a **blueprint**, and
 **File → Restore a file to vanilla** undoes a file's edits.
 
+## Eva — the local AI assistant (optional)
+
+The **Eva** tab turns plain-English requests ("halve the cost of all tier-1
+infantry except the attack dog") into modifier scripts you can preview and apply —
+she writes scripts, the engine does the editing, so it stays safe and reversible.
+
+Eva runs a **local** model via [Ollama](https://ollama.com) — free, offline, no
+account, and your data never leaves the machine. Set up:
+
+```sh
+# install Ollama (see ollama.com), then pull a model:
+ollama pull llama3.1        # or qwen2.5, mistral, etc.
+```
+
+Then in the app: open the **Eva** tab → **Refresh models** → pick one → ask away.
+Drop reference docs (.txt/.md) into `~/.yrbalancetool/knowledge/inbox/` and hit
+**Scan inbox** — Eva reads them (moving each to `…/knowledge/read/`) and uses them
+as grounding. Eva needs no extra Python packages (it talks to Ollama over HTTP).
+
 ## Running the tests
 
 ```sh
