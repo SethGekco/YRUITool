@@ -47,10 +47,11 @@ def _spin():
 
 class CategoryTab(QWidget):
     def __init__(self, cat_key, is_building=False, linkable=False,
-                 link_label="", parent=None):
+                 link_label="", garrison=False, parent=None):
         super().__init__(parent)
         self.cat_key = cat_key
         self.is_building = is_building
+        self.garrison = garrison
         self.spins = {}          # attr -> QDoubleSpinBox (all ratio fields)
         self.link_checks = {}    # link-id -> QCheckBox
 
@@ -85,6 +86,8 @@ class CategoryTab(QWidget):
             outer.addWidget(self._build_soylent_box())
         else:
             self.soylent_cost_frac = None
+        if garrison:
+            outer.addWidget(self._build_garrison_box())
         outer.addWidget(self._build_techlevel_box())
         outer.addStretch(1)
 
@@ -175,6 +178,45 @@ class CategoryTab(QWidget):
         self.soylent_cost_frac = QCheckBox(
             "Soylent = Soylent ratio × final Cost (instead of the vanilla-cost formula)")
         lay.addWidget(self.soylent_cost_frac)
+        return box
+
+    def _build_garrison_box(self):
+        box = QGroupBox("Garrison weapons (OccupyWeapon / EliteOccupyWeapon)")
+        lay = QVBoxLayout(box)
+        self.gar_same = QCheckBox("Same as the weapon ratios above")
+        self.gar_same.setChecked(True)
+        lay.addWidget(self.gar_same)
+
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 1)
+        self.gar_spins = {}
+        for row, (attr, label) in enumerate(
+                [("dmg", "Damage"), ("rng", "Range"), ("rof", "ROF")]):
+            grid.addWidget(QLabel(label), row, 0)
+            sp = _spin()
+            self.gar_spins[attr] = sp
+            grid.addWidget(sp, row, 1)
+        lay.addLayout(grid)
+
+        orow = QHBoxLayout()
+        orow.addWidget(QLabel("Occupant count ratio (building MaxNumberOccupants):"))
+        self.occupant_spin = _spin()
+        orow.addWidget(self.occupant_spin)
+        orow.addStretch(1)
+        lay.addLayout(orow)
+
+        note = QLabel("Garrison weapons default to the unit's normal weapon ratios "
+                      "— uncheck to give them their own. The occupant ratio scales "
+                      "how many infantry can garrison a structure.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: gray;")
+        lay.addWidget(note)
+
+        def _upd():
+            for sp in self.gar_spins.values():
+                sp.setEnabled(not self.gar_same.isChecked())
+        self.gar_same.toggled.connect(lambda _c: _upd())
+        _upd()
         return box
 
     def _build_techlevel_box(self):
@@ -286,7 +328,16 @@ class CategoryTab(QWidget):
             r.tl_recompute = self.tl_recompute.isChecked()
             r.tl_write = r.tl_recompute and self.tl_write.isChecked()
             r.tl_use = r.tl_recompute and self.tl_use.isChecked()
+
+        if self.garrison:
+            r.gar_same = self.gar_same.isChecked()
+            r.gar_dmg = self.gar_spins["dmg"].value()
+            r.gar_rng = self.gar_spins["rng"].value()
+            r.gar_rof = self.gar_spins["rof"].value()
         return r
+
+    def occupant_ratio(self):
+        return self.occupant_spin.value() if self.garrison else 1.0
 
     # ── State (blueprints / persistence) ─────────────────────────────────────
     def get_state(self):
@@ -304,6 +355,13 @@ class CategoryTab(QWidget):
             "tl_recompute": self.tl_recompute.isChecked(),
             "tl_write": self.tl_write.isChecked(),
             "tl_use": self.tl_use.isChecked(),
+            "garrison": ({
+                "same": self.gar_same.isChecked(),
+                "dmg": self.gar_spins["dmg"].value(),
+                "rng": self.gar_spins["rng"].value(),
+                "rof": self.gar_spins["rof"].value(),
+                "occupant": self.occupant_spin.value(),
+            } if self.garrison else None),
         }
 
     def set_state(self, state):
@@ -327,6 +385,13 @@ class CategoryTab(QWidget):
         self.tl_recompute.setChecked(bool(state.get("tl_recompute", False)))
         self.tl_write.setChecked(bool(state.get("tl_write", False)))
         self.tl_use.setChecked(bool(state.get("tl_use", False)))
+        g = state.get("garrison")
+        if self.garrison and g:
+            self.gar_same.setChecked(bool(g.get("same", True)))
+            self.gar_spins["dmg"].setValue(float(g.get("dmg", 1.0)))
+            self.gar_spins["rng"].setValue(float(g.get("rng", 1.0)))
+            self.gar_spins["rof"].setValue(float(g.get("rof", 1.0)))
+            self.occupant_spin.setValue(float(g.get("occupant", 1.0)))
         self._refresh_enabled()
 
     @staticmethod

@@ -107,7 +107,8 @@ class MainWindow(QMainWindow):
         for key, _label, is_building, linkable, link_label in TECHNO_TABS:
             self.category_tabs[key] = CategoryTab(
                 key, is_building=is_building, linkable=linkable,
-                link_label=link_label or "Vehicles")
+                link_label=link_label or "Vehicles",
+                garrison=(key == "inf"))
         # Populate each tab's "Same as X" dropdown with the other categories.
         cat_display = [(k, lbl) for k, lbl, *_ in TECHNO_TABS]
         for key, tab in self.category_tabs.items():
@@ -451,8 +452,10 @@ class MainWindow(QMainWindow):
                 r.cost *= g["cost"]
                 r.speed *= g["speed"]
 
-        return BalanceSpec(categories=cats,
-                           range_threshold=self.global_tab.range_threshold_value())
+        return BalanceSpec(
+            categories=cats,
+            range_threshold=self.global_tab.range_threshold_value(),
+            occupant_ratio=self.category_tabs["inf"].occupant_ratio())
 
     def _current_category_key(self):
         w = self.tabs.currentWidget()

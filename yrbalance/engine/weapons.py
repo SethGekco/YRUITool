@@ -19,7 +19,10 @@ from .ini_model import (
 
 REGULAR_WEAPON_TAGS = ["Primary", "Secondary"] + [f"Weapon{i}" for i in range(1, 18)]
 ELITE_WEAPON_TAGS   = ["ElitePrimary", "EliteSecondary"] + [f"EliteWeapon{i}" for i in range(1, 18)]
-ALL_WEAPON_TAGS     = REGULAR_WEAPON_TAGS + ELITE_WEAPON_TAGS
+# Garrison / occupy weapons (infantry firing from a garrisoned structure). Kept
+# out of REGULAR/ELITE so they can take their own ratios, but still snapshotted.
+GARRISON_WEAPON_TAGS = ["OccupyWeapon", "EliteOccupyWeapon"]
+ALL_WEAPON_TAGS     = REGULAR_WEAPON_TAGS + ELITE_WEAPON_TAGS + GARRISON_WEAPON_TAGS
 
 REG_TO_ELITE_TAG = {"Primary": "ElitePrimary", "Secondary": "EliteSecondary"}
 REG_TO_ELITE_TAG.update({f"Weapon{i}": f"EliteWeapon{i}" for i in range(1, 18)})
@@ -157,7 +160,8 @@ def clone_weapon_section(lines, section_map, orig_name, clone_name,
                                         key=lambda x: x[1][0]):
         field = k_lower
         ratio = {"damage": dmg_ratio, "range": rng_ratio, "rof": rof_ratio}.get(field)
-        if ratio is not None and ratio != 1.0 and field in snap:
+        if (ratio is not None and ratio != 1.0 and field in snap
+                and not (field == "damage" and snap[field] == 1)):
             orig_v = snap[field]
             new_str, _ = scale_from_vanilla(orig_v, ratio)
             val_str = format_edited_value(new_str, orig_v,
@@ -262,12 +266,16 @@ def apply_weapon_fields(lines, section_map, weapon_name,
         li, kr, vr = entry
         if field in snap:
             orig = snap[field]
+            if field == "damage" and orig == 1:
+                continue  # Damage=1 is never scaled (utility/chip weapons)
             new_str, _ = scale_from_vanilla(orig, ratio)
             modify_line(lines, li, kr, format_edited_value(new_str, orig))
         else:
             raw = vr.split(";")[0].strip()
             try:
                 orig_i = int(raw)
+                if field == "damage" and orig_i == 1:
+                    continue
                 new_v = scale_int(orig_i, ratio)
                 modify_line(lines, li, kr, format_edited_value(str(new_v), orig_i))
             except ValueError:

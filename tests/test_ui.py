@@ -71,6 +71,20 @@ def main(path):
     it.soylent_cost_frac.setChecked(False)
     it.sight_nw_mode.setCurrentIndex(it.sight_nw_mode.findData("leave"))
 
+    # ── Garrison group + occupant ratio (Infantry only) ──────────────────────
+    it.gar_same.setChecked(False)
+    it.gar_spins["dmg"].setValue(2.0)
+    it.occupant_spin.setValue(1.5)
+    spec_g = win.collect_spec()
+    gar_ok = (not spec_g.categories["inf"].gar_same
+              and spec_g.categories["inf"].gar_dmg == 2.0
+              and spec_g.occupant_ratio == 1.5
+              and not win.category_tabs["veh"].garrison)  # vehicles have no garrison box
+    print(f"garrison group + occupant: {gar_ok}  {'OK' if gar_ok else 'FAIL'}")
+    ok = ok and gar_ok
+    it.gar_same.setChecked(True)
+    it.occupant_spin.setValue(1.0)
+
     # ── Cost mode + TechLevel controls flow into the spec ────────────────────
     inf_tab = win.category_tabs["inf"]
     idx = inf_tab.cost_mode.findData("techlevel")

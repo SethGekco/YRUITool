@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 from .config import ModConfig
 from .ini_model import get_val
 from .selectors import build_category_lists
-from .operations import reset_session_state, do_sight_pass, apply_soylent_fraction
+from .operations import (
+    reset_session_state, do_sight_pass, apply_soylent_fraction, apply_tag_ratio,
+)
 from .weapons import build_weapon_snapshots, WeaponRegistry
 from .stats import process_unit_stats, process_building_stats
 from .techlevel import (
@@ -56,6 +58,12 @@ class CategoryRatios:
     # Soylent: 'legacy' = vanilla_cost * cost_ratio * soylent; 'cost_fraction' =
     # (final Cost) * soylent, applied after cost scaling.
     soylent_mode: str = "legacy"
+    # Garrison (OccupyWeapon/EliteOccupyWeapon) ratios. gar_same=True means they
+    # scale with the unit's normal weapons; otherwise these custom ratios apply.
+    gar_same: bool = True
+    gar_dmg: float = 1.0
+    gar_rng: float = 1.0
+    gar_rof: float = 1.0
     # Cost scaling: 'flat' uses the Cost ratio directly; 'techlevel' scales by
     # TechLevel x ratio; 'depth' (buildings) scales by (depth+1) x ratio.
     cost_mode: str = "flat"
@@ -74,8 +82,10 @@ class CategoryRatios:
         if is_building:
             extra = self.debris == self.adjacent == 1.0
         else:
+            gar_noop = self.gar_same or (self.gar_dmg == self.gar_rng
+                                         == self.gar_rof == 1.0)
             extra = (self.speed == self.soylent == 1.0 and self.speed_max is None
-                     and self.soylent_mode == "legacy")
+                     and self.soylent_mode == "legacy" and gar_noop)
         sight_noop = (not self.sight_equal) and self.sight == 1.0
         return base and extra and sight_noop
 
@@ -87,6 +97,8 @@ class BalanceSpec:
     # If set, weapons whose vanilla Range is below this are left unscaled on Range
     # (protects melee / very short-range weapons across every category).
     range_threshold: float = None
+    # Scale MaxNumberOccupants on all garrisonable buildings (1.0 = unchanged).
+    occupant_ratio: float = 1.0
 
 
 @dataclass
@@ -162,6 +174,9 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
                 snapshots, registry, progress=progress,
                 range_threshold=spec.range_threshold)
         else:
+            gd = None if r.gar_same else r.gar_dmg
+            gr = None if r.gar_same else r.gar_rng
+            gf = None if r.gar_same else r.gar_rof
             process_unit_stats(
                 lines, section_map, type_list, cat.label, cat.key,
                 r.strength, stat_cost, r.speed, r.buildtime,
@@ -170,7 +185,8 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
                 snapshots, registry,
                 speed_max=r.speed_max, soylent_ratio=r.soylent, progress=progress,
                 range_threshold=spec.range_threshold,
-                do_soylent=(r.soylent_mode == "legacy"))
+                do_soylent=(r.soylent_mode == "legacy"),
+                gar_dmg=gd, gar_rng=gr, gar_rof=gf)
         summary.per_category[key] = len(type_list)
 
     # ── Step 3: cost scaling (TechLevel / depth modes) ───────────────────────
@@ -197,6 +213,12 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
             continue
         for name in cat_lists.get(key, []):
             apply_soylent_fraction(lines, section_map, name, r.soylent)
+
+    # ── Step 3c: occupant ratio (scale MaxNumberOccupants on buildings) ──────
+    if spec.occupant_ratio != 1.0:
+        for name in cat_lists.get("bld", []) + cat_lists.get("def", []):
+            apply_tag_ratio(lines, section_map, name, "MaxNumberOccupants",
+                            spec.occupant_ratio)
 
     # ── Step 4: sight (after all weapon ranges are finalized) ────────────────
     for key, r in spec.categories.items():

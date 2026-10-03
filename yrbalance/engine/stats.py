@@ -22,7 +22,8 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                        reg_dmg, reg_rng, reg_rof,
                        eli_dmg, eli_rng, eli_rof,
                        snapshots, registry, speed_max=None, soylent_ratio=1.0,
-                       progress=None, range_threshold=None, do_soylent=True):
+                       progress=None, range_threshold=None, do_soylent=True,
+                       gar_dmg=None, gar_rng=None, gar_rof=None):
     if progress:
         progress(f"  [Pass 1] {label} ({len(type_list)} units)...")
     for t in type_list:
@@ -56,6 +57,21 @@ def process_unit_stats(lines, section_map, type_list, label, cat_label,
                     lines, section_map, wname,
                     eli_dmg, eli_rng, eli_rof,
                     registry, snapshots, "eli", unit_name=t, tag=tag,
+                    range_threshold=range_threshold)
+
+        # Garrison / occupy weapons. Default (gar_* is None) = same ratios as the
+        # unit's normal weapons; otherwise use the custom garrison ratios.
+        occ = (gar_dmg, gar_rng, gar_rof) if gar_dmg is not None \
+            else (reg_dmg, reg_rng, reg_rof)
+        eocc = (gar_dmg, gar_rng, gar_rof) if gar_dmg is not None \
+            else (eli_dmg, eli_rng, eli_rof)
+        for tag, (gd, gr, gf), wp in (("OccupyWeapon", occ, "reg"),
+                                      ("EliteOccupyWeapon", eocc, "eli")):
+            wname = get_val(section_map, t, tag)
+            if wname and wname.lower() not in ("none", ""):
+                apply_weapon_fields(
+                    lines, section_map, wname, gd, gr, gf,
+                    registry, snapshots, wp, unit_name=t, tag=tag,
                     range_threshold=range_threshold)
 
 

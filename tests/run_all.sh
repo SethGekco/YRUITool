@@ -6,7 +6,7 @@ R="${1:-}"
 here="$(cd "$(dirname "$0")" && pwd)"
 pass=0; fail=0
 
-need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history)
+need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
 no_rules=(test_ticket test_formula)
 
 for f in "${need_rules[@]}"; do

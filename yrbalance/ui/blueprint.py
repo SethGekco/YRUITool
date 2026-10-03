@@ -87,6 +87,13 @@ def serialize(category_states, form_states, script_text, name="Untitled",
         out.append(f"TL.Recompute = {_yesno(state.get('tl_recompute', False))}")
         out.append(f"TL.Write = {_yesno(state.get('tl_write', False))}")
         out.append(f"TL.Use = {_yesno(state.get('tl_use', False))}")
+        g = state.get("garrison")
+        if g:
+            out.append(f"Garrison.Same = {_yesno(g.get('same', True))}")
+            out.append(f"Garrison.Damage = {_fmt(g.get('dmg', 1.0))}")
+            out.append(f"Garrison.Range = {_fmt(g.get('rng', 1.0))}")
+            out.append(f"Garrison.ROF = {_fmt(g.get('rof', 1.0))}")
+            out.append(f"Garrison.Occupant = {_fmt(g.get('occupant', 1.0))}")
         for lid, checked in state.get("links", {}).items():
             out.append(f"Link.{lid} = {_yesno(checked)}")
         out.append("")
@@ -240,6 +247,17 @@ def _parse_category_line(state, line):
         state["tl_use"] = _is_yes(v)
     elif kl.startswith("link."):
         state["links"][kl.split(".", 1)[1]] = _is_yes(v)
+    elif kl.startswith("garrison."):
+        g = state.setdefault("garrison", {})
+        sub = kl.split(".", 1)[1]
+        if sub == "same":
+            g["same"] = _is_yes(v)
+        else:
+            try:
+                g[{"damage": "dmg", "range": "rng", "rof": "rof",
+                   "occupant": "occupant"}.get(sub, sub)] = float(v)
+            except ValueError:
+                pass
     else:
         attr = LABEL_KEY.get(kl)
         if attr is not None:
