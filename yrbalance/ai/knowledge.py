@@ -66,6 +66,34 @@ class KnowledgeStore:
             f.write(text)
         return dest
 
+    def add_reference_ini(self, src_path, game):
+        """Ingest a stock/vanilla INI as a tagged baseline reference.
+
+        `game` is 'yr' or 'ra2'. The file is copied into read/ as
+        `vanilla_<game>_<basename>` with a header marking it as the unmodified
+        baseline (so Eva and its citations never confuse it with the loaded mod).
+        Re-importing the same file overwrites the previous copy. Returns the path."""
+        game = (game or "").lower()
+        if game not in ("yr", "ra2"):
+            raise ValueError("game must be 'yr' or 'ra2'")
+        base = os.path.basename(src_path)
+        name = f"vanilla_{game}_{base}"
+        if not os.path.splitext(name)[1]:
+            name += ".ini"
+        with open(src_path, "r", encoding="utf-8", errors="replace") as f:
+            body = f.read()
+        label = "YR (Yuri's Revenge)" if game == "yr" else "RA2 (Red Alert 2)"
+        header = (
+            f"; === VANILLA {label} baseline reference ===\n"
+            "; VANILLA BASELINE REFERENCE — unmodified official game file.\n"
+            "; This is NOT the user's loaded mod. Use it only to cite stock "
+            "defaults.\n"
+        )
+        dest = os.path.join(self.read_dir, name)  # deterministic: re-import replaces
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(header + body)
+        return dest
+
     def scan_inbox(self):
         """Read each inbox file, move it to read/, return [(name, chars)]."""
         ingested = []

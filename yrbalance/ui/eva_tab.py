@@ -15,6 +15,7 @@ from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QPlainTextEdit, QTextBrowser, QLineEdit, QMessageBox, QSpinBox,
+    QFileDialog, QInputDialog,
 )
 
 import datetime
@@ -167,12 +168,19 @@ class EvaTab(QWidget):
         krow.addWidget(self.know_label, 1)
         remember_btn = QPushButton("Remember this chat")
         remember_btn.clicked.connect(self._remember_chat)
+        vanilla_btn = QPushButton("Add vanilla reference INI")
+        vanilla_btn.setToolTip(
+            "Ingest a stock/unmodified rules.ini (RA2) or rulesmd.ini (YR) as a "
+            "baseline, so Eva can cite vanilla default values. Rebuild the memory "
+            "index afterwards.")
+        vanilla_btn.clicked.connect(self._add_vanilla_ref)
         scan_btn = QPushButton("Scan inbox")
         scan_btn.clicked.connect(self._scan_inbox)
         open_btn = QPushButton("Open folder")
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(self.knowledge.base_dir)))
         krow.addWidget(remember_btn)
+        krow.addWidget(vanilla_btn)
         krow.addWidget(scan_btn)
         krow.addWidget(open_btn)
         outer.addLayout(krow)
@@ -329,6 +337,31 @@ class EvaTab(QWidget):
         else:
             self.status.setText(
                 f"No new files in {self.knowledge.inbox}. Drop .txt/.md files there.")
+
+    def _add_vanilla_ref(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a stock/vanilla INI (e.g. rules.ini or rulesmd.ini)",
+            "", "INI files (*.ini);;All files (*)")
+        if not path:
+            return
+        base = os.path.basename(path)
+        default = 0 if base.lower().endswith("md.ini") else 1  # *md.ini -> YR
+        game, ok = QInputDialog.getItem(
+            self, "Which game?",
+            f"Treat “{base}” as the baseline for:",
+            ["Yuri's Revenge", "Red Alert 2"], default, False)
+        if not ok:
+            return
+        g = "yr" if game.startswith("Yuri") else "ra2"
+        try:
+            dest = self.knowledge.add_reference_ini(path, g)
+        except OSError as e:
+            self.status.setText(f"Could not read that file: {e}")
+            return
+        self._update_know_label()
+        self.status.setText(
+            f"Added baseline “{os.path.basename(dest)}”. Rebuild the memory index "
+            "so Eva can cite its stock values.")
 
     def _update_know_label(self):
         docs = self.knowledge.list_docs()
