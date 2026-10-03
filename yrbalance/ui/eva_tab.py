@@ -15,7 +15,7 @@ from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QPlainTextEdit, QTextBrowser, QLineEdit, QMessageBox, QSpinBox,
-    QFileDialog, QInputDialog,
+    QFileDialog, QInputDialog, QCheckBox,
 )
 
 import datetime
@@ -120,6 +120,16 @@ class EvaTab(QWidget):
         srow.addWidget(self.preview_btn)
         srow.addWidget(self.send_script_btn)
         srow.addStretch(1)
+        self.auto_apply_chk = QCheckBox("Eva applies directly")
+        self.auto_apply_chk.setToolTip(
+            "Opt-in: when Eva produces a valid script, apply it to the rules file "
+            "automatically (always with a backup). Leave off to review and click "
+            "Apply yourself.")
+        self.auto_apply_chk.setChecked(
+            self.settings.value("eva_auto_apply", False, type=bool))
+        self.auto_apply_chk.toggled.connect(
+            lambda on: self.settings.setValue("eva_auto_apply", on))
+        srow.addWidget(self.auto_apply_chk)
         outer.addLayout(srow)
 
         # ── Learn-from-URL row ──
@@ -298,8 +308,13 @@ class EvaTab(QWidget):
             self._last_script = reply.script
             self.script_view.setPlainText(reply.script)
             if reply.valid:
-                self.status.setText("Script looks valid. Preview or send it to "
-                                    "the Custom Script tab.")
+                if self.auto_apply_chk.isChecked() and self.mw.source_path:
+                    self.transcript.append(
+                        "<i>Applying directly (opt-in mode)…</i><br>")
+                    self._apply()  # in-place, always backed up
+                else:
+                    self.status.setText("Script looks valid. Preview or send it to "
+                                        "the Custom Script tab.")
             else:
                 self.status.setText(f"Script has an issue: {reply.error} "
                                     "— you can edit it below.")
