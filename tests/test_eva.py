@@ -81,6 +81,26 @@ def main(path):
           f"{'OK' if bad_ok else 'FAIL'}")
     ok = ok and bad_ok
 
+    # ── Code-block extraction is robust to what local models actually emit ───
+    from yrbalance.ai.eva import _code_block
+    cb_cases = {
+        "crlf": ("```\r\n[$VEHICLE]\r\nCost = Cost * 3\r\n```", True),
+        "lang+prose": ("Here:\n```plaintext\n[$INFANTRY]\nCost = Cost*0.5\n```\nx", True),
+        "space-after-ticks": ("``` \n[$ALL]\nROF = ROF * 0.5\n```", True),
+        "truncated-no-close": ("```\n[$INFANTRY]\nCost = Cost * 0.5", True),
+        "bare-script-no-fence": ("[$INFANTRY]\nStrength = Strength * 1.25", True),
+        "pure-prose": ("Change the warhead Verses, not Damage, because…", False),
+    }
+    cb_ok = True
+    for name, (text, want) in cb_cases.items():
+        got = bool(_code_block(text))
+        if got != want:
+            cb_ok = False
+            print(f"  code-block {name}: got extracted={got}, want {want}  FAIL")
+    print(f"code-block extraction robust (CRLF/lang/trunc/bare): "
+          f"{'OK' if cb_ok else 'FAIL'}")
+    ok = ok and cb_ok
+
     # ── URL learning: HTML -> text + fetch_url + add_doc ─────────────────────
     from yrbalance.ai.fetch import html_to_text, fetch_url
     html = ("<html><head><title>Garrison Guide</title>"

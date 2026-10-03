@@ -59,8 +59,25 @@ class EvaReply:
 
 
 def _code_block(text):
-    m = re.search(r"```[a-zA-Z0-9_]*\n(.*?)```", text, re.DOTALL)
-    return m.group(1).strip() if m else ""
+    """Extract a fenced code block from a model reply.
+
+    Tolerant of things local models actually emit: CRLF line endings, an
+    optional language tag, trailing spaces after the opening fence, and a
+    missing closing fence (truncated output). Falls back to the whole reply
+    when it has no fence but already looks like a bare script."""
+    if not text:
+        return ""
+    t = text.replace("\r\n", "\n").replace("\r", "\n")
+    # ``` [lang] [spaces] \n  ...  (closing ``` or end-of-text)
+    m = re.search(r"```[ \t]*[A-Za-z0-9_+.-]*[ \t]*\n(.*?)(?:\n```|\Z)",
+                  t, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    # No fence: accept it only if it reads like a script (a $scope or a
+    # [Section] header at line start, plus at least one assignment).
+    if re.search(r"(?m)^\s*(\$[A-Za-z]|\[)", t) and "=" in t:
+        return t.strip()
+    return ""
 
 
 def rules_summary(section_map, config=None, max_general=1500):
