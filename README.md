@@ -125,18 +125,24 @@ Drop extra `.yrs` scripts into `~/.yrbalancetool/presets/` to have them show up 
 the dropdown.
 
 ### Workflow
-Load a `rulesmd.ini`, set ratios per tab, then either **Preview changes** →
-**Apply and save** (one-shot), or use the **Apply** menu to build a **working
-copy** incrementally (apply all, or just the current tab), inspect the diff, and
-**Save working copy** when happy. Each apply regenerates from vanilla, so
-re-applying never compounds. Save/load the whole setup as a **blueprint**, and
-**File → Restore a file to vanilla** undoes a file's edits.
+Load a `rulesmd.ini`, set ratios per tab, **Preview changes**, then **Apply**.
+
+By default Apply **edits the loaded file in place and backs it up first** (to a
+`yrbt_backups` folder next to the rules). Change the backup folder, how many
+backups to keep, or switch to writing a separate `_edited` file in
+**File → Settings**. In-place applies restore-to-vanilla first, so re-applying
+never compounds. Save/load the whole setup as a **blueprint**, see every change in
+**History** (with per-change undo), and **File → Restore a file to vanilla** rolls
+a file all the way back.
 
 ## Eva — the local AI assistant (optional)
 
 The **Eva** tab turns plain-English requests ("halve the cost of all tier-1
 infantry except the attack dog") into modifier scripts you can preview and apply —
 she writes scripts, the engine does the editing, so it stays safe and reversible.
+
+Eva edits your rules directly via her **Apply to rules** button (backed up first,
+like any apply), or you can **Preview** / **Send to Custom Script** to tweak first.
 
 Eva runs a **local** model via [Ollama](https://ollama.com) — free, offline, no
 account, and your data never leaves the machine. Set up:

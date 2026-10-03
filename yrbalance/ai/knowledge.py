@@ -10,6 +10,7 @@ No embeddings — for a modest library the text is just concatenated into contex
 """
 
 import os
+import re
 import shutil
 
 _TEXT_EXTS = {".txt", ".md", ".markdown", ".ini", ".yrs", ".yrbp", ".csv",
@@ -37,6 +38,17 @@ class KnowledgeStore:
         while os.path.exists(os.path.join(self.read_dir, f"{stem}_{i}{ext}")):
             i += 1
         return os.path.join(self.read_dir, f"{stem}_{i}{ext}")
+
+    def add_doc(self, name, text):
+        """Write text directly into the read/ store (for fetched pages, chats).
+        Returns the path. Sanitizes the name and ensures a .txt/.md extension."""
+        safe = re.sub(r"[^A-Za-z0-9._ -]", "_", name).strip() or "note"
+        if not os.path.splitext(safe)[1]:
+            safe += ".txt"
+        dest = self._unique_dest(safe)
+        with open(dest, "w", encoding="utf-8") as f:
+            f.write(text)
+        return dest
 
     def scan_inbox(self):
         """Read each inbox file, move it to read/, return [(name, chars)]."""

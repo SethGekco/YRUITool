@@ -81,6 +81,38 @@ def main(path):
           f"{'OK' if bad_ok else 'FAIL'}")
     ok = ok and bad_ok
 
+    # ── URL learning: HTML -> text + fetch_url + add_doc ─────────────────────
+    from yrbalance.ai.fetch import html_to_text, fetch_url
+    html = ("<html><head><title>Garrison Guide</title>"
+            "<style>.x{color:red}</style></head><body>"
+            "<script>evil()</script><h1>Occupy</h1>"
+            "<p>OccupyWeapon sets the garrison weapon.</p></body></html>")
+    title, text = html_to_text(html)
+    h_ok = (title == "Garrison Guide" and "OccupyWeapon" in text
+            and "evil()" not in text and "color:red" not in text)
+    print(f"html_to_text: title={title!r}, clean={h_ok}  {'OK' if h_ok else 'FAIL'}")
+    ok = ok and h_ok
+
+    t2, body = fetch_url("https://example.com/x", reader=lambda u, to: html)
+    f_ok = t2 == "Garrison Guide" and "OccupyWeapon" in body
+    print(f"fetch_url (injected reader): {f_ok}  {'OK' if f_ok else 'FAIL'}")
+    ok = ok and f_ok
+    try:
+        fetch_url("ftp://nope")
+        print("  FAIL  non-http should raise"); ok = False
+    except ValueError:
+        print("  OK    non-http URL rejected")
+
+    with tempfile.TemporaryDirectory() as d:
+        ks2 = KnowledgeStore(base_dir=d)
+        p = ks2.add_doc("Garrison Guide", "OccupyWeapon is the garrison weapon.")
+        add_ok = (os.path.isfile(p) and p.endswith(".txt")
+                  and "OccupyWeapon" in ks2.context_text()
+                  and len(ks2.list_docs()) == 1)
+        print(f"knowledge.add_doc (fetched/chat): {add_ok}  "
+              f"{'OK' if add_ok else 'FAIL'}")
+        ok = ok and add_ok
+
     # rules_summary is bounded and mentions scopes.
     rs = rules_summary(section_map)
     print(f"rules summary: {len(rs)} chars, has counts={'Category counts' in rs}")

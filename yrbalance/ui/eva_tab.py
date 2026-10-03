@@ -16,9 +16,12 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QTextBrowser, QLineEdit, QMessageBox,
 )
 
+import datetime
+
 from ..ai.ollama_client import OllamaClient, OllamaError
 from ..ai.knowledge import KnowledgeStore
 from ..ai.eva import Eva
+from ..ai.fetch import fetch_url
 
 _DEFAULT_URL = "http://localhost:11434"
 
@@ -107,16 +110,32 @@ class EvaTab(QWidget):
         srow.addStretch(1)
         outer.addLayout(srow)
 
+        # ── Learn-from-URL row ──
+        urow = QHBoxLayout()
+        urow.addWidget(QLabel("Learn from URL:"))
+        self.url_learn = QLineEdit()
+        self.url_learn.setPlaceholderText(
+            "paste a tutorial / wiki page (e.g. a ModENC page) and press Enter")
+        self.url_learn.returnPressed.connect(self._learn_url)
+        urow.addWidget(self.url_learn, 1)
+        self.learn_btn = QPushButton("Fetch and learn")
+        self.learn_btn.clicked.connect(self._learn_url)
+        urow.addWidget(self.learn_btn)
+        outer.addLayout(urow)
+
         # ── Knowledge row ──
         krow = QHBoxLayout()
         self.know_label = QLabel()
         self._update_know_label()
         krow.addWidget(self.know_label, 1)
-        scan_btn = QPushButton("Scan inbox for new docs")
+        remember_btn = QPushButton("Remember this chat")
+        remember_btn.clicked.connect(self._remember_chat)
+        scan_btn = QPushButton("Scan inbox")
         scan_btn.clicked.connect(self._scan_inbox)
-        open_btn = QPushButton("Open knowledge folder")
+        open_btn = QPushButton("Open folder")
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(
             QUrl.fromLocalFile(self.knowledge.base_dir)))
+        krow.addWidget(remember_btn)
         krow.addWidget(scan_btn)
         krow.addWidget(open_btn)
         outer.addLayout(krow)
@@ -138,9 +157,10 @@ class EvaTab(QWidget):
         return Eva(self._client(), self.knowledge, model)
 
     def _busy(self, busy):
-        self.send_btn.setEnabled(not busy)
-        self.refresh_btn.setEnabled(not busy)
-        self.input.setEnabled(not busy)
+        for w in (self.send_btn, self.refresh_btn, self.input,
+                  getattr(self, "learn_btn", None), getattr(self, "url_learn", None)):
+            if w is not None:
+                w.setEnabled(not busy)
 
     def _append(self, who, text):
         safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -250,3 +270,49 @@ class EvaTab(QWidget):
             self.know_label.setText(f"Knowledge: {len(docs)} doc(s) ingested.")
         else:
             self.know_label.setText("Knowledge: none yet (drop files in the inbox).")
+
+    def _learn_url(self):
+        url = self.url_learn.text().strip()
+        if not url:
+            return
+        self._busy(True)
+        self.status.setText(f"Fetching {url} …")
+        self._worker = _Worker(lambda: fetch_url(url))
+        self._worker.done.connect(lambda r: self._learned(url, r))
+        self._worker.failed.connect(self._learn_failed)
+        self._worker.start()
+
+    def _learned(self, url, result):
+        self._busy(False)
+        title, text = result
+        if not text.strip():
+            self.status.setText("Fetched, but found no readable text "
+                                "(a script-heavy page?).")
+            return
+        path = self.knowledge.add_doc(title, f"Source: {url}\n\n{text}")
+        self.url_learn.clear()
+        self._update_know_label()
+        self.status.setText(f"Learned “{os.path.basename(path)}” "
+                            f"({len(text)} chars). Eva will use it as reference.")
+
+    def _learn_failed(self, msg):
+        self._busy(False)
+        self.status.setText(f"Could not fetch that URL: {msg}")
+
+    def _transcript_text(self):
+        lines = []
+        for m in self.history:
+            who = "You" if m.get("role") == "user" else "Eva"
+            lines.append(f"{who}: {m.get('content', '')}")
+        return "\n\n".join(lines)
+
+    def _remember_chat(self):
+        if not self.history:
+            self.status.setText("No conversation to remember yet.")
+            return
+        name = "Eva chat " + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".md"
+        path = self.knowledge.add_doc(name, self._transcript_text())
+        self._update_know_label()
+        self.status.setText(
+            f"Saved this chat to knowledge ({os.path.basename(path)}). "
+            "Eva will remember it next time.")
