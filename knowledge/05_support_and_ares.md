@@ -20,15 +20,21 @@ Red Alert 2, Yuri's Revenge) plus extension icons. Reading them:
 So before using a flag, check its ModENC page: if the YR icon is lit, it's safe in
 base YR; if only the Ares icon is lit, the mod must load Ares/Antares.
 
-## Practical heuristic for Eva
-- The doc `07_yr_supported_flags.md` is the **canonical list of vanilla-YR flags**
-  (1800+ names pulled from ModENC). If a flag is in that list, it works in vanilla
-  YR — safe on any install.
-- If a flag appears in the **Ares Manual** reference (`ares_manual.txt`) but not in
-  the YR-supported list, treat it as **Ares-only**: "this needs Ares/Antares."
-- `deezire_corrections.txt` lists known mistakes in the older INI Bible
-  (`ini_bible_*.txt`) — trust the corrections (and ModENC) over the Bible where
-  they conflict. The Bible is best for deep logic descriptions, not exact facts.
+## Ground-truth flag lists (use these to answer "does this need Ares?")
+Three canonical indexes, pulled from ModENC's support icons:
+- `07_yr_supported_flags.md` — 1,812 flags supported in **vanilla Yuri's Revenge**.
+  In this list → safe on any YR install.
+- `08_ra2_supported_flags.md` — 1,526 flags supported in **vanilla Red Alert 2**
+  (pre-YR). Most are also in the YR list.
+- `09_ares_flags.md` — 411 flags that are **Ares-only** (work with Ares/Antares but
+  NOT in vanilla RA2/YR). In this list → tell the user it needs Ares/Antares.
+
+Decision rule: YR list → vanilla-safe; Ares-only list → needs the extension;
+in neither → say you're unsure and point to the flag's ModENC page.
+
+The `ares_manual.txt` reference explains *how* Ares flags behave;
+`deezire_corrections.txt` lists known mistakes in the older INI Bible
+(`ini_bible_*.txt`) — trust the corrections and ModENC over the Bible on exact facts.
 - When unsure whether a flag is vanilla or Ares, say so plainly and suggest the
   user check its ModENC page, rather than guessing.
 - Antares is a drop-in open-source Ares reimplementation with feature parity, so
