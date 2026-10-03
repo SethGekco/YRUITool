@@ -74,10 +74,28 @@ def _code_block(text):
     if m:
         return m.group(1).strip()
     # No fence: accept it only if it reads like a script (a $scope or a
-    # [Section] header at line start, plus at least one assignment).
+    # [Section] header at line start, plus at least one assignment). Keep just
+    # the leading run of script-like lines so a trailing prose sentence
+    # ("This script increases…") doesn't get parsed as a tag.
     if re.search(r"(?m)^\s*(\$[A-Za-z]|\[)", t) and "=" in t:
-        return t.strip()
+        kept = []
+        for ln in t.splitlines():
+            if _script_line(ln):
+                kept.append(ln)
+            elif kept:
+                break  # first prose line after the script ends it
+        return "\n".join(kept).strip()
     return ""
+
+
+def _script_line(ln):
+    """Heuristic: does this line belong to a modifier script (vs prose)?"""
+    s = ln.strip()
+    if not s:
+        return True  # blank lines are fine inside a script
+    if s[0] in "[{$;@":
+        return True  # header, filter marker, scope, comment, generator directive
+    return bool(re.search(r"[=<>]", s))  # assignment or filter comparison
 
 
 def rules_summary(section_map, config=None, max_general=1500):

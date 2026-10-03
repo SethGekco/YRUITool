@@ -90,6 +90,7 @@ def main(path):
         "truncated-no-close": ("```\n[$INFANTRY]\nCost = Cost * 0.5", True),
         "bare-script-no-fence": ("[$INFANTRY]\nStrength = Strength * 1.25", True),
         "pure-prose": ("Change the warhead Verses, not Damage, because…", False),
+        "bare+prose-tail": ("[General]\nX = 1.5\n\nThis script does a thing.", True),
     }
     cb_ok = True
     for name, (text, want) in cb_cases.items():
@@ -97,6 +98,11 @@ def main(path):
         if got != want:
             cb_ok = False
             print(f"  code-block {name}: got extracted={got}, want {want}  FAIL")
+    # The prose tail must NOT end up in the extracted script.
+    tail = _code_block("[General]\nX = 1.5\n\nThis script does a thing.")
+    if "This script" in tail:
+        cb_ok = False
+        print(f"  code-block bare+prose-tail leaked prose: {tail!r}  FAIL")
     print(f"code-block extraction robust (CRLF/lang/trunc/bare): "
           f"{'OK' if cb_ok else 'FAIL'}")
     ok = ok and cb_ok
