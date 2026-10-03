@@ -107,6 +107,50 @@ Refund 50% of the (current) cost:
 Soylent = Cost * 0.5
 ```
 
+## Garrison weapons (OccupyWeapon / EliteOccupyWeapon)
+Infantry that garrison a building fire the weapon named by their `OccupyWeapon`
+(and `EliteOccupyWeapon` when elite) — each of those is a `[WeaponType]` section.
+To buff garrison firepower you scale **those weapon sections**, not the infantry.
+In vanilla YR they are `UCPara`/`UCElitePara`, `UCM1Carbine`/`UCEliteM1Carbine`,
+`UCPsychicJab`/`UCElitePsychicJab`. Example — +50% garrison damage (never scale a
+`Damage=1` utility weapon):
+```
+[UCPara]
+Damage = Damage * 1.5
+[UCElitePara]
+Damage = Damage * 1.5
+[UCM1Carbine]
+Damage = Damage * 1.5
+[UCEliteM1Carbine]
+Damage = Damage * 1.5
+[UCPsychicJab]
+Damage = Damage * 1.5
+[UCElitePsychicJab]
+Damage = Damage * 1.5
+```
+To find the exact names in a given mod, read each garrisonable infantry's
+`OccupyWeapon` / `EliteOccupyWeapon`. (The Infantry tab's garrison-weapons
+modifier does this resolution automatically.)
+
+## Life-steal / vampire (needs KratosPP)
+NOT a vanilla or Ares feature. KratosPP provides it through its AttachEffect (AE)
+`Vampire` effector: a unit carrying the AE heals a fraction of the damage it
+deals. Author an `[AttachEffectType]` section and attach it to the units. Real
+tags (see `kratos_usage.md`): `Vampire.Percent` (fraction healed; 0 = off) and
+`Vampire.Chance` (default 100%). Example — tanks heal 25% of damage dealt:
+```
+[LifeStealAE]
+Duration=-1
+Vampire.Percent=25%
+[HTNK]
+AttachEffectTypes=LifeStealAE
+[APOC]
+AttachEffectTypes=LifeStealAE
+```
+Attach it via a warhead instead (heal on that warhead's hits) with
+`AttachEffectTypes=LifeStealAE` + `AttachEffectChances=100%` in the `[WarheadType]`.
+Only works if the mod loads KratosPP; in vanilla/Ares these tags do nothing.
+
 ## Using a fill-in parameter
 ```
 #param: hp = 1.5

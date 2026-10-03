@@ -154,6 +154,18 @@ def main(path):
               f"{'OK' if seed_ok else 'FAIL'}")
         ok = ok and seed_ok
 
+        # Updating a shipped doc refreshes it in read/ (encyclopedia updates reach
+        # existing installs), while unchanged docs are still skipped.
+        with open(os.path.join(bundled, "guide.md"), "w") as f:
+            f.write("DSL guide v2: scopes, formulas, filters, garrison, vampire.")
+        refreshed = ks4.seed_bundled(bundled)
+        dest_txt = open(os.path.join(ks4.read_dir, "guide.md")).read()
+        refresh_ok = (refreshed == ["guide.md"] and "v2" in dest_txt
+                      and ks4.seed_bundled(bundled) == [])
+        print(f"seed refreshes changed bundled doc: refreshed={refreshed}  "
+              f"{'OK' if refresh_ok else 'FAIL'}")
+        ok = ok and refresh_ok
+
     # The repo ships a starter encyclopedia.
     import yrbalance
     kdir = os.path.join(os.path.dirname(os.path.dirname(yrbalance.__file__)), "knowledge")
