@@ -95,12 +95,15 @@ class EvaTab(QWidget):
         self.script_view.setMaximumHeight(160)
         outer.addWidget(self.script_view, 1)
         srow = QHBoxLayout()
-        self.send_script_btn = QPushButton("Send to Custom Script")
-        self.send_script_btn.clicked.connect(self._send_to_custom)
+        self.apply_btn = QPushButton("Apply to rules")
+        self.apply_btn.clicked.connect(self._apply)
         self.preview_btn = QPushButton("Preview")
         self.preview_btn.clicked.connect(self._preview)
-        srow.addWidget(self.send_script_btn)
+        self.send_script_btn = QPushButton("Send to Custom Script")
+        self.send_script_btn.clicked.connect(self._send_to_custom)
+        srow.addWidget(self.apply_btn)
         srow.addWidget(self.preview_btn)
+        srow.addWidget(self.send_script_btn)
         srow.addStretch(1)
         outer.addLayout(srow)
 
@@ -224,6 +227,11 @@ class EvaTab(QWidget):
         s = self._current_script()
         if s:
             self.mw.preview_script_text(s)
+
+    def _apply(self):
+        s = self._current_script()
+        if s:
+            self.mw.apply_script_to_rules(s)
 
     # ── Knowledge ────────────────────────────────────────────────────────────
     def _scan_inbox(self):

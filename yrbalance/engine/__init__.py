@@ -149,6 +149,7 @@ from .pipeline import (
 )
 from .restore import restore_vanilla
 from .history import scan_changes, revert_change
+from .backup import make_backup, list_backups, default_backup_dir
 
 __all__ = [
     # config
@@ -207,6 +208,7 @@ __all__ = [
     "run_script", "RunResult", "RunError", "config_keywords",
     # pipeline
     "CategoryRatios", "BalanceSpec", "RunSummary", "run_balance",
-    # restore / history
+    # restore / history / backup
     "restore_vanilla", "scan_changes", "revert_change",
+    "make_backup", "list_backups", "default_backup_dir",
 ]

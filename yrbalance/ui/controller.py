@@ -8,7 +8,7 @@ constructing widgets or a QApplication.
 from ..engine import (
     parse_ini_lines, build_section_map,
     run_balance, parse_script, run_script, resolve_scope, ScriptError,
-    ModConfig,
+    restore_vanilla, ModConfig,
 )
 
 
@@ -47,13 +47,21 @@ def preview_script(section_map, script_text, config=None):
 
 
 def apply_to_lines(lines, section_map, spec, scripts=None, config=None,
-                   param_values=None, progress=None):
+                   param_values=None, progress=None, restore_first=False):
     """
     Apply a spec + scripts to an already-loaded (lines, section_map) in place.
     Returns (RunSummary, [RunResult]). Used by both apply_and_save and preview.
+
+    restore_first: revert existing tool annotations to vanilla before applying, so
+    an in-place re-apply rebuilds from vanilla instead of compounding. The caller
+    must rebuild section_map afterwards if it reverted (we re-read indices here).
     """
     if config is None:
         config = ModConfig.default()
+    if restore_first:
+        restore_vanilla(lines)
+        section_map.clear()
+        section_map.update(build_section_map(lines)[0])
     summary = run_balance(lines, section_map, spec, config, progress=progress)
     results = []
     for text in (scripts or []):
@@ -143,15 +151,18 @@ class WorkingSession:
 
 
 def apply_and_save(source_path, out_path, spec, scripts=None, config=None,
-                   param_values=None, progress=None):
+                   param_values=None, progress=None, restore_first=False):
     """
     Re-load the source rules, apply the balance spec (Pass 1 + sight) and each
-    script, and write to out_path. Always re-loads from source so repeated applies
-    don't compound. Returns (RunSummary, [RunResult]).
+    script, and write to out_path. Returns (RunSummary, [RunResult]).
+
+    restore_first (used for in-place writes) reverts existing annotations to vanilla
+    before applying so repeated in-place applies don't compound.
     """
     lines, section_map = load_rules(source_path)
     summary, results = apply_to_lines(lines, section_map, spec, scripts, config,
-                                      param_values, progress)
+                                      param_values, progress,
+                                      restore_first=restore_first)
     # newline="" so each line's own \r\n / \n (preserved by the parser) is written
     # verbatim rather than translated by the platform.
     with open(out_path, "w", encoding="utf-8", newline="") as f:

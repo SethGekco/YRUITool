@@ -11,11 +11,12 @@ from PySide6.QtGui import QFont, QPalette, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QSplitter, QComboBox, QFileDialog, QMessageBox, QPlainTextEdit,
-    QDialog, QDialogButtonBox, QApplication, QLineEdit,
+    QDialog, QDialogButtonBox, QApplication, QLineEdit, QSpinBox,
 )
 
 from ..engine import (
     ModConfig, BalanceSpec, parse_ini_lines, build_section_map, restore_vanilla,
+    make_backup, default_backup_dir,
 )
 from . import controller, blueprint
 from .category_tab import CategoryTab
@@ -209,6 +210,80 @@ class MainWindow(QMainWindow):
         last = self.settings.value("last_rules", "")
         return os.path.dirname(last) if last else ""
 
+    # ── Write-mode / backup settings ─────────────────────────────────────────
+    def _write_in_place(self):
+        return self.settings.value("write_mode", "inplace") == "inplace"
+
+    def _backup_cfg(self):
+        bdir = self.settings.value("backup_dir", "") or None
+        try:
+            keep = int(self.settings.value("backup_keep", 10))
+        except (TypeError, ValueError):
+            keep = 10
+        return bdir, keep
+
+    def _make_backup(self):
+        """Back up the source file. Returns the backup path, or False on failure."""
+        bdir, keep = self._backup_cfg()
+        try:
+            return make_backup(self.source_path, bdir, keep)
+        except OSError as e:
+            QMessageBox.critical(
+                self, "Backup",
+                f"Could not create a backup:\n{e}\n\nAborting — nothing was "
+                "written (in-place edits always back up first).")
+            return False
+
+    def open_settings(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Settings")
+        dlg.resize(560, 220)
+        lay = QVBoxLayout(dlg)
+
+        mode_box = QComboBox()
+        mode_box.addItem("Edit the loaded file in place (back it up first)", "inplace")
+        mode_box.addItem("Save to a separate file (leave the original)", "separate")
+        idx = mode_box.findData("inplace" if self._write_in_place() else "separate")
+        mode_box.setCurrentIndex(max(0, idx))
+        lay.addWidget(QLabel("When applying changes:"))
+        lay.addWidget(mode_box)
+
+        brow = QHBoxLayout()
+        brow.addWidget(QLabel("Backup folder:"))
+        bdir_edit = QLineEdit(self.settings.value("backup_dir", ""))
+        bdir_edit.setPlaceholderText("(default: a 'yrbt_backups' folder next to the rules)")
+        brow.addWidget(bdir_edit, 1)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(lambda: self._pick_backup_dir(bdir_edit))
+        brow.addWidget(browse)
+        lay.addLayout(brow)
+
+        krow = QHBoxLayout()
+        krow.addWidget(QLabel("Keep this many backups per file (0 = unlimited):"))
+        keep_spin = QSpinBox()
+        keep_spin.setRange(0, 999)
+        keep_spin.setValue(self._backup_cfg()[1])
+        krow.addWidget(keep_spin)
+        krow.addStretch(1)
+        lay.addLayout(krow)
+
+        lay.addStretch(1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+
+        if dlg.exec() == QDialog.Accepted:
+            self.settings.setValue("write_mode", mode_box.currentData())
+            self.settings.setValue("backup_dir", bdir_edit.text().strip())
+            self.settings.setValue("backup_keep", keep_spin.value())
+
+    def _pick_backup_dir(self, edit):
+        d = QFileDialog.getExistingDirectory(self, "Backup folder",
+                                             edit.text().strip() or self._last_dir())
+        if d:
+            edit.setText(d)
+
     # ── Drag and drop a rules file onto the window ───────────────────────────
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -242,6 +317,8 @@ class MainWindow(QMainWindow):
                                                       self.reload_last_rules)
         self.reload_last_action.setEnabled(False)
         file_menu.addAction("Restore a file to vanilla…", self.restore_to_vanilla)
+        file_menu.addSeparator()
+        file_menu.addAction("Settings…", self.open_settings)
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
 
@@ -700,43 +777,73 @@ class MainWindow(QMainWindow):
         self._diff_dialog("Eva script preview",
                           controller.summarize(summary, results), diff)
 
-    def apply_and_save(self):
-        if not self.source_path:
-            return
+    def _resolve_target(self):
+        """Return (out_path, backup_path_or_None) for a write, or (None, None) to abort."""
+        if self._write_in_place():
+            backup = self._make_backup()
+            if backup is False:
+                return None, None
+            return self.source_path, backup
         if not self.out_path:
             base, ext = os.path.splitext(self.source_path)
-            default_out = f"{base}_edited{ext or '.ini'}"
             path, _ = QFileDialog.getSaveFileName(
-                self, "Save edited rules", default_out,
+                self, "Save edited rules", f"{base}_edited{ext or '.ini'}",
                 "INI files (*.ini);;All files (*)")
             if not path:
-                return
+                return None, None
             self.out_path = path
+        return self.out_path, None
 
-        spec = self.collect_spec()
-        scripts = self.collect_scripts()
-        log = []
+    def _apply_core(self, spec, scripts, restore_first):
+        """Resolve target, back up (in-place), apply, refresh History. No dialog.
+        Returns (out, backup, summary, results) or None."""
+        out, backup = self._resolve_target()
+        if out is None:
+            return None
         try:
-            summary, script_results = controller.apply_and_save(
-                self.source_path, self.out_path, spec,
-                scripts=scripts, config=self.config, progress=log.append)
-        except Exception as e:  # surface engine/script errors to the user
+            summary, results = controller.apply_and_save(
+                self.source_path, out, spec, scripts=scripts, config=self.config,
+                restore_first=restore_first)
+        except Exception as e:
             QMessageBox.critical(self, "Apply", f"{type(e).__name__}: {e}")
-            return
-
-        # Refresh the History tab from the file we just wrote.
+            return None
         try:
-            olines, osm = controller.load_rules(self.out_path)
+            olines, osm = controller.load_rules(out)
             self.history_tab.set_rules(olines, osm, self.config)
         except OSError:
             pass
+        return out, backup, summary, results
 
-        text = controller.summarize(summary, script_results)
-        self.statusBar().showMessage(f"Saved to {os.path.basename(self.out_path)}.")
+    def _after_write(self, out, backup, summary, results, title):
+        self.statusBar().showMessage(
+            f"Wrote {os.path.basename(out)}"
+            + (f" (backup: {os.path.basename(backup)})" if backup else "") + ".")
         dlg = QMessageBox(self)
-        dlg.setWindowTitle("Applied and saved")
+        dlg.setWindowTitle(title)
         dlg.setIcon(QMessageBox.Information)
-        dlg.setText(f"Saved to:\n{self.out_path}\n\n{text}")
+        msg = f"Wrote:\n{out}\n"
+        if backup:
+            msg += f"\nBacked up the previous file to:\n{backup}\n"
+        dlg.setText(msg + "\n" + controller.summarize(summary, results))
         if summary.weapon_conflict_text.strip():
             dlg.setDetailedText(summary.weapon_conflict_text)
         dlg.exec()
+
+    def apply_and_save(self):
+        if not self.source_path:
+            return
+        r = self._apply_core(self.collect_spec(), self.collect_scripts(),
+                             self._write_in_place())
+        if r:
+            self._after_write(*r, "Applied")
+
+    def apply_script_to_rules(self, script_text):
+        """Apply a single script (Eva) directly, with a backup. Stacks on current."""
+        if not self.source_path:
+            QMessageBox.information(self, "Apply", "Load a rules file first.")
+            return
+        if not script_text.strip():
+            return
+        r = self._apply_core(BalanceSpec(categories={}), [script_text], False)
+        if r:
+            self._after_write(*r, "Eva applied")

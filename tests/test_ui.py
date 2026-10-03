@@ -311,6 +311,36 @@ def main(path):
           f"{'OK' if hist_ok else 'FAIL'}")
     ok = ok and hist_ok
 
+    # ── In-place apply with backup (default write mode) + non-compounding ────
+    import shutil
+    from PySide6.QtCore import QSettings
+    with tempfile.TemporaryDirectory() as d:
+        work = os.path.join(d, "rulesmd.ini")
+        shutil.copy(path, work)
+        bdir = os.path.join(d, "bk")
+        s = QSettings("YRBalanceTool", "YRBalanceTool")
+        s.setValue("write_mode", "inplace")
+        s.setValue("backup_dir", bdir)
+        s.setValue("backup_keep", 5)
+
+        win4 = MainWindow()
+        win4._load_rules_path(work)
+        van = int(get_val(win4.section_map, probe2, "Cost"))
+        win4.category_tabs["inf"].spins["cost"].setValue(0.5)
+        r1 = win4._apply_core(win4.collect_spec(), [], restore_first=True)
+        after1 = _cur(parse_ini_lines(work), probe2, "cost")
+        # Apply again in place — must NOT compound (restore-first rebuilds from vanilla).
+        r2 = win4._apply_core(win4.collect_spec(), [], restore_first=True)
+        after2 = _cur(parse_ini_lines(work), probe2, "cost")
+        from yrbalance.engine import list_backups
+        n_backups = len(list_backups(bdir, work))
+        inplace_ok = (r1 and r2 and after1 == van // 2 and after2 == van // 2
+                      and n_backups == 2)
+        print(f"in-place + backup: cost {van}->{after1}->{after2} (no compound), "
+              f"{n_backups} backups  {'OK' if inplace_ok else 'FAIL'}")
+        ok = ok and inplace_ok
+        s.setValue("write_mode", "inplace")  # leave default
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
