@@ -108,7 +108,7 @@ class MainWindow(QMainWindow):
             self.category_tabs[key] = CategoryTab(
                 key, is_building=is_building, linkable=linkable,
                 link_label=link_label or "Vehicles",
-                garrison=(key == "inf"))
+                garrison=(key == "inf"), opentopped=(key == "veh"))
         # Populate each tab's "Same as X" dropdown with the other categories.
         cat_display = [(k, lbl) for k, lbl, *_ in TECHNO_TABS]
         for key, tab in self.category_tabs.items():
@@ -455,7 +455,8 @@ class MainWindow(QMainWindow):
         return BalanceSpec(
             categories=cats,
             range_threshold=self.global_tab.range_threshold_value(),
-            occupant_ratio=self.category_tabs["inf"].occupant_ratio())
+            occupant_ratio=self.category_tabs["inf"].occupant_ratio(),
+            passenger_ratio=self.category_tabs["veh"].passenger_ratio())
 
     def _current_category_key(self):
         w = self.tabs.currentWidget()
@@ -545,9 +546,10 @@ class MainWindow(QMainWindow):
             "Note: sections/tags added by generator scripts are not removed.")
 
     def collect_scripts(self):
-        """All script text to run: the form tabs (General/AI/Gameplay), then the box."""
+        """All script text to run: the form tabs, the OpenTopped globals, the box."""
         scripts = [self.form_tabs[k].to_script_text()
                    for k in ("general", "ai", "gameplay")]
+        scripts.append(self.category_tabs["veh"].opentopped_script())
         scripts.append(self.script_panel.text())
         return [s for s in scripts if s and s.strip()]
 

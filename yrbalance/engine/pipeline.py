@@ -99,6 +99,8 @@ class BalanceSpec:
     range_threshold: float = None
     # Scale MaxNumberOccupants on all garrisonable buildings (1.0 = unchanged).
     occupant_ratio: float = 1.0
+    # Scale Passengers= on transport / open-topped vehicles (1.0 = unchanged).
+    passenger_ratio: float = 1.0
 
 
 @dataclass
@@ -219,6 +221,12 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
         for name in cat_lists.get("bld", []) + cat_lists.get("def", []):
             apply_tag_ratio(lines, section_map, name, "MaxNumberOccupants",
                             spec.occupant_ratio)
+
+    # ── Step 3d: passenger ratio (scale Passengers= on transports) ───────────
+    if spec.passenger_ratio != 1.0:
+        for name in cat_lists.get("veh", []) + cat_lists.get("nav", []):
+            apply_tag_ratio(lines, section_map, name, "Passengers",
+                            spec.passenger_ratio)
 
     # ── Step 4: sight (after all weapon ranges are finalized) ────────────────
     for key, r in spec.categories.items():

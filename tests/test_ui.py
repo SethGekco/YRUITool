@@ -85,6 +85,22 @@ def main(path):
     it.gar_same.setChecked(True)
     it.occupant_spin.setValue(1.0)
 
+    # ── OpenTopped group (Vehicles only): passenger ratio + globals script ───
+    vt = win.category_tabs["veh"]
+    vt.passenger_spin.setValue(1.5)
+    cb, edit = vt.ot_globals["OpenToppedDamageMultiplier"]
+    edit.setText("0.75")
+    cb.setChecked(True)  # (typing auto-ticks in the UI; setText doesn't emit it)
+    ot_spec = win.collect_spec()
+    ot_scripts = win.collect_scripts()
+    ot_ok = (ot_spec.passenger_ratio == 1.5
+             and any("OpenToppedDamageMultiplier" in s and "0.75" in s for s in ot_scripts)
+             and not win.category_tabs["inf"].opentopped)
+    print(f"opentopped passenger + globals: {ot_ok}  {'OK' if ot_ok else 'FAIL'}")
+    ok = ok and ot_ok
+    vt.passenger_spin.setValue(1.0)
+    cb.setChecked(False)
+
     # ── Cost mode + TechLevel controls flow into the spec ────────────────────
     inf_tab = win.category_tabs["inf"]
     idx = inf_tab.cost_mode.findData("techlevel")

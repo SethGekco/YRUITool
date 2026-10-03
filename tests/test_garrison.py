@@ -90,6 +90,23 @@ def main(path):
               f"(x2)  {'OK' if o_ok else 'FAIL'}")
         ok = ok and o_ok
 
+    # Passenger ratio: Passengers x2 on a transport vehicle.
+    lines3 = parse_ini_lines(path)
+    sm5, _ = build_section_map(lines3)
+    trans = next((v for v in parse_type_list(sm5, "VehicleTypes")
+                  if get_val(sm5, v, "Passengers", "").isdigit()
+                  and int(get_val(sm5, v, "Passengers")) > 0), None)
+    if trans:
+        van_p = int(get_val(sm5, trans, "Passengers"))
+        run_balance(lines3, sm5, BalanceSpec(categories={}, passenger_ratio=2.0), config)
+        sm6, _ = build_section_map(lines3)
+        new_p = get_current_field_value_from_line(
+            lines3[sm6[trans.lower()]["keys"]["passengers"][0]])
+        p_ok = new_p == van_p * 2
+        print(f"passenger ratio: [{trans}] Passengers {van_p}->{new_p} (x2)  "
+              f"{'OK' if p_ok else 'FAIL'}")
+        ok = ok and p_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

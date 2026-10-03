@@ -94,6 +94,12 @@ def serialize(category_states, form_states, script_text, name="Untitled",
             out.append(f"Garrison.Range = {_fmt(g.get('rng', 1.0))}")
             out.append(f"Garrison.ROF = {_fmt(g.get('rof', 1.0))}")
             out.append(f"Garrison.Occupant = {_fmt(g.get('occupant', 1.0))}")
+        ot = state.get("opentopped")
+        if ot:
+            out.append(f"OpenTopped.Passenger = {_fmt(ot.get('passenger', 1.0))}")
+            for tag, (used, val) in ot.get("globals", {}).items():
+                prefix = "" if used else "#"
+                out.append(f"{prefix}OpenTopped.{tag} = {val}")
         for lid, checked in state.get("links", {}).items():
             out.append(f"Link.{lid} = {_yesno(checked)}")
         out.append("")
@@ -258,6 +264,16 @@ def _parse_category_line(state, line):
                    "occupant": "occupant"}.get(sub, sub)] = float(v)
             except ValueError:
                 pass
+    elif kl == "opentopped.passenger":
+        ot = state.setdefault("opentopped", {})
+        ot.setdefault("globals", {})
+        try:
+            ot["passenger"] = float(v)
+        except ValueError:
+            pass
+    elif kl.startswith("opentopped."):
+        ot = state.setdefault("opentopped", {})
+        ot.setdefault("globals", {})[k.split(".", 1)[1]] = (True, v)  # original case tag
     else:
         attr = LABEL_KEY.get(kl)
         if attr is not None:

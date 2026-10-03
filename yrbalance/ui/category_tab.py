@@ -14,9 +14,10 @@ Layout:
 Ratios (1.0 = unchanged). Linking sources are resolved by the main window.
 """
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QGridLayout, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox,
-    QCheckBox, QGroupBox, QComboBox,
+    QCheckBox, QGroupBox, QComboBox, QLineEdit,
 )
 
 from ..engine import CategoryRatios
@@ -47,11 +48,12 @@ def _spin():
 
 class CategoryTab(QWidget):
     def __init__(self, cat_key, is_building=False, linkable=False,
-                 link_label="", garrison=False, parent=None):
+                 link_label="", garrison=False, opentopped=False, parent=None):
         super().__init__(parent)
         self.cat_key = cat_key
         self.is_building = is_building
         self.garrison = garrison
+        self.opentopped = opentopped
         self.spins = {}          # attr -> QDoubleSpinBox (all ratio fields)
         self.link_checks = {}    # link-id -> QCheckBox
 
@@ -88,6 +90,8 @@ class CategoryTab(QWidget):
             self.soylent_cost_frac = None
         if garrison:
             outer.addWidget(self._build_garrison_box())
+        if opentopped:
+            outer.addWidget(self._build_opentopped_box())
         outer.addWidget(self._build_techlevel_box())
         outer.addStretch(1)
 
@@ -218,6 +222,60 @@ class CategoryTab(QWidget):
         self.gar_same.toggled.connect(lambda _c: _upd())
         _upd()
         return box
+
+    OT_GLOBALS = [
+        ("OpenToppedDamageMultiplier", "Damage multiplier"),
+        ("OpenToppedRangeBonus", "Range bonus"),
+        ("OpenToppedWarpDistance", "Warp distance"),
+        ("OpenToppedDarkening", "Darkening"),
+    ]
+
+    def _build_opentopped_box(self):
+        box = QGroupBox("Open-topped / transport")
+        lay = QVBoxLayout(box)
+
+        prow = QHBoxLayout()
+        prow.addWidget(QLabel("Passenger capacity ratio (vehicle Passengers=):"))
+        self.passenger_spin = _spin()
+        prow.addWidget(self.passenger_spin)
+        prow.addStretch(1)
+        lay.addLayout(prow)
+
+        lay.addWidget(QLabel("[General] open-topped multipliers — tick to apply:"))
+        grid = QGridLayout()
+        grid.setColumnStretch(2, 1)
+        self.ot_globals = {}
+        for row, (tag, label) in enumerate(self.OT_GLOBALS):
+            cb = QCheckBox()
+            edit = QLineEdit()
+            edit.setPlaceholderText("value, e.g. 1.0")
+            edit.textEdited.connect(lambda _t, c=cb: c.setChecked(True))
+            grid.addWidget(cb, row, 0, Qt.AlignCenter)
+            grid.addWidget(QLabel(f"{label}  ({tag})"), row, 1)
+            grid.addWidget(edit, row, 2)
+            self.ot_globals[tag] = (cb, edit)
+        lay.addLayout(grid)
+
+        note = QLabel("Passengers in open-topped vehicles fire their own weapons "
+                      "(already scaled by the Vehicle weapon ratios). These global "
+                      "[General] multipliers affect every open-topped transport.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: gray;")
+        lay.addWidget(note)
+        return box
+
+    def passenger_ratio(self):
+        return self.passenger_spin.value() if self.opentopped else 1.0
+
+    def opentopped_script(self):
+        if not self.opentopped:
+            return ""
+        used = [(tag, edit.text().strip())
+                for tag, (cb, edit) in self.ot_globals.items()
+                if cb.isChecked() and edit.text().strip()]
+        if not used:
+            return ""
+        return "[General]\n" + "".join(f"{t} = {v}\n" for t, v in used)
 
     def _build_techlevel_box(self):
         box, lay = self._box_header("Custom TechLevel", "techlevel")
@@ -362,6 +420,11 @@ class CategoryTab(QWidget):
                 "rof": self.gar_spins["rof"].value(),
                 "occupant": self.occupant_spin.value(),
             } if self.garrison else None),
+            "opentopped": ({
+                "passenger": self.passenger_spin.value(),
+                "globals": {tag: (cb.isChecked(), edit.text())
+                            for tag, (cb, edit) in self.ot_globals.items()},
+            } if self.opentopped else None),
         }
 
     def set_state(self, state):
@@ -392,6 +455,14 @@ class CategoryTab(QWidget):
             self.gar_spins["rng"].setValue(float(g.get("rng", 1.0)))
             self.gar_spins["rof"].setValue(float(g.get("rof", 1.0)))
             self.occupant_spin.setValue(float(g.get("occupant", 1.0)))
+        ot = state.get("opentopped")
+        if self.opentopped and ot:
+            self.passenger_spin.setValue(float(ot.get("passenger", 1.0)))
+            for tag, (used, val) in ot.get("globals", {}).items():
+                if tag in self.ot_globals:
+                    cb, edit = self.ot_globals[tag]
+                    edit.setText(str(val))
+                    cb.setChecked(bool(used))
         self._refresh_enabled()
 
     @staticmethod
