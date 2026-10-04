@@ -29,6 +29,17 @@ Two separable pieces:
 Decision needed: how far to generalize the *editor* vs. just the *reference*.
 Reference breadth is low-risk and high-value first step.
 
+## Sound effects & music support
+Let Eva add sound effects and music to a mod for the user — or walk them through
+doing it themselves. This spans `sound(md).ini` / `eva(md).ini` / `theme(md).ini`
+and the asset side (registering entries in the right list sections, pointing at
+the audio files, `.bag`/`.idx` or loose-file handling). Reference walkthrough:
+https://modenc.renegadeprojects.com/Adding_A_Song (the canonical "add a song"
+guide — covers theme registration and file placement). Two modes, mirroring the
+Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
+Pairs with the "universal helper" item above (sound/theme INIs were deferred
+there as cosmetic — this is the concrete use case to pull them in).
+
 ## Eva autonomy (manual + agent blend)
 Today: Eva writes a validated DSL script; the user clicks **Apply to rules**
 (in-place, auto-backup), **Preview** (dry-run), or **Send to Custom Script**

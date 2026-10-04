@@ -67,6 +67,21 @@ Every name a section points at must resolve to a declared section:
   values must be from the valid set; `Rotates=yes` on a voxel is wrong; trailer
   image vs `UseLineTrail` conflict.
 
+## Understanding aimd.ini (for AI help requests)
+The AI is four linked building blocks: **TaskForce** (a group of units) →
+**Script** (the ordered actions that group performs) → **TeamType** (binds a
+TaskForce+Script with behavior flags) → **AITrigger** (the condition under which a
+Team is built). Reference docs in this knowledge base:
+- `aiedit_yr_config.ini` — the authoritative semantic map: `[ActionTypes]` lists
+  every script-action number with its meaning (0=Attack Target Type, 8=Unload,
+  9=Deploy, 11=Assign New Mission, …), `[Conditions]` lists AITrigger condition
+  types, and `[TeamTypeOptions]`/`[TriggerTypeOptions]` give each field's type.
+  Use this to explain what a script action or trigger condition number does.
+- `aiedit_readme.md` — concise overview of the four blocks.
+- `advanced_ai_tutorial.txt`, `ai_mini_guide.txt`, `ini_bible_ai.txt` — tutorials.
+Note: action/condition *numbers* beyond the vanilla tables may be added by
+extensions — don't call a high action number invalid; it may be Ares/Phobos.
+
 ## How Eva should use this
 When asked to add/edit INI, sanity-check the cross-references and AI consistency
 above, and warn about real breakage (dangling references, capacity/tech/house
