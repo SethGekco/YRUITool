@@ -64,6 +64,24 @@ def main():
         ok = ok and good
         print(f"  {'OK' if good else 'FAIL'}  detect {rhs!r} -> {got} (want {want})")
 
+    # intended_formula_but_invalid: broken formulas must be flagged (so they are
+    # skipped, never written verbatim), while real literals pass through.
+    from yrbalance.engine.formula import intended_formula_but_invalid
+    inv_checks = [
+        ("if(TechLevel == 1, Cost * 0.5, Cost)", True),  # comparison + call -> broken
+        ("Cost >= 500", True),                           # comparison on known var
+        ("Cost * 0.5", False),                           # valid formula, not 'invalid'
+        ("heavy", False), ("yes", False), ("-1", False),
+        ("GAPILE,GAWEAP", False), ("100%,100%,100%", False),
+        ("Russians,Africans", False), ("pipsnum.shp", False),
+    ]
+    for rhs, want in inv_checks:
+        got = intended_formula_but_invalid(rhs, known)
+        good = got == want
+        ok = ok and good
+        print(f"  {'OK' if good else 'FAIL'}  invalid-formula {rhs!r} -> {got} "
+              f"(want {want})")
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

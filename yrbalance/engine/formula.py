@@ -13,6 +13,7 @@ is a known variable/param) or written verbatim as a literal string.
 """
 
 import ast
+import re
 import math
 
 
@@ -178,6 +179,31 @@ def looks_like_formula(rhs, known_names):
     single_known_var = (
         isinstance(tree.body, ast.Name) and tree.body.id in known_names)
     return has_op_or_call or single_known_var
+
+
+def intended_formula_but_invalid(rhs, known_names):
+    """True when `rhs` was clearly meant as a computed formula but is NOT a valid
+    whitelisted one — so it must be skipped, never written verbatim into the INI
+    (which would corrupt the value, e.g. `Cost = if(TechLevel == 1, ...)`).
+
+    Signals of intent: it is computational (has an arithmetic/grouping/comparison
+    operator) AND it either references a known script variable (Cost, TechLevel…)
+    or uses function-call syntax. Plain literals like `heavy`, `yes`,
+    `GAPILE,GAWEAP`, `100%,100%`, or `-1` are never flagged."""
+    if looks_like_formula(rhs, known_names):
+        return False
+    s = rhs.strip()
+    if len(s) >= 2 and s[0] in "\"'" and s[-1] == s[0]:
+        return False  # explicitly quoted literal
+    computational = bool(re.search(r"[()+*/%]|==|<=|>=|(?<![A-Za-z0-9])[<>]", s))
+    if not computational:
+        return False
+    toks = set(re.findall(r"[A-Za-z_]\w*", s))
+    if toks & set(known_names):
+        return True
+    if re.search(r"[A-Za-z_]\w*\s*\(", s):  # function-call syntax
+        return True
+    return False
 
 
 def strip_quotes(s):

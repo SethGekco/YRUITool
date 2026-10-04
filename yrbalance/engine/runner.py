@@ -36,7 +36,10 @@ from .sections import (
 from .selectors import resolve_scope
 from .filters import FilterContext, filter_technos
 from .config import ModConfig
-from .formula import evaluate, looks_like_formula, strip_quotes, FormulaError
+from .formula import (
+    evaluate, looks_like_formula, intended_formula_but_invalid, strip_quotes,
+    FormulaError,
+)
 from .techlevel import get_effective_tl
 
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
@@ -150,6 +153,12 @@ def _apply_tag_op(lines, section_map, target, op, subs, variables, annotate, res
             return
         value_str = _fmt_num(val)
         variables[op.tag] = val
+    elif intended_formula_but_invalid(rhs, known):
+        # Looks like a formula but isn't a valid one — refuse to write it verbatim
+        # (would corrupt the tag, e.g. Cost = if(TechLevel == 1, ...)).
+        result.skipped.append(
+            (target, op.tag, f"not a valid formula, not written: {rhs!r}"))
+        return
     else:
         value_str = strip_quotes(rhs)
         num = _to_num(value_str)
@@ -164,6 +173,11 @@ def _apply_tag_op(lines, section_map, target, op, subs, variables, annotate, res
 def _run_modify_block(lines, section_map, block, subs_base, config, annotate,
                       result, progress, filter_ctx):
     technos = resolve_scope(section_map, block.scope, config)
+    if not technos:
+        # A scope that matches nothing (typo, wrong keyword, or a section not in
+        # these rules) would otherwise be a silent no-op — surface it.
+        result.skipped.append(
+            (block.scope, "*", "scope matched no sections (nothing changed)"))
     technos = filter_technos(technos, block.filter, filter_ctx)
     touched = 0
     for name in technos:

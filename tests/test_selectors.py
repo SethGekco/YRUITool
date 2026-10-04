@@ -39,6 +39,15 @@ def main(path):
     print(f"\n$INFANTRY -> {len(inf)} technos  {'OK' if check else 'FAIL'}")
     ok = ok and check
 
+    # Keywords written without the leading '$' resolve the same (common slip).
+    bare = (resolve_scope(section_map, "VEHICLE", config)
+            == resolve_scope(section_map, "$VEHICLE", config)
+            and len(resolve_scope(section_map, "ALL", config)) == len(
+                resolve_scope(section_map, "$ALL", config))
+            and len(resolve_scope(section_map, "VEHICLE", config)) > 0)
+    print(f"bare 'VEHICLE'/'ALL' == '$VEHICLE'/'$ALL'  {'OK' if bare else 'FAIL'}")
+    ok = ok and bare
+
     # $STRUCTURE = bld + def, de-duplicated by section name (the index may list a
     # building twice; resolve_scope collapses that).
     struct = resolve_scope(section_map, "$STRUCTURE", config)

@@ -96,14 +96,18 @@ def resolve_scope(section_map, scope, config=None):
         if not token:
             continue
         upper = token.upper()
+        # Accept keywords written without the leading '$' (a common slip):
+        # 'VEHICLE' / 'ALL' resolve like '$VEHICLE' / '$ALL'. The literal-section
+        # fallback below still handles any real section of that name.
+        kw = upper if upper.startswith("$") else "$" + upper
 
         # Composite keyword?
-        if upper in config.composite_keywords:
-            for cat_key in config.composite_keywords[upper]:
+        if kw in config.composite_keywords:
+            for cat_key in config.composite_keywords[kw]:
                 add_cat(cat_key)
             continue
         # Category keyword?
-        cat = config.category_by_keyword(upper)
+        cat = config.category_by_keyword(kw)
         if cat is not None:
             add_cat(cat.key)
             continue
