@@ -24,6 +24,20 @@ def _is_curated(fn):
     return bool(re.match(r"\d\d_.*\.(md|markdown)$", fn, re.I))
 
 
+# Structured reference-table docs — authoritative lookup maps (e.g. aimd.ini
+# script-action / trigger-condition number tables). Their terse `key=value` lines
+# embed weakly, so like curated docs they get a guaranteed retrieval slot.
+# Extend this list for new reference tables (convention: name them `ref_*`).
+_REFERENCE_PATTERNS = (
+    re.compile(r"^(ref|table)[_-]", re.I),   # convention for future tables
+    re.compile(r"^aiedit_.*\.ini$", re.I),   # aiedit action/condition/option maps
+)
+
+
+def _is_reference(fn):
+    return any(p.search(fn) for p in _REFERENCE_PATTERNS)
+
+
 def chunk_text(text, size=900, overlap=150):
     """Split text into overlapping character windows."""
     text = text.strip()
@@ -138,15 +152,25 @@ class KnowledgeIndex:
                 scored.append((cosine(qv, ch["vec"]), fn, ch["text"]))
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # Reserve one slot for the best curated recipe/cheatsheet chunk when none
-        # made the top-k on raw similarity — otherwise bulk INI dumps crowd the
-        # instructional docs out entirely for structural queries.
-        ranked = scored[:top_k]
-        if ranked and not any(_is_curated(fn) for _, fn, _ in ranked):
-            best_cur = next((x for x in scored if _is_curated(x[1])), None)
-            if best_cur is not None:
-                ranked = ranked[:max(1, top_k) - 1] + [best_cur]
-                ranked.sort(key=lambda x: x[0], reverse=True)
+        # Reserve a slot for the best chunk of each priority bucket (curated
+        # recipe/cheatsheet docs, and structured reference tables) when none made
+        # the top-k on raw similarity — otherwise bulk INI dumps crowd them out
+        # entirely for structural/lookup queries. Evict the lowest-scoring
+        # non-priority chunk so an already-reserved bucket is never displaced.
+        ranked = list(scored[:top_k])
+        for pred in (_is_curated, _is_reference):
+            if not ranked or any(pred(fn) for _, fn, _ in ranked):
+                continue
+            best = next((x for x in scored if pred(x[1])), None)
+            if best is None or best in ranked:
+                continue
+            # Evict the lowest-scoring non-priority chunk, but never index 0 (the
+            # single top hit always stays) and never an already-reserved chunk.
+            evictable = [i for i, (_, fn, _) in enumerate(ranked)
+                         if i != 0 and not _is_curated(fn) and not _is_reference(fn)]
+            if evictable:
+                ranked[evictable[-1]] = best
+        ranked.sort(key=lambda x: x[0], reverse=True)
 
         parts, total = [], 0
         sources = {}  # name -> best score, insertion-ordered (best first)
