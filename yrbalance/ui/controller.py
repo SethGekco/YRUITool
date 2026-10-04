@@ -5,11 +5,45 @@ Keeping this Qt-free means the whole apply/preview flow is unit-testable without
 constructing widgets or a QApplication.
 """
 
+import os
+
 from ..engine import (
     parse_ini_lines, build_section_map,
     run_balance, parse_script, run_script, resolve_scope, ScriptError,
     restore_vanilla, ModConfig,
+    lint_ai, has_ai_sections,
 )
+
+
+# AI files to look for alongside a loaded rules file (YR first, then RA2).
+_AI_FILENAMES = ("aimd.ini", "ai.ini")
+
+
+def lint_ai_for(source_path, section_map):
+    """Run the AI linter for a loaded rules file.
+
+    The AI registry (TaskForces/ScriptTypes/TeamTypes/AITriggerTypes) usually
+    lives in aimd.ini (YR) or ai.ini (RA2) beside the rules file, but some mods
+    keep it in the rules file itself. Resolve the AI source accordingly, using the
+    loaded rules map to resolve unit references. Returns (findings, ai_source_desc)."""
+    rules_map = section_map or {}
+    if has_ai_sections(rules_map):
+        return lint_ai(rules_map, rules_map), "loaded rules file"
+
+    if source_path:
+        folder = os.path.dirname(source_path)
+        for fn in _AI_FILENAMES:
+            cand = os.path.join(folder, fn)
+            if os.path.isfile(cand):
+                try:
+                    ai_lines = parse_ini_lines(cand)
+                    ai_map, _ = build_section_map(ai_lines)
+                except OSError:
+                    continue
+                return lint_ai(ai_map, rules_map), os.path.basename(cand)
+
+    # Nothing found — lint the (empty-of-AI) rules map to get the friendly note.
+    return lint_ai(rules_map, rules_map), None
 
 
 def load_rules(source_path):

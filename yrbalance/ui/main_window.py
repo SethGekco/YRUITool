@@ -342,6 +342,9 @@ class MainWindow(QMainWindow):
         bp.addAction("Save blueprint…", self.save_blueprint)
         bp.addAction("Load blueprint…", self.load_blueprint)
 
+        tools = mb.addMenu("Tools")
+        tools.addAction("Lint AI…", self.lint_ai)
+
         view = mb.addMenu("View")
         self.dark_action = view.addAction("Dark theme")
         self.dark_action.setCheckable(True)
@@ -350,6 +353,51 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("Help")
         help_menu.addAction("Custom script help…", lambda: show_script_help(self))
         help_menu.addAction("About YRBalanceTool", self._show_about)
+
+    def lint_ai(self):
+        """Lint the loaded mod's AI (TaskForces/ScriptTypes/TeamTypes/triggers)."""
+        if not self.source_path or self.section_map is None:
+            QMessageBox.information(self, "Lint AI", "Load a rules file first.")
+            return
+        try:
+            findings, src = controller.lint_ai_for(self.source_path,
+                                                   self.section_map)
+        except Exception as e:
+            QMessageBox.critical(self, "Lint AI", f"{type(e).__name__}: {e}")
+            return
+        self._show_lint_results(findings, src)
+
+    def _show_lint_results(self, findings, src):
+        from ..engine import format_findings
+        errs = sum(1 for f in findings if f.severity == "error")
+        warns = sum(1 for f in findings if f.severity == "warning")
+        where = f" (from {src})" if src else ""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("AI lint results")
+        dlg.resize(680, 460)
+        lay = QVBoxLayout(dlg)
+        head = QLabel(f"<b>{errs} error(s), {warns} warning(s)</b>{where}")
+        head.setWordWrap(True)
+        lay.addWidget(head)
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setFont(QFont("monospace", 10))
+        view.setPlainText(format_findings(findings))
+        lay.addWidget(view, 1)
+        note = QLabel(
+            "Conservative check: only genuine breakage (dangling references, bad "
+            "counts/indices). Unknown tags/objects are NOT flagged — they may be "
+            "Ares/Phobos/KratosPP features.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: gray;")
+        lay.addWidget(note)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close = QPushButton("Close")
+        close.clicked.connect(dlg.accept)
+        row.addWidget(close)
+        lay.addLayout(row)
+        dlg.exec()
 
     def _show_about(self):
         QMessageBox.about(

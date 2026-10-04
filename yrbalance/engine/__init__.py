@@ -150,6 +150,7 @@ from .pipeline import (
 from .restore import restore_vanilla
 from .history import scan_changes, revert_change
 from .backup import make_backup, list_backups, default_backup_dir
+from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
 
 __all__ = [
     # config
@@ -211,4 +212,6 @@ __all__ = [
     # restore / history / backup
     "restore_vanilla", "scan_changes", "revert_change",
     "make_backup", "list_backups", "default_backup_dir",
+    # lint
+    "lint_ai", "has_ai_sections", "format_findings", "LintFinding",
 ]
