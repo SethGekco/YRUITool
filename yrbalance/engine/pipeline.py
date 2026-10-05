@@ -110,6 +110,8 @@ class RunSummary:
     weapon_conflict_text: str = ""
     techlevels_written: int = 0
     costs_scaled: int = 0
+    occupants_scaled: int = 0   # buildings whose MaxNumberOccupants was scaled
+    passengers_scaled: int = 0  # units whose Passengers= was scaled
 
 
 def _default_get_weight(section_map):
@@ -219,14 +221,16 @@ def run_balance(lines, section_map, spec, config=None, progress=None):
     # ── Step 3c: occupant ratio (scale MaxNumberOccupants on buildings) ──────
     if spec.occupant_ratio != 1.0:
         for name in cat_lists.get("bld", []) + cat_lists.get("def", []):
-            apply_tag_ratio(lines, section_map, name, "MaxNumberOccupants",
-                            spec.occupant_ratio)
+            if apply_tag_ratio(lines, section_map, name, "MaxNumberOccupants",
+                               spec.occupant_ratio):
+                summary.occupants_scaled += 1
 
     # ── Step 3d: passenger ratio (scale Passengers= on transports) ───────────
     if spec.passenger_ratio != 1.0:
         for name in cat_lists.get("veh", []) + cat_lists.get("nav", []):
-            apply_tag_ratio(lines, section_map, name, "Passengers",
-                            spec.passenger_ratio)
+            if apply_tag_ratio(lines, section_map, name, "Passengers",
+                               spec.passenger_ratio):
+                summary.passengers_scaled += 1
 
     # ── Step 4: sight (after all weapon ranges are finalized) ────────────────
     for key, r in spec.categories.items():

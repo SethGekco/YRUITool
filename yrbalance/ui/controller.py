@@ -218,6 +218,10 @@ def summarize(summary, script_results):
         out.append(f"Costs scaled (TechLevel/depth): {summary.costs_scaled}")
     if summary.weapon_conflicts:
         out.append(f"Weapon conflicts resolved by cloning: {summary.weapon_conflicts}")
+    if getattr(summary, "occupants_scaled", 0):
+        out.append(f"Garrison occupancy scaled: {summary.occupants_scaled} building(s)")
+    if getattr(summary, "passengers_scaled", 0):
+        out.append(f"Passengers scaled: {summary.passengers_scaled} unit(s)")
     total_tags = sum(r.tags_written for r in script_results)
     total_secs = sum(r.sections_created for r in script_results)
     total_skip = sum(len(r.skipped) for r in script_results)
