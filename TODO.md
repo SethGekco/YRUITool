@@ -21,16 +21,27 @@ Owner/Prerequisite. Still to build:
 - **Media / asset transfer** — copy the .vxl/.hva/.shp/.wav the imported objects
   reference (from the source mod's loose files or its .mix archives) into the target.
 
-## .mix archive read / extract / repack
-Open `.mix` archives, extract contained files (`.ini`, `.shp`, `.vxl`, `.hva`,
-`.wav`, …), let the user edit as if loose, and re-pack into the same mix — so
-editing a packed ini feels seamless (temp folder on the backside). Start from the
-format/impl in XCC: https://github.com/OlafvdSpek/xcc . Mind the community
-"corrupted archive" boogey-man — default to keeping backups of any mix touched,
-and surface a backup option. Needed because other users won't keep files loose
-(Rex's turkey-mod is loose, but the general case isn't). Also: detect which `.mix`
-files are vanilla vs mod-added (compare against a known vanilla file list; for now
-diff against Rex's vanilla install at `…/000-RA2YR Vanilla/`).
+## .mix archive read / extract / repack — v1 SHIPPED (unencrypted), extend
+`engine/mixlib.py` reads/extracts/repacks unencrypted MIX (the mod mixes:
+ecache*/expand*/ares) and refuses encrypted master mixes. Remaining:
+- **Blowfish+RSA decryption** for encrypted master mixes (ra2.mix/ra2md.mix,
+  flags & 0x20000) — needed to read vanilla content straight from the game, for
+  users who don't keep loose files. XCC has the key-derivation (RSA-wrapped
+  Blowfish key) + Blowfish; port it. Lower priority since Rex keeps vanilla loose.
+- **Seamless packed-ini editing** — extract a packed ini to a temp folder, let the
+  tool edit it as if loose, repack into the same mix on save (backups kept; atomic
+  write already done). Wire into Load/Save when the path points inside a mix.
+- **MIX browser UI** (Tools → Open MIX…) — list/extract/add/replace files, with
+  the corruption-boogey-man backup prompt surfaced.
+- **vanilla vs mod .mix detection** — flag which mixes are stock (compare against a
+  known vanilla file list; for now diff against `…/000-RA2YR Vanilla/`).
+
+## Porter media transfer (uses mixlib)
+Wire mixlib into the porter: for each imported object, find its referenced
+`.vxl/.hva/.shp/.wav` (and sidebar cameo SHP) across the source mod's loose files
+AND its mixes, and copy them into the target (loose or into a target mix). The
+porter already LISTS these filenames per object; this closes the loop so imported
+units actually render. Pairs with the "universal helper" + porter UI items.
 
 ## Version-aware vanilla baselines
 Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
