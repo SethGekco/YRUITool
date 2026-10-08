@@ -151,6 +151,11 @@ from .restore import restore_vanilla
 from .history import scan_changes, revert_change
 from .backup import make_backup, list_backups, default_backup_dir
 from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
+from .portmod import (
+    build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
+    clean_owner, clean_prereq, target_countries,
+    PortPlan, PortObject, StatFactor, StatChange,
+)
 
 __all__ = [
     # config
@@ -214,4 +219,8 @@ __all__ = [
     "make_backup", "list_backups", "default_backup_dir",
     # lint
     "lint_ai", "has_ai_sections", "format_findings", "LintFinding",
+    # portmod
+    "build_port_plan", "classify_new_objects", "compute_factors",
+    "plan_to_blueprint", "clean_owner", "clean_prereq", "target_countries",
+    "PortPlan", "PortObject", "StatFactor", "StatChange",
 ]
