@@ -29,9 +29,11 @@ pack_media_mixes (split by count). Porter media transfer is wired into the Port
 dialog (base mix name + max files/mix). Remaining niceties:
 - **Seamless packed-ini editing** — extract a packed ini to a temp folder, edit it
   as if loose, repack into the same mix on save (backups kept; atomic write done).
-  Wire into Load/Save when the path points inside a mix.
-- **MIX browser UI** (Tools → Open MIX…) — list/extract/add/replace files, with the
-  corruption-boogey-man backup prompt surfaced.
+  Wire into Load/Save when the path points inside a mix. (MIX browser can already
+  extract/repack manually.)
+- MIX browser UI — SHIPPED (Tools → MIX browser…): open/list/filter/extract/add/
+  remove/save, backs up on overwrite, warns on stock/encrypted. Could add: preview
+  (SHP/VXL thumbnails), in-place save to the same mix, preserve unnamed entries.
 - **Checksum on write** — optionally write the SHA1 trailer (flags & 0x10000); the
   game doesn't require it, so low priority.
 - **Cameo gaps** — some units' cameos aren't in the mod's mixes; media transfer
