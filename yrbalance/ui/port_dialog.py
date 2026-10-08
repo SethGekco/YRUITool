@@ -14,13 +14,14 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QTableWidget,
-    QTableWidgetItem, QDoubleSpinBox, QCheckBox, QMessageBox, QPlainTextEdit,
-    QGroupBox, QSplitter, QWidget,
+    QTableWidgetItem, QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox,
+    QPlainTextEdit, QGroupBox, QSplitter, QWidget,
 )
 
 from ..engine import (
     parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
     plan_to_blueprint, make_backup, get_val,
+    build_media_catalog, resolve_media, pack_media_mixes,
 )
 
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
@@ -129,6 +130,27 @@ class PortDialog(QDialog):
         split.addWidget(tbox)
         split.setSizes([200, 420])
         root.addWidget(split, 1)
+
+        # ── media transfer ──────────────────────────────────────────────────
+        mrow = QHBoxLayout()
+        self.media_chk = QCheckBox("Copy media into mix:")
+        self.media_chk.setChecked(True)
+        self.media_chk.setToolTip(
+            "Collect the selected objects' .vxl/.hva/.shp/.wav (incl. cameos) from "
+            "the source mod's loose files and mixes (vanilla mixes skipped) and pack "
+            "them into new mix(es) in the target folder.")
+        mrow.addWidget(self.media_chk)
+        mrow.addWidget(QLabel("base name:"))
+        self.media_base = QLineEdit("ecacheimport")
+        self.media_base.setMaximumWidth(140)
+        mrow.addWidget(self.media_base)
+        mrow.addWidget(QLabel("max files/mix (0 = one):"))
+        self.media_limit = QSpinBox()
+        self.media_limit.setRange(0, 100000)
+        self.media_limit.setValue(0)
+        mrow.addWidget(self.media_limit)
+        mrow.addStretch(1)
+        root.addLayout(mrow)
 
         # ── delivery ────────────────────────────────────────────────────────
         drow = QHBoxLayout()
@@ -418,14 +440,44 @@ class PortDialog(QDialog):
             _write(snd_path, snd[0])
             written.append(os.path.basename(snd_path))
 
+        media_msg = ""
+        if self.media_chk.isChecked():
+            media_msg = self._transfer_media(selected, folder)
+
         self.mw._load_rules_path(rules_path)   # refresh the loaded view
-        media = sorted(set(summ["media"]))
-        extra = (f"\n{len(media)} media file(s) still to copy by hand "
-                 f"(e.g. {', '.join(media[:4])}…)" if media else "")
         return (f"Applied: {summ['sections']} section(s), "
                 f"{summ['registered']} registered, {summ['art']} art, "
                 f"{summ['sound']} sound. Wrote: {', '.join(written)} "
-                f"(backups kept).{extra}")
+                f"(backups kept).{media_msg}")
+
+    def _transfer_media(self, selected, target_folder):
+        names = set()
+        for o in self.plan.objects:
+            if o.name in selected:
+                names.update(o.media_files)
+        if not names:
+            return "\nNo media references for the selected objects."
+        src_folder = os.path.dirname(self.src_edit.text().strip())
+        catalog = build_media_catalog([src_folder])
+        found, missing = resolve_media(catalog, sorted(names))
+        if not found:
+            return (f"\nMedia: 0 of {len(names)} files found in the source "
+                    "(nothing packed).")
+        base = self.media_base.text().strip() or "import"
+        limit = self.media_limit.value()
+        # back up any target mixes we'd overwrite
+        for i in range(32):
+            cand = os.path.join(target_folder, f"{base}{i:02d}.mix")
+            if os.path.isfile(cand):
+                make_backup(cand, None, keep=10)
+        single = os.path.join(target_folder, f"{base}.mix")
+        if os.path.isfile(single):
+            make_backup(single, None, keep=10)
+        paths = pack_media_mixes(found, target_folder, base, per_mix_limit=limit)
+        miss = (f"; {len(missing)} not found (e.g. {', '.join(missing[:4])}…)"
+                if missing else "")
+        return (f"\nMedia: packed {len(found)} file(s) into "
+                f"{', '.join(os.path.basename(p) for p in paths)}{miss}")
 
 
 def _write(path, lines):

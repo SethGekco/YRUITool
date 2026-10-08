@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from yrbalance.engine import (
     mix_id, MixFile, write_mix, MixError, is_vanilla_mix,
+    build_media_catalog, resolve_media, pack_media_mixes,
 )
 from yrbalance.engine._blowfish import Blowfish
 
@@ -95,6 +96,52 @@ def main():
             ok = False
         except MixError:
             print("corruption guard: OK")
+
+    # ── media transfer: catalog (loose + mix) → resolve → pack (split) ──────
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "srcmod")
+        os.makedirs(src)
+        # a loose voxel, and two more media files packed inside a mod mix
+        open(os.path.join(src, "unit.vxl"), "wb").write(b"Voxel Animation\x1a" + b"V")
+        write_mix(os.path.join(src, "ecacheX.mix"),
+                  {"unit.hva": b"HVA-DATA", "icon.shp": b"SHP-DATA"})
+        # a vanilla mix that must be ignored even though it has a wanted file
+        write_mix(os.path.join(src, "ra2md.mix"), {"icon.shp": b"VANILLA-WRONG"})
+
+        cat = build_media_catalog(src)
+        cat_ok = (cat.get("UNIT.VXL", ("",))[0] == "loose"
+                  and cat.get("UNIT.HVA", ("",))[0] == "mix"
+                  and cat.get("ICON.SHP", ("", "x"))[1].endswith("ecacheX.mix"))
+        print(f"catalog (loose+mix, vanilla skipped): "
+              f"{'OK' if cat_ok else 'FAIL'}")
+        ok = ok and cat_ok
+
+        found, missing = resolve_media(cat, ["unit.vxl", "unit.hva", "icon.shp",
+                                             "nope.shp"])
+        res_ok = (found["unit.hva"] == b"HVA-DATA"
+                  and found["icon.shp"] == b"SHP-DATA"      # from mod, not vanilla
+                  and found["unit.vxl"].startswith(b"Voxel")
+                  and missing == ["nope.shp"])
+        print(f"resolve (mod wins over vanilla; missing tracked): "
+              f"{'OK' if res_ok else 'FAIL'}")
+        ok = ok and res_ok
+
+        dest = os.path.join(d, "dest")
+        os.makedirs(dest)
+        paths = pack_media_mixes(found, dest, "ecacheimp", per_mix_limit=2)
+        split_ok = len(paths) == 2 and all(p.endswith(".mix") for p in paths)
+        # the three files round-trip out of the packed mixes
+        back = {}
+        for p in paths:
+            mf = MixFile(p)
+            for e in mf.entries:
+                if e.name:
+                    back[e.name] = mf.read_id(e.id)
+        pack_ok = (split_ok and back.get("unit.hva") == b"HVA-DATA"
+                   and back.get("icon.shp") == b"SHP-DATA")
+        print(f"pack into {len(paths)} mix(es) (limit 2) + round-trip: "
+              f"{'OK' if pack_ok else 'FAIL'}")
+        ok = ok and pack_ok
 
     # ── optional: read a REAL encrypted mix if present (Rex's vanilla) ──────
     real = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/"

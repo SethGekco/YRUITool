@@ -299,3 +299,83 @@ def write_mix(path, files, with_lmd=True):
         f.write(body)
     os.replace(tmp, path)
     return len(recs)
+
+
+# ── media cataloguing + transfer ────────────────────────────────────────────
+_MEDIA_EXTS = {".vxl", ".hva", ".shp", ".wav", ".pal", ".pcx", ".aud",
+               ".tem", ".sno", ".urb", ".des", ".lun"}
+
+
+def build_media_catalog(folders, skip_vanilla=True):
+    """Index media files available across a mod's loose files and its mixes.
+
+    `folders` is a dir or list of dirs. Returns {NAME.UPPER: location}, where a
+    location is ("loose", path) or ("mix", mixpath, id). Loose files win over mix
+    copies; earlier folders win over later. Vanilla mixes are skipped by default."""
+    if isinstance(folders, str):
+        folders = [folders]
+    catalog = {}
+    mixes = []
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for fn in sorted(os.listdir(folder)):
+            p = os.path.join(folder, fn)
+            if not os.path.isfile(p):
+                continue
+            ext = os.path.splitext(fn)[1].lower()
+            if ext in _MEDIA_EXTS:
+                catalog.setdefault(fn.upper(), ("loose", p))
+            elif ext == ".mix" and not (skip_vanilla and is_vanilla_mix(fn)):
+                mixes.append(p)
+    for mp in mixes:                    # loose already populated → setdefault skips
+        try:
+            mf = MixFile(mp)
+        except MixError:
+            continue
+        for e in mf.entries:
+            if e.name:
+                catalog.setdefault(e.name.upper(), ("mix", mp, e.id))
+    return catalog
+
+
+def resolve_media(catalog, names):
+    """Read the bytes for each requested filename from the catalog. Returns
+    (found {name: bytes}, missing [names]). Groups mix reads so each mix opens
+    once."""
+    found, missing, by_mix = {}, [], {}
+    for n in names:
+        loc = catalog.get(n.upper())
+        if loc is None:
+            missing.append(n)
+        elif loc[0] == "loose":
+            with open(loc[1], "rb") as f:
+                found[n] = f.read()
+        else:
+            by_mix.setdefault(loc[1], []).append((n, loc[2]))
+    for mixpath, items in by_mix.items():
+        mf = MixFile(mixpath)
+        for n, fid in items:
+            found[n] = mf.read_id(fid)
+    return found, missing
+
+
+def pack_media_mixes(files, dest_folder, base_name, per_mix_limit=0,
+                     start_index=0):
+    """Write `files` ({name: bytes}) into one or more mixes in dest_folder.
+    per_mix_limit>0 splits into base00.mix, base01.mix, … of at most that many
+    files each; otherwise a single base.mix. Returns the written mix paths."""
+    items = list(files.items())
+    if not items:
+        return []
+    limit = per_mix_limit if per_mix_limit and per_mix_limit > 0 else len(items)
+    chunks = [items[i:i + limit] for i in range(0, len(items), limit)]
+    base = base_name[:-4] if base_name.lower().endswith(".mix") else base_name
+    written = []
+    for i, chunk in enumerate(chunks):
+        name = (f"{base}.mix" if len(chunks) == 1 and not per_mix_limit
+                else f"{base}{start_index + i:02d}.mix")
+        path = os.path.join(dest_folder, name)
+        write_mix(path, dict(chunk))
+        written.append(path)
+    return written

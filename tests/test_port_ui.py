@@ -46,6 +46,10 @@ def main():
     open(src, "w").write(tp.SOURCE)
     open(os.path.join(sd, "artmd.ini"), "w").write(tp.SRC_ART)
     open(os.path.join(sd, "soundmd.ini"), "w").write(tp.SRC_SOUND)
+    # loose media the porter will reference for SUPERTANK (voxel + cameos + wavs)
+    for mf in ("SUPERTANK.VXL", "SUPERTANK.HVA", "SUPERICON.SHP", "SUPERICNU.SHP",
+               "ISUPREADY1.WAV", "ISUPREADY2.WAV"):
+        open(os.path.join(sd, mf), "wb").write(b"DATA-" + mf.encode())
     van = os.path.join(d, "van.ini")
     open(van, "w").write(tp.VANILLA)
     # a target artmd to receive the ported art entry
@@ -97,6 +101,19 @@ def main():
           f"art={'supertank' in am2}  {'OK' if apply_ok else 'FAIL'}")
     print("   " + msg.split("\n")[0])
     ok = ok and apply_ok
+
+    # media transfer packed a mix in the target folder with the referenced files
+    from yrbalance.engine import MixFile
+    media_mix = os.path.join(d, "ecacheimport.mix")
+    media_ok = os.path.isfile(media_mix)
+    if media_ok:
+        mf = MixFile(media_mix)
+        got = {e.name.upper() for e in mf.entries if e.name}
+        media_ok = "SUPERTANK.VXL" in got and "SUPERICON.SHP" in got
+    print(f"media transfer: mix={os.path.basename(media_mix) if media_ok else 'MISSING'}"
+          f"  {'OK' if media_ok else 'FAIL'}")
+    print("   " + (msg.split(chr(10))[1] if chr(10) in msg else ""))
+    ok = ok and media_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

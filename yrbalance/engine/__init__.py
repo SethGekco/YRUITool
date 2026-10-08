@@ -158,6 +158,7 @@ from .obtain import (
 from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
     is_vanilla_mix, vanilla_mix_names, VANILLA_MIX_NAMES,
+    build_media_catalog, resolve_media, pack_media_mixes,
 )
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
@@ -237,4 +238,5 @@ __all__ = [
     # mixlib
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
     "is_vanilla_mix", "vanilla_mix_names", "VANILLA_MIX_NAMES",
+    "build_media_catalog", "resolve_media", "pack_media_mixes",
 ]
