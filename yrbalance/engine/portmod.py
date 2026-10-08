@@ -395,8 +395,10 @@ def _resolve_sound(obj_name, src_map, src_sound_map):
             entries.append((name, keys))
             for k, v in keys:
                 if k.lower() == "sounds":
-                    files += [t.strip().upper() + ".WAV"
-                              for t in _clean(v).split(",") if t.strip()]
+                    # soundmd Sounds= is space-separated (sometimes comma); tokens
+                    # may be bag sample ids (leading '$'). Best-effort filenames.
+                    for t in _clean(v).replace(",", " ").split():
+                        files.append(t.lstrip("$").upper() + ".WAV")
     return entries, files
 
 
