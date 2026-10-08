@@ -43,17 +43,17 @@ of filenames) and Phobos' `[$include]` variant. Resolve the include graph into o
 effective section map before analysis/port (Rex's turkey-mod rulesmd uses
 `[#include]` for SW/country files). Make inclusion opt-in per file in the porter.
 
-## Object buildability / obtainability classifier
-Replace today's heuristic dummy-building split with reachability analysis that
-labels every object:
-- **buildable** (in a player build tree),
-- **not buildable but crate-obtainable** (crate rules reference it),
-- **not buildable, obtained other ways** (superweapon payload, FreeUnit=, spawner…),
-- **dummy** (only referenced by other code — dummy prerequisites, SW-tied spawns;
-  invisible, no owner control; needs a deeper taxonomy of dummy types — discuss),
-- **civilian** (exists, never referenced again, but has art).
-Feeds the porter's categorization and the "what is this?" explanations. Needs a
-pass over prerequisites, crate/SW/FreeUnit references, and art presence.
+## Object buildability / obtainability classifier — v1 SHIPPED, refine
+`engine/obtain.py` labels every TechnoType: buildable / crate / other
+(FreeUnit/Spawns/Deploy/SW/Capturable) / dummy / civilian / unknown, with reasons;
+wired into the porter (building split, blueprint, Port dialog). Remaining:
+- **Shrink the `unknown` bucket** — on kitchen-sink mods ~40% land in `unknown`
+  (non-buildable, unreferenced, no art). Many are AI-only units built by aimd
+  taskforces (not scanned), Ares-specific obtain paths, or deprecated/test
+  objects. Scan aimd TaskForces for AI-buildable units; add Ares mechanics.
+- **Deeper dummy taxonomy** — Rex wants a discussion on *types* of dummies
+  (SW-tied spawns, prereq placeholders, drone holders, etc.); encode each.
+- Consider a secondary "AI-only" flag, and surface the class as a porter filter.
 
 ## Sound effects & music support
 Let Eva add sound effects and music to a mod for the user — or walk them through
