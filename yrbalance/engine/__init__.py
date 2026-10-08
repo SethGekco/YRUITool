@@ -155,7 +155,10 @@ from .obtain import (
     classify_obtainability, Obtainability,
     OB_BUILDABLE, OB_CRATE, OB_OTHER, OB_DUMMY, OB_CIVILIAN, OB_UNKNOWN,
 )
-from .mixlib import mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry
+from .mixlib import (
+    mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
+    is_vanilla_mix, vanilla_mix_names, VANILLA_MIX_NAMES,
+)
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     apply_port_plan, clean_owner, clean_prereq, target_countries,
@@ -233,4 +236,5 @@ __all__ = [
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",
     # mixlib
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
+    "is_vanilla_mix", "vanilla_mix_names", "VANILLA_MIX_NAMES",
 ]

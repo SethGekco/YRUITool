@@ -13,7 +13,10 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from yrbalance.engine import mix_id, MixFile, write_mix, MixError, MixEncrypted
+from yrbalance.engine import (
+    mix_id, MixFile, write_mix, MixError, is_vanilla_mix,
+)
+from yrbalance.engine._blowfish import Blowfish
 
 
 def main():
@@ -63,17 +66,21 @@ def main():
         print(f"extract_all ({len(written)} files): {'OK' if ex_ok else 'FAIL'}")
         ok = ok and ex_ok
 
-        # ── encrypted mix refused ───────────────────────────────────────────
-        enc = os.path.join(d, "enc.mix")
-        with open(enc, "wb") as f:
-            f.write(struct.pack("<I", 0x00020000))   # flags: encrypted, c0==0
-            f.write(b"\x00" * 100)
-        try:
-            MixFile(enc)
-            print("encrypted refusal: FAIL (did not raise)")
-            ok = False
-        except MixEncrypted:
-            print("encrypted refusal: OK")
+        # ── Blowfish cipher: standard known-answer vector ───────────────────
+        bf = Blowfish(bytes(8))                        # all-zero key
+        el, er = bf._enc(0, 0)                         # encipher all-zero block
+        kat_ok = (el, er) == (0x4EF99745, 0x6198DD78)  # canonical Schneier vector
+        dl, dr = bf._dec(el, er)                        # round-trips
+        kat_ok = kat_ok and (dl, dr) == (0, 0)
+        print(f"Blowfish KAT (0-key -> 4EF99745 6198DD78): "
+              f"{'OK' if kat_ok else 'FAIL'}")
+        ok = ok and kat_ok
+
+        # ── vanilla-mix policy (name-based, not encryption-based) ───────────
+        van_ok = (is_vanilla_mix("ra2md.mix") and is_vanilla_mix("/x/RA2.MIX")
+                  and not is_vanilla_mix("mymod_ecache.mix"))
+        print(f"is_vanilla_mix policy: {'OK' if van_ok else 'FAIL'}")
+        ok = ok and van_ok
 
         # ── corruption guard: bogus index offset → MixError ─────────────────
         bad = os.path.join(d, "bad.mix")
@@ -88,6 +95,18 @@ def main():
             ok = False
         except MixError:
             print("corruption guard: OK")
+
+    # ── optional: read a REAL encrypted mix if present (Rex's vanilla) ──────
+    real = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/"
+            "RA2 & Yuri's Revenge/000-RA2YR Vanilla/ra2md.mix")
+    if os.path.isfile(real):
+        m = MixFile(real)
+        enc_ok = m.encrypted and len(m.entries) > 0
+        print(f"real encrypted ra2md.mix: {len(m.entries)} entries, "
+              f"encrypted={m.encrypted}  {'OK' if enc_ok else 'FAIL'}")
+        ok = ok and enc_ok
+    else:
+        print("real encrypted mix: SKIP (not present)")
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

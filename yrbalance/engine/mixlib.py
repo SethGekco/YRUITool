@@ -8,10 +8,11 @@ Supports the two unencrypted layouts the game and mods use:
     to the body start.
   * "old" format (TD/RA1): the 6-byte header at offset 0, index at 6.
 
-Encrypted master mixes (e.g. ra2.mix / ra2md.mix, flags & 0x20000) use Blowfish
-+ an RSA-wrapped key; those are detected and refused (MixEncrypted) — use the
-loose vanilla files, or a dedicated extractor, for those. Mod content mixes
-(ecache*/expand*/ares) are plain and fully supported here.
+Encrypted mixes (flags & 0x20000) use Blowfish with an RSA-wrapped key; those are
+decrypted transparently (XCC fast-key, via _blowfish). Reading works for both
+plain and encrypted; writing always produces a plain mix. Stock game mixes are
+listed in VANILLA_MIX_NAMES / is_vanilla_mix() so callers can leave them alone —
+that is a policy choice (don't modify vanilla), independent of encryption.
 
 Filename → id hashing follows XCC (OlafvdSpek/xcc, GPL): uppercase, '/'→'\\',
 pad the final partial 4-byte block, then CRC-32. I/O-free except for the file it
@@ -19,15 +20,77 @@ opens; reading uses seeks so huge mixes aren't loaded whole. Writing is atomic
 (temp file + replace) so a failed pack can't corrupt the target.
 """
 
+import base64
 import os
 import struct
 import zlib
 from dataclasses import dataclass
 
+from ._blowfish import Blowfish
+
 MIX_CHECKSUM = 0x00010000
 MIX_ENCRYPTED = 0x00020000
 _LMD_NAME = "local mix database.dat"
 _LMD_MAGIC = b"XCC by Olaf van der Spek\x1a"
+
+# Stock game mixes to leave alone (never port/modify into/out of). By basename,
+# lowercased; from a vanilla RA2+YR install. Extend via vanilla_mix_names().
+VANILLA_MIX_NAMES = frozenset({
+    "ra2.mix", "ra2md.mix", "language.mix", "langmd.mix", "theme.mix",
+    "thememd.mix", "multi.mix", "multimd.mix", "movies01.mix", "movies02.mix",
+    "movmd03.mix", "maps01.mix", "maps02.mix", "mapsmd03.mix", "ecache97.mix",
+    "expand97.mix", "expandmd01.mix",
+})
+
+
+def is_vanilla_mix(path_or_name):
+    """True if this is a stock game mix that should not be touched."""
+    return os.path.basename(path_or_name).lower() in VANILLA_MIX_NAMES
+
+
+def vanilla_mix_names(vanilla_dir):
+    """Build the ignore set from a real vanilla install dir (its *.mix files)."""
+    try:
+        return frozenset(f.lower() for f in os.listdir(vanilla_dir)
+                         if f.lower().endswith(".mix"))
+    except OSError:
+        return VANILLA_MIX_NAMES
+
+
+# ── Westwood RSA-wrapped Blowfish key (XCC fast-key) ─────────────────────────
+_WW_PUBKEY = "AihRvNoIbTn85FZRYNZRcT+i6KpU+maCsEqr3Q5q+LDB5tH7Tz2qQ38V"
+
+
+def _ww_modulus():
+    raw = base64.b64decode(_WW_PUBKEY)
+    j = 1                                   # skip the leading tag byte (0x02)
+    if raw[j] & 0x80:
+        nlen = raw[j] & 0x7f
+        klen = int.from_bytes(raw[j + 1:j + 1 + nlen], "big")
+        j += 1 + nlen
+    else:
+        klen = raw[j]
+        j += 1
+    return int.from_bytes(raw[j:j + klen], "big")
+
+
+_WW_MOD = _ww_modulus()
+_WW_EXP = 0x10001
+
+
+def _decrypt_blowfish_key(src):
+    """Recover the 56-byte Blowfish key from the 80-byte RSA-wrapped source."""
+    a = (_WW_MOD.bit_length() - 2) // 8
+    pre_len = (55 // a + 1) * (a + 1)
+    out = bytearray()
+    off = 0
+    while a + 1 <= pre_len:
+        c = int.from_bytes(src[off:off + a + 1], "little")
+        m = pow(c, _WW_EXP, _WW_MOD)
+        out += m.to_bytes(a + 8, "little")[:a]
+        pre_len -= a + 1
+        off += a + 1
+    return bytes(out[:56])
 
 
 class MixError(Exception):
@@ -100,13 +163,12 @@ class MixFile:
                 self.checksum = bool(flags & MIX_CHECKSUM)
                 self.encrypted = bool(flags & MIX_ENCRYPTED)
                 if self.encrypted:
-                    raise MixEncrypted(
-                        f"{os.path.basename(self.path)} is encrypted "
-                        "(Blowfish) — not supported; use the loose files")
-                f.seek(4)
-                c_files, _body = struct.unpack("<Hi", f.read(6))
-                base = 10 + c_files * 12
-                index = f.read(c_files * 12)
+                    c_files, index, base = self._parse_encrypted(f)
+                else:
+                    f.seek(4)
+                    c_files, _body = struct.unpack("<Hi", f.read(6))
+                    base = 10 + c_files * 12
+                    index = f.read(c_files * 12)
         if len(index) < c_files * 12:
             raise MixError("truncated index")
         for i in range(c_files):
@@ -118,6 +180,20 @@ class MixFile:
             e = MixEntry(fid, off, sz)
             self.entries.append(e)
             self.by_id[fid] = e
+
+    def _parse_encrypted(self, f):
+        """Decrypt a Blowfish-encrypted header. f is positioned after the 4-byte
+        flags. Returns (c_files, index_bytes, base_offset)."""
+        key = _decrypt_blowfish_key(f.read(80))
+        bf = Blowfish(key)
+        first = bf.decrypt(f.read(8))                 # header + 2 index bytes
+        c_files, _body = struct.unpack("<Hi", first[:6])
+        cb_index = c_files * 12
+        cb_f = (cb_index + 5) & ~7                     # index padded to 8 bytes
+        rest = bf.decrypt(f.read(cb_f))
+        index = first[6:8] + rest[:cb_index - 2]
+        base = 92 + cb_f                               # 4 flags + 80 key + 8 first
+        return c_files, index, base
 
     def _resolve_names(self):
         self.names = {}
