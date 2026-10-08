@@ -309,9 +309,11 @@ _MEDIA_EXTS = {".vxl", ".hva", ".shp", ".wav", ".pal", ".pcx", ".aud",
 def build_media_catalog(folders, skip_vanilla=True):
     """Index media files available across a mod's loose files and its mixes.
 
-    `folders` is a dir or list of dirs. Returns {NAME.UPPER: location}, where a
-    location is ("loose", path) or ("mix", mixpath, id). Loose files win over mix
-    copies; earlier folders win over later. Vanilla mixes are skipped by default."""
+    `folders` is a dir or list of dirs. Returns a dict keyed by BOTH the uppercased
+    filename (when known) AND the file id (always), so files inside mixes that lack
+    a name database are still findable by hashing the requested name. A location is
+    ("loose", path) or ("mix", mixpath, id). Loose files win over mix copies;
+    earlier folders win over later. Vanilla mixes are skipped by default."""
     if isinstance(folders, str):
         folders = [folders]
     catalog = {}
@@ -325,7 +327,9 @@ def build_media_catalog(folders, skip_vanilla=True):
                 continue
             ext = os.path.splitext(fn)[1].lower()
             if ext in _MEDIA_EXTS:
-                catalog.setdefault(fn.upper(), ("loose", p))
+                loc = ("loose", p)
+                catalog.setdefault(fn.upper(), loc)
+                catalog.setdefault(mix_id(fn), loc)
             elif ext == ".mix" and not (skip_vanilla and is_vanilla_mix(fn)):
                 mixes.append(p)
     for mp in mixes:                    # loose already populated → setdefault skips
@@ -334,8 +338,10 @@ def build_media_catalog(folders, skip_vanilla=True):
         except MixError:
             continue
         for e in mf.entries:
+            loc = ("mix", mp, e.id)
+            catalog.setdefault(e.id, loc)          # by id — works without a name DB
             if e.name:
-                catalog.setdefault(e.name.upper(), ("mix", mp, e.id))
+                catalog.setdefault(e.name.upper(), loc)
     return catalog
 
 
@@ -345,7 +351,7 @@ def resolve_media(catalog, names):
     once."""
     found, missing, by_mix = {}, [], {}
     for n in names:
-        loc = catalog.get(n.upper())
+        loc = catalog.get(n.upper()) or catalog.get(mix_id(n))
         if loc is None:
             missing.append(n)
         elif loc[0] == "loose":
