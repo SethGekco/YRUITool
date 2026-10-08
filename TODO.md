@@ -2,6 +2,69 @@
 
 Deferred ideas, with enough context to pick up cold.
 
+## Mod-content porter — remaining phases
+Engine core shipped (`engine/portmod.py`): extracts source-only objects, closes
+over the weapon chain, computes PER-KIND balance factors (infantry/vehicle/
+building/aircraft/weapon — mods rebalance categories differently; validated on
+real data: infantry ×0.3 cost, vehicles ×4), cross-checks vanilla, cleans
+Owner/Prerequisite. Still to build:
+- **Multi-file reach** — load the source mod's `artmd.ini` / `soundmd.ini`
+  (+ aimd, eva, theme) as extra section maps so art/sound entries port, not just
+  get flagged. Resolve `Image=`/`Cameo=`/`Report=` against them.
+- **Selectable UI** (*Tools → Port mod content…*) — per-kind/per-object checkboxes;
+  review table (before→after stats, confidence, editable ratio fields); apply-with-
+  backup / export-blueprint toggle (both). Each item in its own minimizable box
+  showing its code (TechnoType + weapons + warheads + art + sound entries) AND its
+  associated media files (.vxl/.hva/.shp incl. sidebar cameo; SW cameo from the SW
+  section). Top of page: current-mod balance history / saved user balance
+  preferences with a "use these balance modifiers" checkbox.
+- **Media / asset transfer** — copy the .vxl/.hva/.shp/.wav the imported objects
+  reference (from the source mod's loose files or its .mix archives) into the target.
+
+## .mix archive read / extract / repack
+Open `.mix` archives, extract contained files (`.ini`, `.shp`, `.vxl`, `.hva`,
+`.wav`, …), let the user edit as if loose, and re-pack into the same mix — so
+editing a packed ini feels seamless (temp folder on the backside). Start from the
+format/impl in XCC: https://github.com/OlafvdSpek/xcc . Mind the community
+"corrupted archive" boogey-man — default to keeping backups of any mix touched,
+and surface a backup option. Needed because other users won't keep files loose
+(Rex's turkey-mod is loose, but the general case isn't). Also: detect which `.mix`
+files are vanilla vs mod-added (compare against a known vanilla file list; for now
+diff against Rex's vanilla install at `…/000-RA2YR Vanilla/`).
+
+## Version-aware vanilla baselines
+Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
+the right baseline when diffing/porting (the port's balance cross-check and the
+"is this vanilla?" question both depend on matching the correct vanilla version).
+
+## #include / $include resolution
+Mods split rules across included files — classic Ares `[#include]` (numbered list
+of filenames) and Phobos' `[$include]` variant. Resolve the include graph into one
+effective section map before analysis/port (Rex's turkey-mod rulesmd uses
+`[#include]` for SW/country files). Make inclusion opt-in per file in the porter.
+
+## Object buildability / obtainability classifier
+Replace today's heuristic dummy-building split with reachability analysis that
+labels every object:
+- **buildable** (in a player build tree),
+- **not buildable but crate-obtainable** (crate rules reference it),
+- **not buildable, obtained other ways** (superweapon payload, FreeUnit=, spawner…),
+- **dummy** (only referenced by other code — dummy prerequisites, SW-tied spawns;
+  invisible, no owner control; needs a deeper taxonomy of dummy types — discuss),
+- **civilian** (exists, never referenced again, but has art).
+Feeds the porter's categorization and the "what is this?" explanations. Needs a
+pass over prerequisites, crate/SW/FreeUnit references, and art presence.
+
+## Sound effects & music support
+Let Eva add sound effects and music to a mod for the user — or walk them through
+doing it themselves. This spans `sound(md).ini` / `eva(md).ini` / `theme(md).ini`
+and the asset side (registering entries in the right list sections, pointing at
+the audio files, `.bag`/`.idx` or loose-file handling). Reference walkthrough:
+https://modenc.renegadeprojects.com/Adding_A_Song (the canonical "add a song"
+guide — covers theme registration and file placement). Two modes, mirroring the
+Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
+Pairs with the "universal helper" item below.
+
 ## Universal helper: go beyond rules-only
 Right now the tool (and Eva's baseline reference) is centered on `rules.ini` /
 `rulesmd.ini`. The original plan was rules-only, but it would be more useful as a
@@ -28,17 +91,6 @@ Two separable pieces:
 
 Decision needed: how far to generalize the *editor* vs. just the *reference*.
 Reference breadth is low-risk and high-value first step.
-
-## Sound effects & music support
-Let Eva add sound effects and music to a mod for the user — or walk them through
-doing it themselves. This spans `sound(md).ini` / `eva(md).ini` / `theme(md).ini`
-and the asset side (registering entries in the right list sections, pointing at
-the audio files, `.bag`/`.idx` or loose-file handling). Reference walkthrough:
-https://modenc.renegadeprojects.com/Adding_A_Song (the canonical "add a song"
-guide — covers theme registration and file placement). Two modes, mirroring the
-Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
-Pairs with the "universal helper" item above (sound/theme INIs were deferred
-there as cosmetic — this is the concrete use case to pull them in).
 
 ## Eva autonomy (manual + agent blend)
 Today: Eva writes a validated DSL script; the user clicks **Apply to rules**

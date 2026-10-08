@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Mod-content porter engine: extraction + dummy split + weapon closure + robust
-balance factors (with vanilla cross-check + confidence) + Owner/Prereq cleanup.
+Mod-content porter engine: extraction + dummy split + weapon closure + PER-KIND
+balance factors (mods rebalance categories differently) with vanilla cross-check,
++ Owner/Prereq cleanup.
 
     python3 tests/test_portmod.py
 """
@@ -17,76 +18,112 @@ from yrbalance.engine import (
     compute_factors, plan_to_blueprint,
 )
 
-# Vanilla: a couple of shared units + a weapon, at baseline values.
+# Vanilla baseline. Source ≈ vanilla; target scales categories DIFFERENTLY:
+# infantry ×1.5, vehicles ×1.8, weapons ×1.3 — so a global factor would be wrong.
 VANILLA = """\
 [Countries]
 0=Americans
 1=Russians
-
 [E1]
 Cost=100
+Strength=100
+[GGI]
+Cost=400
 Strength=100
 [HTNK]
 Cost=900
 Strength=400
-Primary=120mm
+[MTNK]
+Cost=700
+Strength=300
+[APOC]
+Cost=1750
+Strength=850
+[LTNK]
+Cost=600
+Strength=200
 [120mm]
 Damage=100
-ROF=80
+[Vulcan]
+Damage=50
 """
 
-# Target (the loaded/new mod): shared units scaled ~2x cost, ~1.5x strength.
 TARGET = """\
 [Countries]
 0=Americans
 1=Russians
-
 [InfantryTypes]
 0=E1
+1=GGI
 [VehicleTypes]
 0=HTNK
+1=MTNK
+2=APOC
+3=LTNK
 [E1]
-Cost=200
+Cost=150
 Strength=150
-Owner=Americans,Russians
+[GGI]
+Cost=600
+Strength=150
 [HTNK]
-Cost=1800
-Strength=600
-Primary=120mm
+Cost=1620
+Strength=720
+[MTNK]
+Cost=1260
+Strength=540
+[APOC]
+Cost=3150
+Strength=1530
+[LTNK]
+Cost=1080
+Strength=360
 [120mm]
-Damage=150
-ROF=80
+Damage=130
+[Vulcan]
+Damage=65
 """
 
-# Source (old mod): same shared units at its own curve, PLUS new content —
-# a new tank (owned partly by a country the target lacks), a new weapon+warhead,
-# and a dummy prerequisite building.
+# Source (old mod) ≈ vanilla for shared units, PLUS new content to port.
 SOURCE = """\
 [Countries]
 0=Americans
 1=Russians
 2=Turkey
-
 [InfantryTypes]
 0=E1
+1=GGI
 [VehicleTypes]
 0=HTNK
-1=SUPERTANK
+1=MTNK
+2=APOC
+3=LTNK
+4=SUPERTANK
 [BuildingTypes]
 0=GATECH
 1=DUMMYPREREQ
-
 [E1]
-Cost=120
-Strength=110
+Cost=100
+Strength=100
+[GGI]
+Cost=400
+Strength=100
 [HTNK]
-Cost=1000
-Strength=420
-Primary=120mm
+Cost=900
+Strength=400
+[MTNK]
+Cost=700
+Strength=300
+[APOC]
+Cost=1750
+Strength=850
+[LTNK]
+Cost=600
+Strength=200
 [120mm]
-Damage=110
-ROF=80
-
+Damage=100
+[Vulcan]
+Damage=50
 [SUPERTANK]
 Cost=2000
 Strength=500
@@ -96,7 +133,6 @@ Owner=Americans,Turkey
 Prerequisite=GATECH,DUMMYPREREQ,TurkBarracks
 Image=SUPERTANK
 Report=SuperReady
-
 [BigGun]
 Damage=300
 ROF=60
@@ -107,7 +143,6 @@ Projectile=Invisible
 Verses=100%,90%,80%
 [Invisible]
 Arcing=no
-
 [GATECH]
 Cost=2000
 Owner=Americans,Turkey
@@ -127,74 +162,60 @@ def main():
             maps[name] = build_section_map(parse_ini_lines(p))[0]
         vm, tm, sm = maps["v"], maps["t"], maps["s"]
 
-        # ── classification: new objects + dummy split + weapon closure ──────
+        # ── classification ──────────────────────────────────────────────────
         kinds = classify_new_objects(sm, tm)
-        def has(kind, name):
-            return name in kinds.get(kind, [])
-        cls_ok = (has("vehicle", "SUPERTANK")
-                  and has("building", "GATECH")
-                  and has("building_dummy", "DUMMYPREREQ")
-                  and has("weapon", "BigGun")
-                  and has("warhead", "SuperWH")
-                  and has("projectile", "Invisible")
-                  and "E1" not in kinds.get("infantry", [])   # shared, not new
+        def has(k, n):
+            return n in kinds.get(k, [])
+        cls_ok = (has("vehicle", "SUPERTANK") and has("building", "GATECH")
+                  and has("building_dummy", "DUMMYPREREQ") and has("weapon", "BigGun")
+                  and has("warhead", "SuperWH") and has("projectile", "Invisible")
                   and "HTNK" not in kinds.get("vehicle", []))
-        print(f"classify (new + dummy split + closure): {cls_ok}  "
-              f"{'OK' if cls_ok else 'FAIL'}")
-        print(f"   kinds: { {k: v for k, v in kinds.items()} }")
+        print(f"classify (new + dummy split + closure): "
+              f"{'OK' if cls_ok else 'FAIL'}  {dict(kinds)}")
         ok = ok and cls_ok
 
-        # ── balance factors from shared units, cross-checked vs vanilla ─────
+        # ── PER-KIND factors (the key fix) ──────────────────────────────────
         f = compute_factors(sm, tm, vm)
-        # Cost: target/source on E1 (200/120=1.67) & HTNK (1800/1000=1.8) ≈ 1.7-1.8
-        cost_ok = 1.6 <= f["Cost"].factor <= 1.9 and f["Cost"].samples >= 2
-        # Strength: 150/110=1.36, 600/420=1.43 ≈ 1.4
-        str_ok = 1.3 <= f["Strength"].factor <= 1.5
-        # Damage: shared weapon 120mm 150/110=1.36
-        dmg_ok = 1.2 <= f["Damage"].factor <= 1.5
-        print(f"Cost factor {f['Cost'].factor} [{f['Cost'].confidence}] "
-              f"samples={f['Cost'].samples}: {cost_ok}  {'OK' if cost_ok else 'FAIL'}")
-        print(f"Strength factor {f['Strength'].factor}: "
-              f"{str_ok}  {'OK' if str_ok else 'FAIL'}")
-        print(f"Damage factor {f['Damage'].factor}: "
-              f"{dmg_ok}  {'OK' if dmg_ok else 'FAIL'}")
-        ok = ok and cost_ok and str_ok and dmg_ok
+        veh_cost = f["vehicle"]["Cost"].factor
+        inf_cost = f["infantry"]["Cost"].factor
+        wpn_dmg = f["weapon"]["Damage"].factor
+        perkind_ok = (1.75 <= veh_cost <= 1.85       # vehicles ×1.8
+                      and 1.45 <= inf_cost <= 1.55     # infantry ×1.5 (different!)
+                      and 1.25 <= wpn_dmg <= 1.35)     # weapons ×1.3
+        print(f"per-kind factors: vehicle.Cost={veh_cost} infantry.Cost={inf_cost} "
+              f"weapon.Damage={wpn_dmg}  {'OK' if perkind_ok else 'FAIL'}")
+        differ_ok = abs(veh_cost - inf_cost) > 0.2     # proves they're NOT global
+        print(f"  categories scale differently (not one global factor): "
+              f"{'OK' if differ_ok else 'FAIL'}")
+        ok = ok and perkind_ok and differ_ok
 
-        # ── full plan: owner/prereq cleanup + applied rescale ───────────────
+        # ── full plan: rescale with the vehicle factor + owner/prereq ───────
         plan = build_port_plan(sm, tm, vm)
-        st = {o.name: o for o in plan.objects}
-        tank = st["SUPERTANK"]
-        # SUPERTANK Cost 2000 * ~1.7 ≈ 3400 (rescaled, not raw)
-        cost_change = next((c for c in tank.stat_changes if c.stat == "Cost"), None)
-        rescaled_ok = cost_change is not None and cost_change.new > 2500
-        # Owner: Turkey dropped, Americans kept
-        owner_ok = (tank.owner_after == "Americans"
-                    and "Turkey" in tank.owner_dropped)
-        # Prereq: GATECH + DUMMYPREREQ kept (being moved), TurkBarracks dropped
+        tank = {o.name: o for o in plan.objects}["SUPERTANK"]
+        cc = next((c for c in tank.stat_changes if c.stat == "Cost"), None)
+        # 2000 × ~1.8 = ~3600 (vehicle factor, NOT infantry's 1.5)
+        rescale_ok = cc is not None and 3500 <= cc.new <= 3700
+        owner_ok = tank.owner_after == "Americans" and "Turkey" in tank.owner_dropped
         prereq_ok = ("GATECH" in tank.prereq_after
                      and "DUMMYPREREQ" in tank.prereq_after
                      and "TurkBarracks" in tank.prereq_dropped)
-        # Asset refs flagged (Image -> art, Report -> sound)
         asset_ok = (any(t == "Image" for t, _, _ in tank.asset_refs)
                     and any(t == "Report" for t, _, _ in tank.asset_refs))
-        print(f"rescaled Cost {cost_change.old}->{cost_change.new}: "
-              f"{rescaled_ok}  {'OK' if rescaled_ok else 'FAIL'}")
-        print(f"Owner cleanup (Turkey dropped): {tank.owner_after!r} "
-              f"dropped={tank.owner_dropped}  {'OK' if owner_ok else 'FAIL'}")
-        print(f"Prereq cleanup: kept={tank.prereq_after!r} "
-              f"dropped={tank.prereq_dropped}  {'OK' if prereq_ok else 'FAIL'}")
-        print(f"asset refs flagged: {tank.asset_refs}  "
-              f"{'OK' if asset_ok else 'FAIL'}")
-        ok = ok and rescaled_ok and owner_ok and prereq_ok and asset_ok
+        print(f"rescaled Cost {cc.old:g}->{cc.new:g} (vehicle factor): "
+              f"{'OK' if rescale_ok else 'FAIL'}")
+        print(f"owner cleanup {tank.owner_after!r} dropped={tank.owner_dropped}: "
+              f"{'OK' if owner_ok else 'FAIL'}")
+        print(f"prereq cleanup kept={tank.prereq_after!r} "
+              f"dropped={tank.prereq_dropped}: {'OK' if prereq_ok else 'FAIL'}")
+        print(f"asset refs flagged {tank.asset_refs}: {'OK' if asset_ok else 'FAIL'}")
+        ok = ok and rescale_ok and owner_ok and prereq_ok and asset_ok
 
-        # ── blueprint renders the balanced sections ─────────────────────────
+        # ── blueprint ───────────────────────────────────────────────────────
         bp = plan_to_blueprint(plan)
         bp_ok = ("[SUPERTANK]" in bp and "[BigGun]" in bp
-                 and "Cost=3466.6" in bp           # rescaled, not the raw 2000
-                 and "Owner=Americans" in bp
-                 and "Americans,Turkey" not in bp)  # cleaned owner value
-        print(f"blueprint renders balanced sections: {bp_ok}  "
-              f"{'OK' if bp_ok else 'FAIL'}")
+                 and f"Cost={cc.new:g}" in bp and "Owner=Americans" in bp
+                 and "Americans,Turkey" not in bp)
+        print(f"blueprint renders balanced sections: {'OK' if bp_ok else 'FAIL'}")
         ok = ok and bp_ok
 
     print("\nPASS" if ok else "\nFAIL")

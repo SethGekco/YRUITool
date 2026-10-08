@@ -132,13 +132,17 @@ class PortPlan:
 
 # ── classification ──────────────────────────────────────────────────────────
 def _is_dummy_building(section_map, name):
-    """Heuristic: a placeholder/logic building, not a real buildable structure."""
-    if "DUMMY" in name.upper():
+    """Heuristic: a placeholder/logic building, not a real buildable structure.
+    Deliberately high-precision so real civilian/defensive buildings (which can
+    also be TechLevel -1) aren't swept in: a true dummy is named *DUMMY/*PRE, or
+    is both un-buildable (TechLevel<0) AND free (Cost 0/absent). Reclassifiable
+    in review."""
+    up = name.upper()
+    if "DUMMY" in up or up.endswith("PRE"):
         return True
     tl = _stat(section_map, name, "TechLevel")
-    if tl is not None and tl < 0:
-        return True   # TechLevel -1 → not in the build tree
-    return False
+    cost = _stat(section_map, name, "Cost")
+    return tl is not None and tl < 0 and (cost is None or cost == 0)
 
 
 def classify_new_objects(src_map, tgt_map, config=None):
@@ -236,49 +240,84 @@ def _confidence(samples, spread):
     return "low"
 
 
-def compute_factors(src_map, tgt_map, vanilla_map=None, stats=BALANCE_STATS):
-    """For each stat, derive the source→target rescale factor from objects shared
-    by both mods, with a confidence. Cross-check vanilla drift when available."""
-    factors = {}
-    shared = [n for n in (set(k for k in src_map) & set(k for k in tgt_map))]
-    for stat in stats:
-        ratios = []
-        for low in shared:
-            name = src_map[low]["name_raw"]
+# Which registry defines each factor-kind (shared-object classification).
+_FACTOR_KIND_REGISTRY = (
+    ("infantry", "InfantryTypes"),
+    ("vehicle", "VehicleTypes"),      # vehicles + naval share VehicleTypes
+    ("aircraft", "AircraftTypes"),
+    ("building", "BuildingTypes"),
+)
+# Object kind → the factor-kind whose shared pool rescales it.
+_OBJ_TO_FACTOR_KIND = {
+    "infantry": "infantry", "vehicle": "vehicle", "naval": "vehicle",
+    "aircraft": "aircraft", "building": "building", "building_dummy": "building",
+    "weapon": "weapon",
+}
+
+
+def _one_factor(stat, names, src_map, tgt_map, vanilla_map):
+    ratios = []
+    for name in names:
+        s = _stat(src_map, name, stat)
+        t = _stat(tgt_map, name, stat)
+        if s and t and s > 0:
+            ratios.append(t / s)
+    factor, spread, kept = _robust_factor(ratios)
+    conf = _confidence(kept, spread)
+    note = f"{kept} shared object(s)"
+    if vanilla_map is not None:
+        d_ratios = []
+        for name in names:
+            van = _stat(vanilla_map, name, stat)
             s = _stat(src_map, name, stat)
             t = _stat(tgt_map, name, stat)
-            if s and t and s > 0:
-                ratios.append(t / s)
-        factor, spread, kept = _robust_factor(ratios)
-        conf = _confidence(kept, spread)
-        note = f"{kept} shared object(s)"
-
-        if vanilla_map is not None:
-            d_ratios = []
-            for low in shared:
-                name = src_map[low]["name_raw"]
-                van = _stat(vanilla_map, name, stat)
-                s = _stat(src_map, name, stat)
-                t = _stat(tgt_map, name, stat)
-                if van and s and t and van > 0:
-                    sd, td = s / van, t / van      # each mod's drift from vanilla
-                    if sd > 0:
-                        d_ratios.append(td / sd)
-            dfac, dspread, dkept = _robust_factor(d_ratios)
-            if dkept >= 2 and factor:
-                agree = abs(dfac - factor) / factor < 0.2
-                if agree and conf in ("medium", "low"):
+            if van and s and t and van > 0 and s > 0:
+                d_ratios.append((t / van) / (s / van))
+        dfac, _dspread, dkept = _robust_factor(d_ratios)
+        if dkept >= 2 and factor:
+            if abs(dfac - factor) / factor < 0.2:
+                if conf in ("low", "medium"):
                     conf = {"low": "medium", "medium": "high"}[conf]
                     note += "; agrees with vanilla drift"
-                elif not agree:
-                    note += (f"; DISAGREES with vanilla drift "
-                             f"({dfac:.2f} vs {factor:.2f}) — verify")
-                    if conf == "high":
-                        conf = "medium"
+            else:
+                note += (f"; DISAGREES with vanilla drift "
+                         f"({dfac:.2f} vs {factor:.2f}) — verify")
+                if conf == "high":
+                    conf = "medium"
+    return StatFactor(stat, round(factor, 4), conf, kept, round(spread, 3), note)
 
-        factors[stat] = StatFactor(stat, round(factor, 4), conf, kept,
-                                   round(spread, 3), note)
-    return factors
+
+def compute_factors(src_map, tgt_map, vanilla_map=None, config=None):
+    """Per-kind rescale factors: {factor_kind: {stat: StatFactor}}.
+
+    Factors are computed WITHIN each object kind, because mods routinely rebalance
+    categories differently (e.g. infantry ×0.25 while vehicles ×4) — a single
+    global factor would mis-scale imports across categories. Shared objects are
+    classified by the target's type-list registries; weapons by having a numeric
+    Damage. Vanilla drift is cross-checked per kind when available."""
+    config = config or ModConfig.default()
+    shared = set(src_map) & set(tgt_map)
+
+    reg_sets = {kind: {n.lower() for n in parse_type_list(tgt_map, sec)}
+                for kind, sec in _FACTOR_KIND_REGISTRY}
+    buckets = {k: [] for k in list(reg_sets) + ["weapon"]}
+    for low in shared:
+        name = tgt_map[low]["name_raw"]
+        placed = False
+        for kind in reg_sets:
+            if low in reg_sets[kind]:
+                buckets[kind].append(name)
+                placed = True
+                break
+        if not placed and _stat(tgt_map, name, "Damage") is not None:
+            buckets["weapon"].append(name)
+
+    out = {}
+    for kind, names in buckets.items():
+        stats = WEAPON_STATS if kind == "weapon" else TECHNO_STATS
+        out[kind] = {stat: _one_factor(stat, names, src_map, tgt_map, vanilla_map)
+                     for stat in stats}
+    return out
 
 
 # ── owner / prerequisite cleanup ────────────────────────────────────────────
@@ -338,18 +377,21 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                  else TECHNO_STATS if kind in
                  ("infantry", "vehicle", "aircraft", "building", "building_dummy")
                  else ())
+        fkind = _OBJ_TO_FACTOR_KIND.get(kind)
+        kind_factors = plan.factors.get(fkind, {})
         for name in names:
             obj = PortObject(name=name, kind=kind,
                              keys=_ordered_keys(src_map, name))
-            # rescale balance stats
+            # rescale balance stats using THIS kind's factor
             for stat in stats:
                 old = _stat(src_map, name, stat)
                 if old is None:
                     continue
-                sf = plan.factors.get(stat)
+                sf = kind_factors.get(stat)
                 if sf is None or sf.confidence == "none":
                     obj.warnings.append(
-                        f"no reliable {stat} factor — left unchanged, set by hand")
+                        f"no reliable {kind} {stat} factor — left unchanged, "
+                        "set by hand")
                     continue
                 new = round(old * sf.factor, 2)
                 obj.stat_changes.append(
@@ -424,9 +466,12 @@ def plan_to_blueprint(plan):
     """Render the plan as INI text: new sections (balanced) grouped by kind, plus
     a header noting factors, warnings, and asset references to copy by hand."""
     lines = ["; ===== Ported mod content ====="]
-    lines.append("; Balance factors (source→target):")
-    for stat, f in plan.factors.items():
-        lines.append(f";   {stat}: x{f.factor} [{f.confidence}] ({f.note})")
+    lines.append("; Balance factors (source→target), per object kind:")
+    for fkind in sorted(plan.factors):
+        parts = [f"{s}:x{sf.factor}[{sf.confidence}]"
+                 for s, sf in plan.factors[fkind].items() if sf.samples]
+        if parts:
+            lines.append(f";   {fkind}: " + "  ".join(parts))
     lines.append(";")
     for obj in plan.objects:
         if obj.warnings:
