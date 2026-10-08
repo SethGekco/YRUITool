@@ -345,6 +345,7 @@ class MainWindow(QMainWindow):
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
         tools.addAction("Port mod content…", self.port_mod_content)
+        tools.addAction("MIX browser…", self.open_mix_browser)
 
         view = mb.addMenu("View")
         self.dark_action = view.addAction("Dark theme")
@@ -354,6 +355,11 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("Help")
         help_menu.addAction("Custom script help…", lambda: show_script_help(self))
         help_menu.addAction("About YRBalanceTool", self._show_about)
+
+    def open_mix_browser(self):
+        """Open the MIX archive browser."""
+        from .mix_dialog import MixBrowserDialog
+        MixBrowserDialog(self).exec()
 
     def port_mod_content(self):
         """Open the mod-content porter dialog."""
