@@ -21,6 +21,7 @@ opens; reading uses seeks so huge mixes aren't loaded whole. Writing is atomic
 """
 
 import base64
+import io
 import os
 import struct
 import zlib
@@ -159,10 +160,19 @@ def _sniff_ext(data):
 
 
 class MixFile:
-    """Read access to a MIX archive. Index is parsed on open via seeks."""
+    """Read access to a MIX archive, from a file path or an in-memory bytes buffer
+    (the latter lets nested mixes inside a master mix be parsed without extracting).
+    Index is parsed on open via seeks."""
 
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, source):
+        if isinstance(source, (bytes, bytearray)):
+            self._data = bytes(source)
+            self.path = "<bytes>"
+            self._size = len(self._data)
+        else:
+            self._data = None
+            self.path = source
+            self._size = os.path.getsize(source)
         self.entries = []          # [MixEntry]
         self.by_id = {}            # id -> MixEntry
         self.encrypted = False
@@ -171,9 +181,25 @@ class MixFile:
         self._parse_index()
         self._resolve_names()
 
+    @classmethod
+    def from_bytes(cls, data):
+        return cls(bytes(data))
+
+    @property
+    def is_complete(self):
+        """True if the mix's declared header+index+body accounts for ~all of its
+        bytes — distinguishes a real (possibly nested) mix from a leaf asset whose
+        bytes happened to parse. Small slack for checksum/alignment padding."""
+        return bool(self.entries) and 0 <= self._size - self.total <= 24
+
+    def _open(self):
+        return io.BytesIO(self._data) if self._data is not None \
+            else open(self.path, "rb")
+
     def _parse_index(self):
-        size = os.path.getsize(self.path)
-        with open(self.path, "rb") as f:
+        size = self._size
+        body = 0
+        with self._open() as f:
             first = f.read(4)
             if len(first) < 4:
                 raise MixError("file too small to be a MIX")
@@ -181,7 +207,7 @@ class MixFile:
             if c0 != 0:
                 self.old_format = True
                 f.seek(0)
-                c_files, _body = struct.unpack("<Hi", f.read(6))
+                c_files, body = struct.unpack("<Hi", f.read(6))
                 base = 6 + c_files * 12
                 index = f.read(c_files * 12)
             else:
@@ -189,14 +215,16 @@ class MixFile:
                 self.checksum = bool(flags & MIX_CHECKSUM)
                 self.encrypted = bool(flags & MIX_ENCRYPTED)
                 if self.encrypted:
-                    c_files, index, base = self._parse_encrypted(f)
+                    c_files, index, base, body = self._parse_encrypted(f)
                 else:
                     f.seek(4)
-                    c_files, _body = struct.unpack("<Hi", f.read(6))
+                    c_files, body = struct.unpack("<Hi", f.read(6))
                     base = 10 + c_files * 12
                     index = f.read(c_files * 12)
         if len(index) < c_files * 12:
             raise MixError("truncated index")
+        # Total bytes this mix declares it occupies (for nested-mix validation).
+        self.total = base + body + (20 if self.checksum else 0)
         for i in range(c_files):
             fid, off, sz = struct.unpack_from("<Iii", index, i * 12)
             off += base
@@ -210,16 +238,24 @@ class MixFile:
     def _parse_encrypted(self, f):
         """Decrypt a Blowfish-encrypted header. f is positioned after the 4-byte
         flags. Returns (c_files, index_bytes, base_offset)."""
-        key = _decrypt_blowfish_key(f.read(80))
+        src = f.read(80)
+        if len(src) < 80:
+            raise MixError("truncated encrypted header")
+        key = _decrypt_blowfish_key(src)
         bf = Blowfish(key)
-        first = bf.decrypt(f.read(8))                 # header + 2 index bytes
-        c_files, _body = struct.unpack("<Hi", first[:6])
+        block = f.read(8)
+        if len(block) < 8:
+            raise MixError("truncated encrypted header")
+        first = bf.decrypt(block)                     # header + 2 index bytes
+        c_files, body = struct.unpack("<Hi", first[:6])
+        if c_files < 0 or c_files > 1_000_000:
+            raise MixError("implausible encrypted file count")
         cb_index = c_files * 12
         cb_f = (cb_index + 5) & ~7                     # index padded to 8 bytes
         rest = bf.decrypt(f.read(cb_f))
         index = first[6:8] + rest[:cb_index - 2]
         base = 92 + cb_f                               # 4 flags + 80 key + 8 first
-        return c_files, index, base
+        return c_files, index, base, body
 
     def _resolve_names(self):
         self.names = {}
@@ -238,7 +274,7 @@ class MixFile:
         e = self.by_id.get(fid)
         if e is None:
             raise KeyError(f"id {fid:#010x} not in mix")
-        with open(self.path, "rb") as f:
+        with self._open() as f:
             f.seek(e.offset)
             return f.read(e.size)
 
@@ -255,7 +291,7 @@ class MixFile:
         for e in self.entries:
             t = os.path.splitext(e.name)[1].lstrip(".") if e.name else ""
             if not t:
-                with open(self.path, "rb") as f:
+                with self._open() as f:
                     f.seek(e.offset)
                     t = _sniff_ext(f.read(min(e.size, 256)))
             out.append((e.id, e.size, e.name, t))
@@ -412,3 +448,147 @@ def pack_media_mixes(files, dest_folder, base_name, per_mix_limit=0,
         write_mix(path, dict(chunk))
         written.append(path)
     return written
+
+
+# ── vanilla asset index (recursive) + missing-file classification ────────────
+import json as _json   # noqa: E402  (kept local to this feature)
+
+
+def _peek_is_nested_candidate(f, entry):
+    """Cheap 10-byte pre-filter: could this entry be a nested mix worth fully
+    parsing? Plain mixes are size-checked (rejects leaves cheaply); encrypted ones
+    can't be size-checked so they're candidates (validated by the full parse)."""
+    f.seek(entry.offset)
+    head = f.read(10)
+    if len(head) < 10:
+        return False
+    c0 = struct.unpack("<H", head[:2])[0]
+    if c0 != 0:                                    # old format
+        body = struct.unpack("<i", head[2:6])[0]
+        core = 6 + c0 * 12 + body
+        return 0 < c0 < 100000 and 0 <= entry.size - core <= 24
+    flags = struct.unpack("<I", head[:4])[0]
+    if flags & MIX_ENCRYPTED:                      # nested sub-mixes CAN be encrypted
+        return 0x20000 <= flags <= 0x30000 and entry.size > 92
+    c_files = struct.unpack("<H", head[4:6])[0]
+    body = struct.unpack("<i", head[6:10])[0]
+    core = 10 + c_files * 12 + body
+    return 0 < c_files < 100000 and 0 <= entry.size - core <= 24
+
+
+def _walk_mix(mf, ids, names, depth):
+    with mf._open() as f:
+        for e in mf.entries:
+            if e.name:
+                names.setdefault(e.id, e.name)
+            if depth < 6 and _peek_is_nested_candidate(f, e):
+                try:
+                    sub = MixFile.from_bytes(mf.read_id(e.id))
+                    if sub.is_complete:            # a real nested mix, not a leaf
+                        _walk_mix(sub, ids, names, depth + 1)
+                        continue
+                except MixError:
+                    pass
+            ids.add(e.id)
+
+
+def collect_asset_ids(source, ids=None, names=None):
+    """Walk a mix (path or bytes), collecting leaf file ids (and any known names),
+    recursing into nested mixes — master mixes contain sub-mixes, some encrypted.
+    A nested entry is only descended into if it fully parses as a complete mix.
+    Returns (ids:set[int], names:dict[int,str])."""
+    ids = set() if ids is None else ids
+    names = {} if names is None else names
+    try:
+        mf = MixFile(source)
+    except MixError:
+        return ids, names
+    _walk_mix(mf, ids, names, 0)
+    return ids, names
+
+
+def build_vanilla_asset_ids(dirs, progress=None):
+    """Collect the ids (and names) of every asset in vanilla install dir(s):
+    loose files plus everything inside their mixes (recursively). Returns
+    (ids:set, names:dict)."""
+    if isinstance(dirs, str):
+        dirs = [dirs]
+    ids, names = set(), {}
+    for d in dirs:
+        if not d or not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            p = os.path.join(d, fn)
+            if not os.path.isfile(p):
+                continue
+            low = fn.lower()
+            if low.endswith(".mix"):
+                if low.startswith(("movies", "movmd")):
+                    continue       # video only — no referenced unit art/sound
+                if progress:
+                    progress(fn)
+                collect_asset_ids(p, ids, names)
+            else:
+                fid = mix_id(fn)
+                ids.add(fid)
+                names.setdefault(fid, fn)
+    return ids, names
+
+
+def _cache_path():
+    base = os.path.join(os.path.expanduser("~"), ".yrbalancetool")
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, "vanilla_assets.json")
+
+
+def _dirs_signature(dirs):
+    sig = []
+    for d in dirs:
+        if d and os.path.isdir(d):
+            for fn in sorted(os.listdir(d)):
+                if fn.lower().endswith(".mix"):
+                    p = os.path.join(d, fn)
+                    try:
+                        st = os.stat(p)
+                        sig.append(f"{fn}:{st.st_size}:{int(st.st_mtime)}")
+                    except OSError:
+                        pass
+    return sig
+
+
+def vanilla_asset_ids(dirs, progress=None):
+    """Cached build_vanilla_asset_ids: reuses a JSON cache keyed by the dirs' mix
+    signature, rebuilding only when the vanilla mixes change. Returns a set of ids.
+    Returns an empty set if no valid dirs are given."""
+    if isinstance(dirs, str):
+        dirs = [dirs]
+    dirs = [d for d in dirs if d and os.path.isdir(d)]
+    if not dirs:
+        return set()
+    sig = _dirs_signature(dirs)
+    path = _cache_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            cache = _json.load(f)
+        if cache.get("sig") == sig and cache.get("dirs") == dirs:
+            return set(cache["ids"])
+    except (OSError, ValueError, KeyError):
+        pass
+    ids, _names = build_vanilla_asset_ids(dirs, progress)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump({"dirs": dirs, "sig": sig, "ids": sorted(ids)}, f)
+    except OSError:
+        pass
+    return ids
+
+
+def classify_missing(names, vanilla_ids):
+    """Split a list of not-found filenames into (satisfied_by_vanilla, truly_missing)
+    using a set of vanilla asset ids. A reference the mod doesn't ship but vanilla
+    provides is fine (the unit reuses a stock asset); anything else is worth a
+    warning."""
+    vanilla, truly = [], []
+    for n in names:
+        (vanilla if mix_id(n) in vanilla_ids else truly).append(n)
+    return vanilla, truly

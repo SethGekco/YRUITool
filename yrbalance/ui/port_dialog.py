@@ -22,6 +22,7 @@ from ..engine import (
     parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
     plan_to_blueprint, make_backup, get_val,
     build_media_catalog, resolve_media, pack_media_mixes,
+    vanilla_asset_ids, classify_missing,
 )
 
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
@@ -474,10 +475,23 @@ class PortDialog(QDialog):
         if os.path.isfile(single):
             make_backup(single, None, keep=10)
         paths = pack_media_mixes(found, target_folder, base, per_mix_limit=limit)
-        miss = (f"; {len(missing)} not found (e.g. {', '.join(missing[:4])}…)"
-                if missing else "")
+        # Classify what we couldn't find: a reference the mod doesn't ship but
+        # vanilla provides is fine (reused stock asset); the rest are worth a warning.
+        van_dir = os.path.dirname(self.van_edit.text().strip())
+        van_ids = vanilla_asset_ids([van_dir]) if van_dir else set()
+        vanilla_miss, truly_miss = classify_missing(missing, van_ids)
+        notes = ""
+        if vanilla_miss:
+            notes += (f"; {len(vanilla_miss)} are vanilla assets (already in the "
+                      "game) — fine")
+        if truly_miss:
+            notes += (f"; ⚠ {len(truly_miss)} missing & not vanilla "
+                      f"(e.g. {', '.join(truly_miss[:4])}…) — add these by hand")
+        if missing and not van_ids:
+            notes += (f"; {len(missing)} not found (set a vanilla baseline to tell "
+                      "which are stock assets)")
         return (f"\nMedia: packed {len(found)} file(s) into "
-                f"{', '.join(os.path.basename(p) for p in paths)}{miss}")
+                f"{', '.join(os.path.basename(p) for p in paths)}{notes}")
 
 
 def _write(path, lines):

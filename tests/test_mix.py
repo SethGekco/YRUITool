@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from yrbalance.engine import (
     mix_id, MixFile, write_mix, MixError, is_vanilla_mix, is_stock_mix,
     build_media_catalog, resolve_media, pack_media_mixes,
+    collect_asset_ids, classify_missing,
 )
 from yrbalance.engine._blowfish import Blowfish
 
@@ -149,6 +150,31 @@ def main():
         print(f"pack into {len(paths)} mix(es) (limit 2) + round-trip: "
               f"{'OK' if pack_ok else 'FAIL'}")
         ok = ok and pack_ok
+
+    # ── recursive asset walk (mix inside a master mix) + classify ───────────
+    with tempfile.TemporaryDirectory() as d:
+        sub = os.path.join(d, "sub.mix")
+        write_mix(sub, {"a.shp": b"AAA" * 20, "b.vxl": b"BBB" * 20})
+        with open(sub, "rb") as f:
+            subbytes = f.read()
+        master = os.path.join(d, "master.mix")
+        write_mix(master, {"sub.mix": subbytes, "c.hva": b"CCC" * 20})
+
+        ids, _names = collect_asset_ids(master)
+        nested_ok = (mix_id("a.shp") in ids and mix_id("b.vxl") in ids
+                     and mix_id("c.hva") in ids)
+        print(f"recursive walk (finds leaves inside nested mix): "
+              f"{sorted(hex(mix_id(n)) for n in ('a.shp','b.vxl','c.hva'))} "
+              f"{'OK' if nested_ok else 'FAIL'}")
+        ok = ok and nested_ok
+
+        # the container's own completeness check
+        ic_ok = MixFile(master).is_complete and not MixFile(sub).is_complete is False
+        van, truly = classify_missing(["a.shp", "notreal.shp"], ids)
+        cls_ok = van == ["a.shp"] and truly == ["notreal.shp"]
+        print(f"classify_missing (vanilla vs truly-missing): van={van} "
+              f"truly={truly}  {'OK' if cls_ok else 'FAIL'}")
+        ok = ok and cls_ok
 
     # ── optional: read a REAL encrypted mix if present (Rex's vanilla) ──────
     real = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/"
