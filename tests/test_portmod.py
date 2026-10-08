@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from yrbalance.engine import (
     parse_ini_lines, build_section_map, build_port_plan, classify_new_objects,
-    compute_factors, plan_to_blueprint,
+    compute_factors, plan_to_blueprint, apply_port_plan, get_val,
 )
 
 # Vanilla baseline. Source ≈ vanilla; target scales categories DIFFERENTLY:
@@ -152,6 +152,28 @@ Cost=0
 """
 
 
+SRC_ART = """\
+[SUPERTANK]
+Voxel=yes
+Remapable=yes
+Cameo=SUPERICON
+AltCameo=SUPERICNU
+"""
+
+SRC_SOUND = """\
+[SuperReady]
+Control=2
+Type=12
+Sounds=isupready1,isupready2
+"""
+
+
+def _w(d, name, text):
+    p = os.path.join(d, name)
+    open(p, "w").write(text)
+    return p
+
+
 def main():
     ok = True
     with tempfile.TemporaryDirectory() as d:
@@ -217,6 +239,45 @@ def main():
                  and "Americans,Turkey" not in bp)
         print(f"blueprint renders balanced sections: {'OK' if bp_ok else 'FAIL'}")
         ok = ok and bp_ok
+
+        # ── multi-file: art/sound resolution + apply ────────────────────────
+        src_art = build_section_map(parse_ini_lines(_w(d, "art.ini", SRC_ART)))[0]
+        src_snd = build_section_map(parse_ini_lines(_w(d, "snd.ini", SRC_SOUND)))[0]
+        plan2 = build_port_plan(sm, tm, vm, src_art_map=src_art, src_sound_map=src_snd)
+        tank2 = {o.name: o for o in plan2.objects}["SUPERTANK"]
+        art_ok = (tank2.art_entry is not None and tank2.art_entry[0] == "SUPERTANK"
+                  and any(f.endswith(".VXL") for f in tank2.media_files)
+                  and any("SUPERICON" in f for f in tank2.media_files))
+        snd_ok = any(n == "SuperReady" for n, _ in tank2.sound_entries)
+        print(f"art resolved ({tank2.art_entry[0] if tank2.art_entry else None}, "
+              f"media={tank2.media_files}): {'OK' if art_ok else 'FAIL'}")
+        print(f"sound resolved ({[n for n,_ in tank2.sound_entries]}): "
+              f"{'OK' if snd_ok else 'FAIL'}")
+        ok = ok and art_ok and snd_ok
+
+        # Apply only SUPERTANK (+ its weapon chain), with a ratio override, into
+        # fresh copies of the target rules/art/sound.
+        tlines = parse_ini_lines(_w(d, "t.ini", TARGET))
+        tmap = build_section_map(tlines)[0]
+        alines = parse_ini_lines(_w(d, "tart.ini", "[Dummy]\nx=1\n"))
+        amap = build_section_map(alines)[0]
+        sel = {"SUPERTANK", "BigGun", "SuperWH", "Invisible"}
+        summ = apply_port_plan(tlines, tmap, plan2, selected=sel,
+                               overrides={("vehicle", "Cost"): 2.0},
+                               art=(alines, amap))
+        wrote_tank = "supertank" in tmap
+        registered = "SUPERTANK" in {v for _, (_, _, v) in
+                                     tmap["vehicletypes"]["keys"].items()}
+        override_ok = get_val(tmap, "SUPERTANK", "Cost") == "4000"  # 2000×2.0
+        no_turkey = "Turkey" not in (get_val(tmap, "SUPERTANK", "Owner") or "")
+        art_written = "supertank" in amap
+        apply_ok = (wrote_tank and registered and override_ok and no_turkey
+                    and art_written and summ["sections"] == 4
+                    and summ["registered"] == 1 and summ["art"] == 1)
+        print(f"apply: {summ} wrote={wrote_tank} reg={registered} "
+              f"overrideCost={get_val(tmap,'SUPERTANK','Cost')} art={art_written}  "
+              f"{'OK' if apply_ok else 'FAIL'}")
+        ok = ok and apply_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

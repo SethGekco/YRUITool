@@ -153,7 +153,7 @@ from .backup import make_backup, list_backups, default_backup_dir
 from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
-    clean_owner, clean_prereq, target_countries,
+    apply_port_plan, clean_owner, clean_prereq, target_countries,
     PortPlan, PortObject, StatFactor, StatChange,
 )
 
@@ -221,6 +221,6 @@ __all__ = [
     "lint_ai", "has_ai_sections", "format_findings", "LintFinding",
     # portmod
     "build_port_plan", "classify_new_objects", "compute_factors",
-    "plan_to_blueprint", "clean_owner", "clean_prereq", "target_countries",
-    "PortPlan", "PortObject", "StatFactor", "StatChange",
+    "plan_to_blueprint", "apply_port_plan", "clean_owner", "clean_prereq",
+    "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
 ]

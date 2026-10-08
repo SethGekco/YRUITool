@@ -26,6 +26,7 @@ from .ini_model import get_val
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
+from .sections import append_raw_section, set_key_in_appended_section
 
 # Stats the tool actively balances, and which section each applies to.
 TECHNO_STATS = ("Cost", "Strength", "Speed", "Sight")
@@ -110,6 +111,9 @@ class PortObject:
     prereq_after: str = ""
     prereq_dropped: list = field(default_factory=list)
     asset_refs: list = field(default_factory=list)   # [(tag, value, where)]
+    art_entry: tuple = None                          # (art_name, [(k, v)]) or None
+    sound_entries: list = field(default_factory=list)  # [(name, [(k, v)])]
+    media_files: list = field(default_factory=list)  # best-effort filenames to copy
     warnings: list = field(default_factory=list)
 
 
@@ -355,11 +359,53 @@ def clean_prereq(prereq_raw, tgt_map, moved_lower, generics):
     return kept, dropped
 
 
+# ── art / sound resolution (multi-file) ─────────────────────────────────────
+def _resolve_art(obj_name, src_map, src_art_map):
+    """Find the object's art entry in the source artmd and the media files it
+    pulls in (voxel/shp image + cameo/altcameo SHPs). Best-effort."""
+    image = _clean(get_val(src_map, obj_name, "Image")) or obj_name
+    if not _exists(src_art_map, image):
+        return None, []
+    keys = _ordered_keys(src_art_map, image)
+    files = []
+    cameo = _clean(get_val(src_art_map, image, "Cameo"))
+    if cameo and cameo.lower() != "none":
+        files.append(cameo.upper() + ".SHP")
+    alt = _clean(get_val(src_art_map, image, "AltCameo"))
+    if alt and alt.lower() != "none":
+        files.append(alt.upper() + ".SHP")
+    if _clean(get_val(src_art_map, image, "Voxel")).lower() == "yes":
+        files += [image.upper() + ".VXL", image.upper() + ".HVA"]
+    else:
+        files.append(image.upper() + ".SHP")
+    return (image, keys), files
+
+
+def _resolve_sound(obj_name, src_map, src_sound_map):
+    """Find sound entries the object references (Report/voices) in the source
+    soundmd, plus the .wav tokens they list. Best-effort."""
+    entries, files, seen = [], [], set()
+    for tag in _SOUND_REF_TAGS:
+        name = _clean(get_val(src_map, obj_name, tag))
+        if not name or name.lower() in ("none", "") or name.lower() in seen:
+            continue
+        if _exists(src_sound_map, name):
+            seen.add(name.lower())
+            keys = _ordered_keys(src_sound_map, name)
+            entries.append((name, keys))
+            for k, v in keys:
+                if k.lower() == "sounds":
+                    files += [t.strip().upper() + ".WAV"
+                              for t in _clean(v).split(",") if t.strip()]
+    return entries, files
+
+
 # ── plan assembly ───────────────────────────────────────────────────────────
 def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
-                    include_kinds=None):
+                    include_kinds=None, src_art_map=None, src_sound_map=None):
     """Produce a PortPlan. include_kinds limits which object kinds to port
-    (default: all discovered)."""
+    (default: all discovered). src_art_map/src_sound_map enable art/sound entry
+    resolution (the port then carries those entries, not just flags them)."""
     config = config or ModConfig.default()
     plan = PortPlan()
     plan.target_countries = target_countries(tgt_map)
@@ -433,6 +479,18 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                 v = _clean(get_val(src_map, name, tag))
                 if v and v.lower() not in ("none", ""):
                     obj.asset_refs.append((tag, v, "soundmd.ini / assets"))
+            # multi-file: resolve the actual art/sound entries + media files
+            is_techno = kind in ("infantry", "vehicle", "aircraft", "building",
+                                 "building_dummy")
+            if is_techno and src_art_map is not None:
+                obj.art_entry, art_files = _resolve_art(name, src_map, src_art_map)
+                obj.media_files += art_files
+                if obj.art_entry is None:
+                    obj.warnings.append("no art entry found in source artmd")
+            if is_techno and src_sound_map is not None:
+                obj.sound_entries, snd_files = _resolve_sound(
+                    name, src_map, src_sound_map)
+                obj.media_files += snd_files
             plan.objects.append(obj)
 
     if not plan.objects:
@@ -460,6 +518,101 @@ def _rebuilt_section(obj):
 
 def _fmt(n):
     return str(int(n)) if float(n).is_integer() else str(n)
+
+
+_LIST_FOR_KIND = {
+    "infantry": "InfantryTypes", "vehicle": "VehicleTypes",
+    "naval": "VehicleTypes", "aircraft": "AircraftTypes",
+    "building": "BuildingTypes", "building_dummy": "BuildingTypes",
+}
+
+
+def _ending(lines):
+    return "\r\n" if lines and lines[-1].endswith("\r\n") else "\n"
+
+
+def _section_raw(obj, overrides, ending):
+    """[Name] + key=value lines with balanced (or overridden) stats and cleaned
+    Owner/Prerequisite applied."""
+    fkind = _OBJ_TO_FACTOR_KIND.get(obj.kind)
+    newvals = {}
+    for c in obj.stat_changes:
+        ov = overrides.get((fkind, c.stat)) if overrides else None
+        newvals[c.stat.lower()] = round(c.old * ov, 2) if ov else c.new
+    raw = [f"[{obj.name}]{ending}"]
+    for kr, vr in obj.keys:
+        kl = kr.lower()
+        if kl in newvals:
+            raw.append(f"{kr}={_fmt(newvals[kl])}{ending}")
+        elif kl == "owner" and obj.owner_before:
+            raw.append(f"{kr}={obj.owner_after}{ending}")
+        elif kl == "prerequisite" and obj.prereq_before:
+            raw.append(f"{kr}={obj.prereq_after}{ending}")
+        else:
+            raw.append(f"{kr}={_clean(vr)}{ending}")
+    return raw
+
+
+def _register_type_list(lines, section_map, list_section, value, ending):
+    """Append `<nextIndex>=value` to a numeric index list, creating it if absent."""
+    s = section_map.get(list_section.lower())
+    if s is None:
+        append_raw_section(lines, section_map, list_section,
+                           [f"[{list_section}]{ending}"], ending)
+        s = section_map[list_section.lower()]
+    idxs = [int(k) for k in s["keys"] if k.isdigit()]
+    nxt = (max(idxs) + 1) if idxs else 0
+    set_key_in_appended_section(lines, section_map, list_section, str(nxt), value)
+
+
+def _append_entry(lines, section_map, name, keys, ending):
+    """Append a plain [name] section from [(k, v)] pairs if it isn't already there."""
+    if _exists(section_map, name):
+        return False
+    raw = [f"[{name}]{ending}"] + [f"{k}={_clean(v)}{ending}" for k, v in keys]
+    append_raw_section(lines, section_map, name, raw, ending)
+    return True
+
+
+def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
+                    art=None, sound=None):
+    """Write selected ported objects into the target rules (mutates lines/
+    section_map in place). Appends each object's section (balanced/overridden +
+    cleaned Owner/Prereq), registers technos in their type-list, and — when
+    `art`/`sound` (each an (lines, section_map) tuple for the target files) are
+    given — appends the resolved art/sound entries. Returns a summary dict.
+
+    `selected`: object names to port (default all). `overrides`: {(factor_kind,
+    stat): factor}. Existing sections in the target are skipped (never clobbered)."""
+    selected = (set(selected) if selected is not None
+                else {o.name for o in plan.objects})
+    ending = _ending(lines)
+    summary = {"sections": 0, "registered": 0, "art": 0, "sound": 0,
+               "skipped_existing": 0, "media": []}
+    for obj in plan.objects:
+        if obj.name not in selected:
+            continue
+        if _exists(section_map, obj.name):
+            summary["skipped_existing"] += 1
+            continue
+        append_raw_section(lines, section_map, obj.name,
+                           _section_raw(obj, overrides, ending), ending)
+        summary["sections"] += 1
+        ls = _LIST_FOR_KIND.get(obj.kind)
+        if ls:
+            _register_type_list(lines, section_map, ls, obj.name, ending)
+            summary["registered"] += 1
+        if art is not None and obj.art_entry:
+            al, am = art
+            if _append_entry(al, am, obj.art_entry[0], obj.art_entry[1], _ending(al)):
+                summary["art"] += 1
+        if sound is not None and obj.sound_entries:
+            sl, smap = sound
+            for sname, skeys in obj.sound_entries:
+                if _append_entry(sl, smap, sname, skeys, _ending(sl)):
+                    summary["sound"] += 1
+        summary["media"] += obj.media_files
+    return summary
 
 
 def plan_to_blueprint(plan):
