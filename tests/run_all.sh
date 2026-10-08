@@ -28,6 +28,11 @@ if [ -z "$R" ]; then echo "SKIP (no rules path)";
 elif [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_ui.py" "$R" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
+# PortDialog smoke (builds its own fixtures; needs PySide6 + offscreen Qt).
+printf '%-18s ' "test_port_ui"
+if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_port_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
 echo
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

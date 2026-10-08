@@ -344,6 +344,7 @@ class MainWindow(QMainWindow):
 
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
+        tools.addAction("Port mod content…", self.port_mod_content)
 
         view = mb.addMenu("View")
         self.dark_action = view.addAction("Dark theme")
@@ -353,6 +354,14 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("Help")
         help_menu.addAction("Custom script help…", lambda: show_script_help(self))
         help_menu.addAction("About YRBalanceTool", self._show_about)
+
+    def port_mod_content(self):
+        """Open the mod-content porter dialog."""
+        from .port_dialog import PortDialog
+        if not self.source_path or self.section_map is None:
+            QMessageBox.information(self, "Port", "Load your target rules first.")
+            return
+        PortDialog(self).exec()
 
     def lint_ai(self):
         """Lint the loaded mod's AI (TaskForces/ScriptTypes/TeamTypes/triggers)."""
