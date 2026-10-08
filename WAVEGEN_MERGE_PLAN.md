@@ -153,6 +153,18 @@ and reuses existing infrastructure (`lint_ai`, the porter's cleanup patterns,
 `make_backup`). It is the natural completion of "import an old mod" and is
 independent of the generator's quality.
 
+## 8. Far-future vision (noted, not scoped)
+Eventually the tool could **help modders grade their AI and hunt AI bugs** — e.g.
+"this TeamType can never trigger", "this TaskForce is unbuildable for its owner",
+"this script unloads in the open", "the AI never fields unit X", weight/priority
+imbalances, and role/feasibility scoring of a mod's own `aimd.ini`. Foundations
+already exist and point the same way: `lint_ai` (structural AI bug-finding), the
+generator's `script_validator` (action-ordering grammar from vanilla), its
+role/feasibility grading, and `probe_unused_units` ("why is X never built"). A
+mature version would combine these into an "AI review" pass (and Eva could narrate
+it). Very long-term; mentioned so the near-term pieces are built in a compatible
+direction.
+
 ## 6. Recommendation
 **Now:** build §7 — AI import in the porter. Self-contained, reliable (transplants
 hand-tuned AI, no generation), reuses `lint_ai` + the porter's cleanup patterns,
