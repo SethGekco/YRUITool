@@ -157,7 +157,8 @@ from .obtain import (
 )
 from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
-    is_vanilla_mix, vanilla_mix_names, VANILLA_MIX_NAMES,
+    is_vanilla_mix, is_stock_mix, stock_mix_names,
+    VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
     build_media_catalog, resolve_media, pack_media_mixes,
 )
 from .portmod import (
@@ -237,6 +238,7 @@ __all__ = [
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",
     # mixlib
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
-    "is_vanilla_mix", "vanilla_mix_names", "VANILLA_MIX_NAMES",
+    "is_vanilla_mix", "is_stock_mix", "stock_mix_names",
+    "VANILLA_MIX_NAMES", "STOCK_MIX_NAMES", "KNOWN_FRAMEWORK_FILES",
     "build_media_catalog", "resolve_media", "pack_media_mixes",
 ]

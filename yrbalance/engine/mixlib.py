@@ -33,28 +33,54 @@ MIX_ENCRYPTED = 0x00020000
 _LMD_NAME = "local mix database.dat"
 _LMD_MAGIC = b"XCC by Olaf van der Spek\x1a"
 
-# Stock game mixes to leave alone (never port/modify into/out of). By basename,
-# lowercased; from a vanilla RA2+YR install. Extend via vanilla_mix_names().
+# Stock RA2/YR game mixes. By basename, lowercased.
 VANILLA_MIX_NAMES = frozenset({
     "ra2.mix", "ra2md.mix", "language.mix", "langmd.mix", "theme.mix",
     "thememd.mix", "multi.mix", "multimd.mix", "movies01.mix", "movies02.mix",
     "movmd03.mix", "maps01.mix", "maps02.mix", "mapsmd03.mix", "ecache97.mix",
     "expand97.mix", "expandmd01.mix",
 })
+# Mixes shipped by the community launcher/frameworks, not a specific mod:
+CNCNET_MIX_NAMES = frozenset({
+    "cncnet.mix", "ra2mode.mix", "expandmd99.mix", "expandmd00.mix",
+    "expandspawn01.mix", "expandspawn02.mix", "expandspawn09.mix",
+})
+ARES_MIX_NAMES = frozenset({"ares.mix"})
+# The full "not a specific mod's content" set — skip these when cataloguing a mod.
+STOCK_MIX_NAMES = VANILLA_MIX_NAMES | CNCNET_MIX_NAMES | ARES_MIX_NAMES
+
+# Loose framework binaries (Phobos / Ares / CnCNet) — never mod content. Phobos
+# ships only its DLL/PDB; the rest are launcher/injector files.
+KNOWN_FRAMEWORK_FILES = frozenset({
+    "phobos.dll", "phobos.pdb", "ares.dll", "ares.pdb", "syringe.exe",
+    "blowfish.dll", "ddraw.dll", "binkw32.dll", "patchw32.dll", "drvmgt.dll",
+    "qres32.dll", "findmrua.dll", "readme data.dll", "cncnet5.dll",
+})
 
 
 def is_vanilla_mix(path_or_name):
-    """True if this is a stock game mix that should not be touched."""
+    """True if this is a stock RA2/YR game mix."""
     return os.path.basename(path_or_name).lower() in VANILLA_MIX_NAMES
 
 
-def vanilla_mix_names(vanilla_dir):
-    """Build the ignore set from a real vanilla install dir (its *.mix files)."""
-    try:
-        return frozenset(f.lower() for f in os.listdir(vanilla_dir)
-                         if f.lower().endswith(".mix"))
-    except OSError:
-        return VANILLA_MIX_NAMES
+def is_stock_mix(path_or_name):
+    """True if this mix is vanilla OR a community-framework mix (CnCNet/Ares) —
+    i.e. not a specific mod's own content, so the porter should leave it alone."""
+    return os.path.basename(path_or_name).lower() in STOCK_MIX_NAMES
+
+
+def stock_mix_names(*reference_dirs):
+    """Build the ignore set from real reference installs (a vanilla dir and/or a
+    vanilla+cncnet dir): every *.mix they contain, unioned with the built-in
+    STOCK_MIX_NAMES."""
+    names = set(STOCK_MIX_NAMES)
+    for d in reference_dirs:
+        try:
+            names |= {f.lower() for f in os.listdir(d)
+                      if f.lower().endswith(".mix")}
+        except (OSError, TypeError):
+            pass
+    return frozenset(names)
 
 
 # ── Westwood RSA-wrapped Blowfish key (XCC fast-key) ─────────────────────────
@@ -313,7 +339,8 @@ def build_media_catalog(folders, skip_vanilla=True):
     filename (when known) AND the file id (always), so files inside mixes that lack
     a name database are still findable by hashing the requested name. A location is
     ("loose", path) or ("mix", mixpath, id). Loose files win over mix copies;
-    earlier folders win over later. Vanilla mixes are skipped by default."""
+    earlier folders win over later. Stock + community-framework mixes (vanilla,
+    CnCNet, Ares) are skipped by default — only the mod's own mixes are indexed."""
     if isinstance(folders, str):
         folders = [folders]
     catalog = {}
@@ -330,7 +357,7 @@ def build_media_catalog(folders, skip_vanilla=True):
                 loc = ("loose", p)
                 catalog.setdefault(fn.upper(), loc)
                 catalog.setdefault(mix_id(fn), loc)
-            elif ext == ".mix" and not (skip_vanilla and is_vanilla_mix(fn)):
+            elif ext == ".mix" and not (skip_vanilla and is_stock_mix(fn)):
                 mixes.append(p)
     for mp in mixes:                    # loose already populated → setdefault skips
         try:

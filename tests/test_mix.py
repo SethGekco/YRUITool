@@ -14,7 +14,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from yrbalance.engine import (
-    mix_id, MixFile, write_mix, MixError, is_vanilla_mix,
+    mix_id, MixFile, write_mix, MixError, is_vanilla_mix, is_stock_mix,
     build_media_catalog, resolve_media, pack_media_mixes,
 )
 from yrbalance.engine._blowfish import Blowfish
@@ -79,8 +79,13 @@ def main():
 
         # ── vanilla-mix policy (name-based, not encryption-based) ───────────
         van_ok = (is_vanilla_mix("ra2md.mix") and is_vanilla_mix("/x/RA2.MIX")
-                  and not is_vanilla_mix("mymod_ecache.mix"))
-        print(f"is_vanilla_mix policy: {'OK' if van_ok else 'FAIL'}")
+                  and not is_vanilla_mix("mymod_ecache.mix")
+                  # community frameworks are stock but not "vanilla"
+                  and is_stock_mix("ares.mix") and is_stock_mix("expandspawn01.mix")
+                  and not is_vanilla_mix("ares.mix")
+                  and not is_stock_mix("mymod_ecache.mix"))
+        print(f"vanilla/stock mix policy (cncnet+ares skipped): "
+              f"{'OK' if van_ok else 'FAIL'}")
         ok = ok and van_ok
 
         # ── corruption guard: bogus index offset → MixError ─────────────────
@@ -105,8 +110,10 @@ def main():
         open(os.path.join(src, "unit.vxl"), "wb").write(b"Voxel Animation\x1a" + b"V")
         write_mix(os.path.join(src, "ecacheX.mix"),
                   {"unit.hva": b"HVA-DATA", "icon.shp": b"SHP-DATA"})
-        # a vanilla mix that must be ignored even though it has a wanted file
+        # stock/community mixes that must be ignored even if they have wanted files
         write_mix(os.path.join(src, "ra2md.mix"), {"icon.shp": b"VANILLA-WRONG"})
+        write_mix(os.path.join(src, "ares.mix"), {"unit.hva": b"ARES-WRONG"})
+        write_mix(os.path.join(src, "expandspawn01.mix"), {"unit.vxl": b"CNCNET-WRONG"})
 
         cat = build_media_catalog(src)
         cat_ok = (cat.get("UNIT.VXL", ("",))[0] == "loose"
