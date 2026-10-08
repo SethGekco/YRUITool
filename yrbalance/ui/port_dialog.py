@@ -119,7 +119,7 @@ class PortDialog(QDialog):
         frow.addWidget(self.filter_edit, 1)
         tl.addLayout(frow)
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["name / kind", "changes", "notes"])
+        self.tree.setHeaderLabels(["name / kind", "changes", "obtain / notes"])
         self.tree.setColumnWidth(0, 300)
         self.tree.itemChanged.connect(self._item_changed)
         self.tree.itemDoubleClicked.connect(self._show_detail)
@@ -259,7 +259,8 @@ class PortDialog(QDialog):
             for obj in bk[kind]:
                 changes = ", ".join(
                     f"{c.stat} {c.old:g}→{c.new:g}" for c in obj.stat_changes)
-                notes = ("⚠ " + str(len(obj.warnings))) if obj.warnings else ""
+                oc = obj.obtainability.cls if obj.obtainability else ""
+                notes = oc + (f"  ⚠{len(obj.warnings)}" if obj.warnings else "")
                 child = QTreeWidgetItem(top, [obj.name, changes, notes])
                 child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
                 child.setCheckState(0, Qt.Unchecked)
@@ -307,6 +308,11 @@ class PortDialog(QDialog):
         if obj is None:
             return
         parts = [f"[{obj.name}]  ({obj.kind})", ""]
+        if obj.obtainability is not None:
+            ob = obj.obtainability
+            also = (" + " + ", ".join(ob.also)) if ob.also else ""
+            parts.append(f"  obtain: {ob.cls}{also}  — {'; '.join(ob.reasons)}")
+            parts.append("")
         for c in obj.stat_changes:
             parts.append(f"  {c.stat}: {c.old:g} → {c.new:g}  "
                          f"(×{c.factor} {c.confidence})")

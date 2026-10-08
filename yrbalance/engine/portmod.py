@@ -27,6 +27,7 @@ from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
 from .sections import append_raw_section, set_key_in_appended_section
+from .obtain import classify_obtainability, OB_DUMMY
 
 # Stats the tool actively balances, and which section each applies to.
 TECHNO_STATS = ("Cost", "Strength", "Speed", "Sight")
@@ -114,6 +115,7 @@ class PortObject:
     art_entry: tuple = None                          # (art_name, [(k, v)]) or None
     sound_entries: list = field(default_factory=list)  # [(name, [(k, v)])]
     media_files: list = field(default_factory=list)  # best-effort filenames to copy
+    obtainability: object = None                     # Obtainability or None
     warnings: list = field(default_factory=list)
 
 
@@ -149,11 +151,13 @@ def _is_dummy_building(section_map, name):
     return tl is not None and tl < 0 and (cost is None or cost == 0)
 
 
-def classify_new_objects(src_map, tgt_map, config=None):
+def classify_new_objects(src_map, tgt_map, config=None, obtain=None):
     """Return {kind: [names]} for sections in src not in tgt, by object kind.
 
     TechnoTypes come from the source's type-list registries; weapons/warheads/
-    projectiles are discovered by reference closure over the new technos."""
+    projectiles are discovered by reference closure over the new technos.
+    Buildings are split real vs dummy using the obtainability classifier when
+    `obtain` is provided, else a quick heuristic."""
     config = config or ModConfig.default()
     kinds = {}
 
@@ -162,6 +166,12 @@ def classify_new_objects(src_map, tgt_map, config=None):
             kinds.setdefault(kind, [])
             if name not in kinds[kind]:
                 kinds[kind].append(name)
+
+    def is_dummy(name):
+        if obtain is not None:
+            o = obtain.get(name.lower())
+            return o is not None and o.cls == OB_DUMMY
+        return _is_dummy_building(src_map, name)
 
     reg = {
         "infantry": "InfantryTypes",
@@ -173,8 +183,7 @@ def classify_new_objects(src_map, tgt_map, config=None):
             add(kind, name)
     for name in parse_type_list(src_map, "BuildingTypes"):
         if not _exists(tgt_map, name):
-            add("building_dummy" if _is_dummy_building(src_map, name)
-                else "building", name)
+            add("building_dummy" if is_dummy(name) else "building", name)
 
     # Reference closure: weapons → warheads/projectiles, over the new technos.
     seeds = [n for names in kinds.values() for n in names]
@@ -414,8 +423,9 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
     cset = plan.target_countries
     generics = _generic_prereqs(tgt_map)
     plan.factors = compute_factors(src_map, tgt_map, vanilla_map)
+    obtain = classify_obtainability(src_map, config, art_map=src_art_map)
 
-    kinds = classify_new_objects(src_map, tgt_map, config)
+    kinds = classify_new_objects(src_map, tgt_map, config, obtain=obtain)
     moved_lower = {n.lower() for names in kinds.values() for n in names}
 
     for kind, names in kinds.items():
@@ -429,7 +439,8 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
         kind_factors = plan.factors.get(fkind, {})
         for name in names:
             obj = PortObject(name=name, kind=kind,
-                             keys=_ordered_keys(src_map, name))
+                             keys=_ordered_keys(src_map, name),
+                             obtainability=obtain.get(name.lower()))
             # rescale balance stats using THIS kind's factor
             for stat in stats:
                 old = _stat(src_map, name, stat)
@@ -629,6 +640,11 @@ def plan_to_blueprint(plan):
             lines.append(f";   {fkind}: " + "  ".join(parts))
     lines.append(";")
     for obj in plan.objects:
+        if obj.obtainability is not None:
+            ob = obj.obtainability
+            extra = (" + " + ", ".join(ob.also)) if ob.also else ""
+            lines.append(f"; [{obj.name}] obtain: {ob.cls}{extra} "
+                         f"({'; '.join(ob.reasons)})")
         if obj.warnings:
             lines.append(f"; [{obj.name}] NOTE: " + " | ".join(obj.warnings))
         if obj.asset_refs:

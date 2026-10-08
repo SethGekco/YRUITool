@@ -151,6 +151,10 @@ from .restore import restore_vanilla
 from .history import scan_changes, revert_change
 from .backup import make_backup, list_backups, default_backup_dir
 from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
+from .obtain import (
+    classify_obtainability, Obtainability,
+    OB_BUILDABLE, OB_CRATE, OB_OTHER, OB_DUMMY, OB_CIVILIAN, OB_UNKNOWN,
+)
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     apply_port_plan, clean_owner, clean_prereq, target_countries,
