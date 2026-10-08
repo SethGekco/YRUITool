@@ -21,27 +21,21 @@ Owner/Prerequisite. Still to build:
 - **Media / asset transfer** — copy the .vxl/.hva/.shp/.wav the imported objects
   reference (from the source mod's loose files or its .mix archives) into the target.
 
-## .mix archive read / extract / repack — v1 SHIPPED (unencrypted), extend
-`engine/mixlib.py` reads/extracts/repacks unencrypted MIX (the mod mixes:
-ecache*/expand*/ares) and refuses encrypted master mixes. Remaining:
-- **Blowfish+RSA decryption** for encrypted master mixes (ra2.mix/ra2md.mix,
-  flags & 0x20000) — needed to read vanilla content straight from the game, for
-  users who don't keep loose files. XCC has the key-derivation (RSA-wrapped
-  Blowfish key) + Blowfish; port it. Lower priority since Rex keeps vanilla loose.
-- **Seamless packed-ini editing** — extract a packed ini to a temp folder, let the
-  tool edit it as if loose, repack into the same mix on save (backups kept; atomic
-  write already done). Wire into Load/Save when the path points inside a mix.
-- **MIX browser UI** (Tools → Open MIX…) — list/extract/add/replace files, with
-  the corruption-boogey-man backup prompt surfaced.
-- **vanilla vs mod .mix detection** — flag which mixes are stock (compare against a
-  known vanilla file list; for now diff against `…/000-RA2YR Vanilla/`).
-
-## Porter media transfer (uses mixlib)
-Wire mixlib into the porter: for each imported object, find its referenced
-`.vxl/.hva/.shp/.wav` (and sidebar cameo SHP) across the source mod's loose files
-AND its mixes, and copy them into the target (loose or into a target mix). The
-porter already LISTS these filenames per object; this closes the loop so imported
-units actually render. Pairs with the "universal helper" + porter UI items.
+## .mix archive read / extract / repack — SHIPPED (incl. encryption + media)
+`engine/mixlib.py` reads/extracts/repacks MIX (plain + Blowfish-encrypted via
+_blowfish.py), with VANILLA_MIX_NAMES/is_vanilla_mix policy, media cataloguing
+(build_media_catalog over loose+mixes, by name AND id), resolve_media, and
+pack_media_mixes (split by count). Porter media transfer is wired into the Port
+dialog (base mix name + max files/mix). Remaining niceties:
+- **Seamless packed-ini editing** — extract a packed ini to a temp folder, edit it
+  as if loose, repack into the same mix on save (backups kept; atomic write done).
+  Wire into Load/Save when the path points inside a mix.
+- **MIX browser UI** (Tools → Open MIX…) — list/extract/add/replace files, with the
+  corruption-boogey-man backup prompt surfaced.
+- **Checksum on write** — optionally write the SHA1 trailer (flags & 0x10000); the
+  game doesn't require it, so low priority.
+- **Cameo gaps** — some units' cameos aren't in the mod's mixes; media transfer
+  reports them as not-found. Could cross-check vanilla cameos / warn in the UI.
 
 ## Version-aware vanilla baselines
 Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
