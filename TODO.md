@@ -84,9 +84,10 @@ units, 0.5s). Remaining:
   sounds absent from every source still show the neutral ♪ status. Remaining:
   samples extract as RAW (IMA-ADPCM) bag bytes — add WAV decode/encode for playable
   export; and reach vanilla voices nested inside the game mixes (unnamed sub-mixes).
-- Per-unit balance history (ties to the persistent-history item).
-- SHP/VXL thumbnail preview in the detail pane.
-- "Send selected unit(s) to the porter as a source" one-click bridge.
+- Per-unit history — DONE (modhistory.unit_history in the detail pane).
+- "Open in Porter as source" bridge — DONE.
+- SHP/VXL thumbnail preview in the detail pane (remaining).
+- Export whole mod / multi-unit export to a library (currently one unit at a time).
 
 ## Unit encyclopedia / search (original idea notes)
 A searchable, unit-centric view of the loaded mod. Pick/search a unit → one page
@@ -105,19 +106,15 @@ Searchable by name/role. Directly serves "stalk for missing assets + known
 locations" and makes import review far comfier. Recommended first build; it unifies
 the porter/mix/obtain/vanilla work into one browsing surface.
 
-## Persistent + live change history
-The History tab already does per-change undo with vanilla annotations. Extend:
-- **Scan-on-load diff** — snapshot section hashes on load; on reload, show what
-  changed since last time (works even for mods not edited with the tool).
-- **Live change log** — while running, append every applied section change to a
-  persistent log (per mod), so history survives restarts and feeds the per-unit
-  history in the encyclopedia.
+## Persistent + live change history — SHIPPED
+engine/modhistory.py: scan-on-load diff (what changed since last load, status bar)
++ per-apply edit log + per-unit history (shown in the encyclopedia). Remaining:
+surface the full timeline in the History tab UI (currently status-bar + per-unit).
 
-## Multi-mod workspace: default rules + bookmarked sources
-Keep a primary rules file loaded, plus a set of **bookmarked source mods** (paths)
-the user can quickly pull from — so storing several mods as "source libraries" for
-the porter / encyclopedia is one click. Pairs with the porter (quick source
-selection) and the encyclopedia (search across bookmarked mods).
+## Multi-mod workspace: bookmarked sources — SHIPPED
+engine/bookmarks.py + pickers in the Encyclopedia and Porter. Remaining: a
+"default rules always open" primary-workspace concept and search across *all*
+bookmarked mods without loading each (lazy/background index).
 
 ## Universal helper: go beyond rules-only
 Right now the tool (and Eva's baseline reference) is centered on `rules.ini` /
