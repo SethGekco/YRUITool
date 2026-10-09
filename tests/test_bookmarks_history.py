@@ -70,6 +70,18 @@ def main():
               f"{'OK' if hist_ok else 'FAIL'}")
         ok = ok and hist_ok
 
+        # ── timeline formatting + clear ─────────────────────────────────────
+        from yrbalance.engine import format_timeline, clear_history
+        tl = format_timeline(rp)
+        tl_ok = (len(tl) >= 2
+                 and any("edited" in t and "Eva applied" in t for t in tl)
+                 and any("loaded" in t for t in tl))
+        print(f"timeline: {len(tl)} event(s)  {'OK' if tl_ok else 'FAIL'}")
+        clear_history(rp)
+        clr_ok = format_timeline(rp) == []
+        print(f"clear history: {'OK' if clr_ok else 'FAIL'}")
+        ok = ok and tl_ok and clr_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

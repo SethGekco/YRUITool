@@ -179,10 +179,61 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._auto_load_last)
 
     def _auto_load_last(self):
-        last = self.settings.value("last_rules", "")
-        if last and os.path.isfile(last):
-            self._load_rules_path(last)
-            self.statusBar().showMessage(f"Reopened {os.path.basename(last)}.")
+        default = self.settings.value("default_rules", "")
+        target = default if default and os.path.isfile(default) \
+            else self.settings.value("last_rules", "")
+        if target and os.path.isfile(target):
+            self._load_rules_path(target)
+            kind = "default workspace" if target == default else "last file"
+            self.statusBar().showMessage(
+                f"Reopened {os.path.basename(target)} ({kind}).")
+
+    def set_default_workspace(self):
+        """Pin the current rules as the workspace that opens on startup."""
+        if not self.source_path:
+            QMessageBox.information(self, "Workspace", "Load a rules file first.")
+            return
+        self.settings.setValue("default_rules", self.source_path)
+        self.statusBar().showMessage(
+            f"Default workspace: {os.path.basename(self.source_path)} "
+            "(opens on startup). Bookmarked mods stay available as sources.")
+
+    def clear_default_workspace(self):
+        self.settings.remove("default_rules")
+        self.statusBar().showMessage(
+            "Default workspace cleared — startup reopens the last file.")
+
+    def show_change_timeline(self):
+        """Show the persistent change timeline for the loaded mod."""
+        if not self.source_path:
+            QMessageBox.information(self, "Timeline", "Load a rules file first.")
+            return
+        from ..engine import format_timeline, clear_history
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Change timeline")
+        dlg.resize(680, 500)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(f"<b>{os.path.basename(self.source_path)}</b> "
+                             "— change history, newest first"))
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setFont(QFont("monospace", 10))
+        events = format_timeline(self.source_path)
+        view.setPlainText("\n".join(events) if events
+                          else "No recorded history yet — it builds as you load "
+                          "and apply changes.")
+        lay.addWidget(view, 1)
+        row = QHBoxLayout()
+        clr = QPushButton("Clear history")
+        clr.clicked.connect(lambda: (clear_history(self.source_path),
+                                     view.setPlainText("(cleared)")))
+        row.addWidget(clr)
+        row.addStretch(1)
+        cl = QPushButton("Close")
+        cl.clicked.connect(dlg.accept)
+        row.addWidget(cl)
+        lay.addLayout(row)
+        dlg.exec()
 
     # ── Settings persistence ─────────────────────────────────────────────────
     def _restore_settings(self):
@@ -318,6 +369,10 @@ class MainWindow(QMainWindow):
         self.reload_last_action.setEnabled(False)
         file_menu.addAction("Restore a file to vanilla…", self.restore_to_vanilla)
         file_menu.addSeparator()
+        file_menu.addAction("Set current as default workspace",
+                            self.set_default_workspace)
+        file_menu.addAction("Clear default workspace", self.clear_default_workspace)
+        file_menu.addSeparator()
         file_menu.addAction("Settings…", self.open_settings)
         file_menu.addSeparator()
         file_menu.addAction("Quit", self.close)
@@ -347,6 +402,7 @@ class MainWindow(QMainWindow):
         tools.addAction("Port mod content…", self.port_mod_content)
         tools.addAction("Encyclopedia…", self.open_encyclopedia)
         tools.addAction("MIX browser…", self.open_mix_browser)
+        tools.addAction("Change timeline…", self.show_change_timeline)
 
         view = mb.addMenu("View")
         self.dark_action = view.addAction("Dark theme")

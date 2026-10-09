@@ -173,6 +173,7 @@ from .bookmarks import (
 from .modhistory import (
     section_fingerprints, diff_fingerprints, load_history,
     record_load, record_changes, update_snapshot, unit_history,
+    format_timeline, clear_history,
 )
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
@@ -264,4 +265,5 @@ __all__ = [
     # modhistory
     "section_fingerprints", "diff_fingerprints", "load_history",
     "record_load", "record_changes", "update_snapshot", "unit_history",
+    "format_timeline", "clear_history",
 ]

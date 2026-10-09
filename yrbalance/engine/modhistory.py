@@ -109,6 +109,39 @@ def record_changes(rules_path, sections, note=""):
     _save(rules_path, data)
 
 
+def format_timeline(rules_path, limit=300):
+    """Human-readable change timeline (newest first) for a rules file."""
+    out = []
+    for ev in reversed(load_history(rules_path).get("log", [])[-limit:]):
+        t = ev.get("time", "")
+        if ev.get("kind") == "load-diff":
+            parts = []
+            if ev.get("changed"):
+                parts.append(f"{len(ev['changed'])} changed")
+            if ev.get("added"):
+                parts.append(f"{ev['added']} added")
+            if ev.get("removed"):
+                parts.append(f"{ev['removed']} removed")
+            detail = ", ".join(ev.get("changed", [])[:12])
+            out.append(f"{t}  loaded — {', '.join(parts)}"
+                       + (f"  [{detail}…]" if detail else ""))
+        elif ev.get("kind") == "edit":
+            secs = ev.get("sections", [])
+            note = f" ({ev['note']})" if ev.get("note") else ""
+            out.append(f"{t}  edited{note} — {len(secs)} section(s): "
+                       + ", ".join(secs[:12])
+                       + ("…" if len(secs) > 12 else ""))
+    return out
+
+
+def clear_history(rules_path):
+    """Forget the stored timeline (keep a fresh snapshot of the current state)."""
+    try:
+        os.remove(_store_path(rules_path))
+    except OSError:
+        pass
+
+
 def unit_history(rules_path, section_name):
     """Events that touched a given section, newest first — for the encyclopedia."""
     sl = section_name.lower()

@@ -42,6 +42,11 @@ class HistoryTab(QWidget):
         self.group_combo.currentIndexChanged.connect(self._rebuild_tree)
         bar.addWidget(self.group_combo)
         bar.addStretch(1)
+        self.timeline_btn = QPushButton("Timeline…")
+        self.timeline_btn.setToolTip("Full change history for this mod across "
+                                     "sessions (loads + applies).")
+        self.timeline_btn.clicked.connect(self._show_timeline)
+        bar.addWidget(self.timeline_btn)
         self.undo_btn = QPushButton("Undo selected")
         self.undo_btn.clicked.connect(self._undo_selected)
         bar.addWidget(self.undo_btn)
@@ -77,6 +82,11 @@ class HistoryTab(QWidget):
         outer.addWidget(self.status)
 
     # ── Data ─────────────────────────────────────────────────────────────────
+    def _show_timeline(self):
+        win = self.window()
+        if hasattr(win, "show_change_timeline"):
+            win.show_change_timeline()
+
     def set_rules(self, lines, section_map, config):
         self._lines = list(lines)   # working copy we can revert in
         self._section_map = section_map

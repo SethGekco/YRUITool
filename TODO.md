@@ -107,14 +107,15 @@ locations" and makes import review far comfier. Recommended first build; it unif
 the porter/mix/obtain/vanilla work into one browsing surface.
 
 ## Persistent + live change history — SHIPPED
-engine/modhistory.py: scan-on-load diff (what changed since last load, status bar)
-+ per-apply edit log + per-unit history (shown in the encyclopedia). Remaining:
-surface the full timeline in the History tab UI (currently status-bar + per-unit).
+engine/modhistory.py: scan-on-load diff (status bar) + per-apply edit log +
+per-unit history (encyclopedia) + a full timeline UI (History tab "Timeline…"
+button / Tools → Change timeline…, with Clear). Done.
 
-## Multi-mod workspace: bookmarked sources — SHIPPED
-engine/bookmarks.py + pickers in the Encyclopedia and Porter. Remaining: a
-"default rules always open" primary-workspace concept and search across *all*
-bookmarked mods without loading each (lazy/background index).
+## Workspace: default rules + bookmarked sources — SHIPPED
+engine/bookmarks.py + pickers in Encyclopedia and Porter; File → "Set current as
+default workspace" pins the primary rules to reopen on startup (falls back to last
+file). Remaining: search across *all* bookmarked mods without loading each
+(lazy/background index), and a session-restore of open encyclopedia mods.
 
 ## Universal helper: go beyond rules-only
 Right now the tool (and Eva's baseline reference) is centered on `rules.ini` /
