@@ -72,6 +72,37 @@ guide — covers theme registration and file placement). Two modes, mirroring th
 Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
 Pairs with the "universal helper" item below.
 
+## Unit encyclopedia / search (flagship "comfy" feature)
+A searchable, unit-centric view of the loaded mod. Pick/search a unit → one page
+showing everything about it, assembled from infrastructure that already exists:
+- **Code**: its rules section (stats), weapon chain (Primary/Secondary → warheads →
+  projectiles), art entry (artmd), sound entries (soundmd) — the porter already
+  resolves all of this per object (`build_port_plan` / `_resolve_art/_resolve_sound`).
+- **Assets + their locations**: the .vxl/.hva/.shp/.wav (incl. sidebar cameo) each
+  with WHERE it lives — loose file or which .mix — via `build_media_catalog`.
+- **Missing-asset hunting**: flag referenced assets that aren't present, split into
+  "vanilla (fine)" vs "truly missing (warn)" via `vanilla_asset_ids`/`classify_missing`.
+- **Obtainability**: buildable / crate / other / dummy / civilian via
+  `classify_obtainability`.
+- **Per-unit balance history**: this unit's changes over time (see history item).
+Searchable by name/role. Directly serves "stalk for missing assets + known
+locations" and makes import review far comfier. Recommended first build; it unifies
+the porter/mix/obtain/vanilla work into one browsing surface.
+
+## Persistent + live change history
+The History tab already does per-change undo with vanilla annotations. Extend:
+- **Scan-on-load diff** — snapshot section hashes on load; on reload, show what
+  changed since last time (works even for mods not edited with the tool).
+- **Live change log** — while running, append every applied section change to a
+  persistent log (per mod), so history survives restarts and feeds the per-unit
+  history in the encyclopedia.
+
+## Multi-mod workspace: default rules + bookmarked sources
+Keep a primary rules file loaded, plus a set of **bookmarked source mods** (paths)
+the user can quickly pull from — so storing several mods as "source libraries" for
+the porter / encyclopedia is one click. Pairs with the porter (quick source
+selection) and the encyclopedia (search across bookmarked mods).
+
 ## Universal helper: go beyond rules-only
 Right now the tool (and Eva's baseline reference) is centered on `rules.ini` /
 `rulesmd.ini`. The original plan was rules-only, but it would be more useful as a
