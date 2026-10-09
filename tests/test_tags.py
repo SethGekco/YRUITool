@@ -62,6 +62,50 @@ def main():
               f"{'OK' if filt_ok else 'FAIL'}")
         ok = ok and filt_ok
 
+        # ── Eva-driven tagging: request → TagPlan → apply ───────────────────
+        from yrbalance.engine import bulk_add_tag
+        from yrbalance.ai.eva import plan_tags
+
+        class FakeClient:
+            def __init__(self, reply):
+                self.reply = reply
+
+            def chat(self, messages, model, num_ctx=None):
+                return self.reply
+
+        kinds = ["infantry", "vehicle", "aircraft", "building"]
+        obts = ["buildable", "crate", "other", "dummy", "civilian", "unknown"]
+        reply = ('Sure, here you go:\n{"tag":"needs-review","action":"add",'
+                 '"kind":"vehicle","obtain":"crate","name_contains":"",'
+                 '"has_tag":""}')
+        plan = plan_tags(FakeClient(reply), "m", "tag crate-only vehicles "
+                         "needs-review", kinds, obts, [])
+        plan_ok = (plan.tag == "needs-review" and plan.action == "add"
+                   and plan.kind == "vehicle" and plan.obtain == "crate"
+                   and not plan.error)
+        print(f"plan_tags parse: tag={plan.tag} kind={plan.kind} "
+              f"obtain={plan.obtain}  {'OK' if plan_ok else 'FAIL'}")
+        ok = ok and plan_ok
+
+        bad = plan_tags(FakeClient("I can't do that."), "m", "x", kinds, obts, [])
+        err_ok = bool(bad.error)
+        print(f"plan_tags no-json → error: {'OK' if err_ok else 'FAIL'}")
+        ok = ok and err_ok
+
+        # apply the plan's filter to a small index, then tag
+        idx2 = ModIndex(label="turkey-mod", folder="", rules_path=rp,
+                        units={"gi": u, "apoc": tank})
+        matched = [x for x in search_indexes([idx2], query=plan.name_contains,
+                                             kind=plan.kind or None)
+                   if x.obtain == plan.obtain]
+        bulk_add_tag(rp, [m.name for m in matched], plan.tag)
+        applied = load_tags(rp)
+        apply_ok = ([m.name for m in matched] == ["APOC"]
+                    and "needs-review" in applied.get("apoc", []))
+        print(f"apply plan (only crate vehicle APOC tagged): "
+              f"{'OK' if apply_ok else 'FAIL'}")
+        ok = ok and apply_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

@@ -58,6 +58,75 @@ class EvaReply:
     sources: list = field(default_factory=list)  # [{name, score}] consulted
 
 
+@dataclass
+class TagPlan:
+    """A structured unit-tagging action Eva produced from a plain-English request."""
+    tag: str = ""
+    action: str = "add"       # "add" | "remove"
+    name_contains: str = ""
+    kind: str = ""            # infantry/vehicle/aircraft/building, or ""
+    obtain: str = ""          # buildable/crate/other/dummy/civilian/unknown, or ""
+    has_tag: str = ""         # only units already tagged with this substring
+    raw: str = ""
+    error: str = ""
+
+
+_TAG_SYS = """You convert a unit-tagging request into ONE JSON action for a Red \
+Alert 2 / Yuri's Revenge unit library. Output ONLY a JSON object, no prose:
+{{
+  "tag": "<the tag to apply or remove>",
+  "action": "add" or "remove",
+  "name_contains": "<substring of unit names, or empty>",
+  "kind": "<one of: {kinds}, or empty>",
+  "obtain": "<one of: {obtain}, or empty>",
+  "has_tag": "<restrict to units already tagged with this substring, or empty>"
+}}
+Existing tags in the library: {existing}.
+Choose the narrowest filters that satisfy the request. "tag" is required; leave a
+filter empty if the request doesn't constrain it."""
+
+
+def _json_block(text):
+    import json
+    m = re.search(r"\{.*\}", text or "", re.DOTALL)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group())
+    except ValueError:
+        return None
+
+
+def plan_tags(client, model, request, kinds, obtain_classes, existing_tags,
+              num_ctx=None):
+    """Ask the local model to turn a tagging request into a TagPlan."""
+    sys_prompt = _TAG_SYS.format(
+        kinds=", ".join(kinds), obtain=", ".join(obtain_classes),
+        existing=", ".join(existing_tags) or "(none)")
+    messages = [{"role": "system", "content": sys_prompt},
+                {"role": "user", "content": request}]
+    try:
+        content = client.chat(messages, model, num_ctx=num_ctx)
+    except Exception as e:
+        return TagPlan(error=f"{type(e).__name__}: {e}")
+    data = _json_block(content)
+    if not isinstance(data, dict):
+        return TagPlan(error="Eva didn't return a usable tag action.", raw=content)
+    plan = TagPlan(
+        tag=str(data.get("tag", "")).strip(),
+        action=(str(data.get("action", "add")).strip().lower() or "add"),
+        name_contains=str(data.get("name_contains", "")).strip(),
+        kind=str(data.get("kind", "")).strip().lower(),
+        obtain=str(data.get("obtain", "")).strip().lower(),
+        has_tag=str(data.get("has_tag", "")).strip(),
+        raw=content)
+    if plan.action not in ("add", "remove"):
+        plan.action = "add"
+    if not plan.tag:
+        plan.error = "Eva didn't name a tag to apply."
+    return plan
+
+
 def _code_block(text):
     """Extract a fenced code block from a model reply.
 

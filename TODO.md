@@ -76,9 +76,11 @@ Pairs with the "universal helper" item below.
 engine/tags.py: user tags stored in a sidecar (~/.yrbalancetool/tags.json, never
 in the mod), auto-tags (source:/kind:/obtain:) merged at display, add/remove/bulk,
 tag filter + "Tag all shown" in the Encyclopedia for fast bulk tagging. Remaining:
-- **Eva-driven tagging** — let Eva turn "tag all crate-only vehicles as
-  needs-review" into a {filter, tag} the tool applies (search_indexes +
-  bulk_add_tag already make this a thin layer). Give Eva a tag-action output mode.
+- Eva-driven tagging — DONE: eva.plan_tags turns "tag all crate-only vehicles as
+  needs-review" into a TagPlan {tag, action, kind, obtain, name_contains, has_tag};
+  the Encyclopedia's "Ask Eva to tag" field previews the matched units and applies
+  via bulk_add/remove. Verified on qwen2.5:14b across add/remove + name/obtain/kind
+  filters.
 - Provenance-on-export — stamp exported units with a source tag so a re-indexed
   library keeps "from:<mod>".
 - Tag presets / colors, and cross-mod (library-wide) tags.

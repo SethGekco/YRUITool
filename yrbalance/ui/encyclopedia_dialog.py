@@ -7,7 +7,7 @@ library folder.
 
 import os
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QSettings
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -17,9 +17,15 @@ from PySide6.QtWidgets import (
 
 from ..engine import (
     build_mod_index, search_indexes, unit_report, export_unit, vanilla_asset_ids,
-    load_bookmarks, add_bookmark, unit_history,
-    add_unit_tag, remove_unit_tag, bulk_add_tag, load_tags,
+    load_bookmarks, add_bookmark, unit_history, effective_tags,
+    add_unit_tag, remove_unit_tag, bulk_add_tag, bulk_remove_tag, load_tags,
+    all_tags,
 )
+from ..ai.eva import plan_tags
+from ..ai.ollama_client import OllamaClient
+
+_KINDS = ["infantry", "vehicle", "aircraft", "building"]
+_OBTAIN = ["buildable", "crate", "other", "dummy", "civilian", "unknown"]
 
 _STATUS_COLOR = {"present": "#2e7d32", "vanilla": "#888888", "missing": "#c62828"}
 _OBTAIN_COLOR = {"buildable": "#2e7d32", "crate": "#1565c0", "other": "#6a1b9a",
@@ -124,6 +130,19 @@ class EncyclopediaDialog(QDialog):
             btn.clicked.connect(fn)
             trow.addWidget(btn)
         root.addLayout(trow)
+
+        # Eva-driven tagging: describe what to tag, Eva works out the filter
+        erow = QHBoxLayout()
+        erow.addWidget(QLabel("Ask Eva to tag:"))
+        self.eva_edit = QLineEdit()
+        self.eva_edit.setPlaceholderText(
+            "e.g. tag all crate-only vehicles as needs-review")
+        self.eva_edit.returnPressed.connect(self._eva_tag)
+        erow.addWidget(self.eva_edit, 1)
+        self.eva_btn = QPushButton("Ask Eva")
+        self.eva_btn.clicked.connect(self._eva_tag)
+        erow.addWidget(self.eva_btn)
+        root.addLayout(erow)
 
         split = QSplitter(Qt.Horizontal)
         self.table = QTableWidget(0, 5)
@@ -293,6 +312,87 @@ class EncyclopediaDialog(QDialog):
         self._refresh()
         self._show_detail()
         self.status.setText(f"Removed '{t}' from {u.name}.")
+
+    def _units_for_plan(self, plan):
+        """Resolve a TagPlan's filters to the matching units across loaded mods."""
+        res = search_indexes(self.indexes, query=plan.name_contains,
+                             kind=plan.kind or None)
+        if plan.obtain:
+            res = [u for u in res if u.obtain == plan.obtain]
+        if plan.has_tag:
+            hl = plan.has_tag.lower()
+            res = [u for u in res if any(hl in t for t in effective_tags(u))]
+        return res
+
+    def _apply_tag_to_units(self, units, tag, action):
+        by_mod = {}
+        for u in units:
+            by_mod.setdefault(u.mod, []).append(u.name)
+        total = 0
+        fn = bulk_add_tag if action == "add" else bulk_remove_tag
+        for mod, names in by_mod.items():
+            idx = next((i for i in self.indexes if i.label == mod), None)
+            if idx:
+                total += fn(idx.rules_path, names, tag)
+                self._reload_tags(idx)
+        self._refresh()
+        return total
+
+    def _eva_tag(self):
+        req = self.eva_edit.text().strip()
+        if not req or not self.indexes:
+            self.status.setText("Load a mod and describe what to tag.")
+            return
+        s = QSettings("YRBalanceTool", "YRBalanceTool")
+        model = s.value("eva_model", "")
+        if not model:
+            QMessageBox.information(self, "Eva", "Set up Eva's model in the Eva tab "
+                                    "first (Refresh models).")
+            return
+        client = OllamaClient(base_url=s.value("eva_url", "http://localhost:11434"))
+        existing = sorted({t for i in self.indexes for t in all_tags(i.rules_path)})
+        try:
+            ctx = int(s.value("eva_num_ctx", 8192))
+        except (TypeError, ValueError):
+            ctx = 8192
+        self.eva_btn.setEnabled(False)
+        self.status.setText("Eva is working out the filter…")
+
+        def work():
+            return plan_tags(client, model, req, _KINDS, _OBTAIN, existing,
+                             num_ctx=ctx)
+
+        self._tag_worker = _Worker(work)
+        self._tag_worker.done.connect(self._eva_tag_ready)
+        self._tag_worker.failed.connect(
+            lambda m: (self.eva_btn.setEnabled(True),
+                       self.status.setText(f"Eva failed: {m}")))
+        self._tag_worker.start()
+
+    def _eva_tag_ready(self, plan):
+        self.eva_btn.setEnabled(True)
+        if plan.error:
+            self.status.setText(plan.error)
+            return
+        units = self._units_for_plan(plan)
+        if not units:
+            self.status.setText(
+                f"Eva's filter (name~'{plan.name_contains}', kind={plan.kind or '-'}, "
+                f"obtain={plan.obtain or '-'}) matched no units.")
+            return
+        verb = "add" if plan.action == "add" else "remove"
+        sample = ", ".join(u.name for u in units[:15])
+        resp = QMessageBox.question(
+            self, "Eva tagging",
+            f"{verb.capitalize()} tag '{plan.tag}' on {len(units)} unit(s)?\n\n"
+            f"filter: name~'{plan.name_contains or '-'}'  kind={plan.kind or '-'}  "
+            f"obtain={plan.obtain or '-'}  has_tag={plan.has_tag or '-'}\n\n"
+            f"{sample}{'…' if len(units) > 15 else ''}")
+        if resp != QMessageBox.Yes:
+            self.status.setText("Cancelled.")
+            return
+        n = self._apply_tag_to_units(units, plan.tag, plan.action)
+        self.status.setText(f"Eva {verb}ed '{plan.tag}' on {n} unit(s).")
 
     def _tag_all_shown(self):
         t = self.tag_edit.text().strip()
