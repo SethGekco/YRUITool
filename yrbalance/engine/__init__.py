@@ -162,6 +162,10 @@ from .mixlib import (
     build_media_catalog, resolve_media, pack_media_mixes,
     collect_asset_ids, build_vanilla_asset_ids, vanilla_asset_ids, classify_missing,
 )
+from .encyclopedia import (
+    build_mod_index, search_indexes, unit_report, export_unit,
+    ModIndex, UnitEntry, AssetRef,
+)
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     apply_port_plan, clean_owner, clean_prereq, target_countries,
@@ -244,4 +248,7 @@ __all__ = [
     "build_media_catalog", "resolve_media", "pack_media_mixes",
     "collect_asset_ids", "build_vanilla_asset_ids", "vanilla_asset_ids",
     "classify_missing",
+    # encyclopedia
+    "build_mod_index", "search_indexes", "unit_report", "export_unit",
+    "ModIndex", "UnitEntry", "AssetRef",
 ]

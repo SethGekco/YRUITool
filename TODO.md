@@ -72,7 +72,21 @@ guide — covers theme registration and file placement). Two modes, mirroring th
 Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
 Pairs with the "universal helper" item below.
 
-## Unit encyclopedia / search (flagship "comfy" feature)
+## Unit encyclopedia — SHIPPED (v1), extend
+Tools → Encyclopedia…: multi-mod load, search (name/kind/mod), per-unit page
+(stats + weapon chain + art/sound + asset locations loose/mix + missing-vs-vanilla
++ obtain class), and Export unit (its code + extracted media into a library
+folder). Engine `encyclopedia.py` (tested). Validated on the turkey-mod (5879
+units, 0.5s). Remaining:
+- **Audio .bag/.idx support** — unit voices live in audio(md).bag, not .mix, so
+  sound samples currently show status "sound" (♪, not scanned) rather than being
+  located/classified. Add a .bag/.idx reader (XCC `audio_idx_file`) to resolve
+  and extract them.
+- Per-unit balance history (ties to the persistent-history item).
+- SHP/VXL thumbnail preview in the detail pane.
+- "Send selected unit(s) to the porter as a source" one-click bridge.
+
+## Unit encyclopedia / search (original idea notes)
 A searchable, unit-centric view of the loaded mod. Pick/search a unit → one page
 showing everything about it, assembled from infrastructure that already exists:
 - **Code**: its rules section (stats), weapon chain (Primary/Secondary → warheads →

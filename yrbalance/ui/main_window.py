@@ -345,6 +345,7 @@ class MainWindow(QMainWindow):
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
         tools.addAction("Port mod content…", self.port_mod_content)
+        tools.addAction("Encyclopedia…", self.open_encyclopedia)
         tools.addAction("MIX browser…", self.open_mix_browser)
 
         view = mb.addMenu("View")
@@ -355,6 +356,11 @@ class MainWindow(QMainWindow):
         help_menu = mb.addMenu("Help")
         help_menu.addAction("Custom script help…", lambda: show_script_help(self))
         help_menu.addAction("About YRBalanceTool", self._show_about)
+
+    def open_encyclopedia(self):
+        """Open the multi-mod unit encyclopedia."""
+        from .encyclopedia_dialog import EncyclopediaDialog
+        EncyclopediaDialog(self).exec()
 
     def open_mix_browser(self):
         """Open the MIX archive browser."""
