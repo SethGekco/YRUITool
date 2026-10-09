@@ -84,7 +84,8 @@ def _asset_location(catalog, name, vanilla_ids, is_sound=False):
     if loc is not None:
         if loc[0] == "loose":
             return AssetRef(name, "loose", "present")
-        return AssetRef(name, f"mix: {os.path.basename(loc[1])}", "present")
+        kind = "bag" if loc[0] == "bag" else "mix"
+        return AssetRef(name, f"{kind}: {os.path.basename(loc[1])}", "present")
     if vanilla_ids and mix_id(name) in vanilla_ids:
         return AssetRef(name, "vanilla (game)", "vanilla")
     if is_sound:

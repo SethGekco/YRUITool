@@ -176,6 +176,35 @@ def main():
               f"truly={truly}  {'OK' if cls_ok else 'FAIL'}")
         ok = ok and cls_ok
 
+    # ── audio .idx/.bag (GABA) parse + catalog + resolve ───────────────────
+    with tempfile.TemporaryDirectory() as d:
+        from yrbalance.engine import parse_audio_idx
+        samples = {"VTANSEA": b"SAMPLE-ONE", "IBRUATTA": b"SAMPLE-TWO-LONGER"}
+        bag = bytearray()
+        idx = bytearray(struct.pack("<4sii", b"GABA", 2, len(samples)))
+        for name, data in samples.items():
+            idx += struct.pack("<16siiiii", name.encode(), len(bag), len(data),
+                               22050, 0, 0)
+            bag += data
+        open(os.path.join(d, "audio.idx"), "wb").write(idx)
+        open(os.path.join(d, "audio.bag"), "wb").write(bag)
+
+        parsed = parse_audio_idx(os.path.join(d, "audio.idx"))
+        parse_ok = set(parsed) == {"VTANSEA", "IBRUATTA"}
+        print(f"audio .idx parse: {sorted(parsed)}  {'OK' if parse_ok else 'FAIL'}")
+        ok = ok and parse_ok
+
+        cat = build_media_catalog(d)
+        # bag samples are catalogued under both the bare name and the .WAV form
+        cat_ok = (cat.get("VTANSEA", ("",))[0] == "bag"
+                  and cat.get("VTANSEA.WAV", ("",))[0] == "bag")
+        found, missing = resolve_media(cat, ["VTANSEA.WAV", "IBRUATTA"])
+        read_ok = (found.get("VTANSEA.WAV") == b"SAMPLE-ONE"
+                   and found.get("IBRUATTA") == b"SAMPLE-TWO-LONGER" and not missing)
+        print(f"bag in catalog + resolve reads sample: "
+              f"{'OK' if cat_ok and read_ok else 'FAIL'}")
+        ok = ok and cat_ok and read_ok
+
     # ── optional: read a REAL encrypted mix if present (Rex's vanilla) ──────
     real = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/"
             "RA2 & Yuri's Revenge/000-RA2YR Vanilla/ra2md.mix")

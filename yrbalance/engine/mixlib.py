@@ -363,6 +363,39 @@ def write_mix(path, files, with_lmd=True):
     return len(recs)
 
 
+# ── audio .idx/.bag (Westwood sound archive, XCC "GABA" format) ──────────────
+_AUDIO_IDX_ID = b"GABA"
+
+
+def parse_audio_idx(idx_path):
+    """Parse an audio .idx → {NAME.UPPER: (offset, size, samplerate, flags,
+    chunk_size)}. Names are stored without an extension."""
+    with open(idx_path, "rb") as f:
+        data = f.read()
+    if data[:4] != _AUDIO_IDX_ID or len(data) < 12:
+        raise MixError("not an audio .idx (missing GABA id)")
+    _two, c_sounds = struct.unpack_from("<ii", data, 4)
+    if 12 + 36 * c_sounds != len(data):
+        raise MixError("audio .idx size mismatch")
+    out = {}
+    for i in range(c_sounds):
+        fname, off, size, sr, fl, cs = struct.unpack_from("<16siiiii", data,
+                                                           12 + i * 36)
+        name = fname.split(b"\x00", 1)[0].decode("latin-1")
+        if name:
+            out[name.upper()] = (off, size, sr, fl, cs)
+    return out
+
+
+def read_audio_sample(bag_path, entry):
+    """Read a sample's raw bytes from the .bag (offset/size from its idx entry).
+    Note: raw (often IMA-ADPCM) — not a decoded .wav."""
+    off, size = entry[0], entry[1]
+    with open(bag_path, "rb") as f:
+        f.seek(off)
+        return f.read(size)
+
+
 # ── media cataloguing + transfer ────────────────────────────────────────────
 _MEDIA_EXTS = {".vxl", ".hva", ".shp", ".wav", ".pal", ".pcx", ".aud",
                ".tem", ".sno", ".urb", ".des", ".lun"}
@@ -384,10 +417,12 @@ def build_media_catalog(folders, skip_vanilla=True):
     for folder in folders:
         if not folder or not os.path.isdir(folder):
             continue
+        names = {f.lower(): f for f in os.listdir(folder)}
         for fn in sorted(os.listdir(folder)):
             p = os.path.join(folder, fn)
             if not os.path.isfile(p):
                 continue
+            low = fn.lower()
             ext = os.path.splitext(fn)[1].lower()
             if ext in _MEDIA_EXTS:
                 loc = ("loose", p)
@@ -395,6 +430,16 @@ def build_media_catalog(folders, skip_vanilla=True):
                 catalog.setdefault(mix_id(fn), loc)
             elif ext == ".mix" and not (skip_vanilla and is_stock_mix(fn)):
                 mixes.append(p)
+            elif ext == ".idx" and (low[:-4] + ".bag") in names:
+                bag = os.path.join(folder, names[low[:-4] + ".bag"])
+                try:
+                    samples = parse_audio_idx(p)
+                except (OSError, MixError):
+                    continue
+                for sname, entry in samples.items():
+                    loc = ("bag", bag, entry)
+                    catalog.setdefault(sname, loc)            # name (no ext)
+                    catalog.setdefault(sname + ".WAV", loc)   # and the .WAV form
     for mp in mixes:                    # loose already populated → setdefault skips
         try:
             mf = MixFile(mp)
@@ -420,6 +465,8 @@ def resolve_media(catalog, names):
         elif loc[0] == "loose":
             with open(loc[1], "rb") as f:
                 found[n] = f.read()
+        elif loc[0] == "bag":
+            found[n] = read_audio_sample(loc[1], loc[2])
         else:
             by_mix.setdefault(loc[1], []).append((n, loc[2]))
     for mixpath, items in by_mix.items():

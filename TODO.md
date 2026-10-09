@@ -78,10 +78,12 @@ Tools → Encyclopedia…: multi-mod load, search (name/kind/mod), per-unit page
 + obtain class), and Export unit (its code + extracted media into a library
 folder). Engine `encyclopedia.py` (tested). Validated on the turkey-mod (5879
 units, 0.5s). Remaining:
-- **Audio .bag/.idx support** — unit voices live in audio(md).bag, not .mix, so
-  sound samples currently show status "sound" (♪, not scanned) rather than being
-  located/classified. Add a .bag/.idx reader (XCC `audio_idx_file`) to resolve
-  and extract them.
+- Audio .bag/.idx support — DONE (XCC "GABA" format): `parse_audio_idx` /
+  `read_audio_sample`; `build_media_catalog` indexes loose `.idx`/`.bag` pairs so
+  sound samples resolve to "bag: audio.bag" and extract via `resolve_media`. Only
+  sounds absent from every source still show the neutral ♪ status. Remaining:
+  samples extract as RAW (IMA-ADPCM) bag bytes — add WAV decode/encode for playable
+  export; and reach vanilla voices nested inside the game mixes (unnamed sub-mixes).
 - Per-unit balance history (ties to the persistent-history item).
 - SHP/VXL thumbnail preview in the detail pane.
 - "Send selected unit(s) to the porter as a source" one-click bridge.

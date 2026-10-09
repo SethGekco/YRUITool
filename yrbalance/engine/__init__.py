@@ -161,6 +161,7 @@ from .mixlib import (
     VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
     build_media_catalog, resolve_media, pack_media_mixes,
     collect_asset_ids, build_vanilla_asset_ids, vanilla_asset_ids, classify_missing,
+    parse_audio_idx, read_audio_sample,
 )
 from .encyclopedia import (
     build_mod_index, search_indexes, unit_report, export_unit,
@@ -247,7 +248,7 @@ __all__ = [
     "VANILLA_MIX_NAMES", "STOCK_MIX_NAMES", "KNOWN_FRAMEWORK_FILES",
     "build_media_catalog", "resolve_media", "pack_media_mixes",
     "collect_asset_ids", "build_vanilla_asset_ids", "vanilla_asset_ids",
-    "classify_missing",
+    "classify_missing", "parse_audio_idx", "read_audio_sample",
     # encyclopedia
     "build_mod_index", "search_indexes", "unit_report", "export_unit",
     "ModIndex", "UnitEntry", "AssetRef",
