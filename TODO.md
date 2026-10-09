@@ -72,6 +72,17 @@ guide — covers theme registration and file placement). Two modes, mirroring th
 Eva design: (a) guided walkthrough, and (b) actually writing the INI entries.
 Pairs with the "universal helper" item below.
 
+## Unit tags — SHIPPED (v1), extend
+engine/tags.py: user tags stored in a sidecar (~/.yrbalancetool/tags.json, never
+in the mod), auto-tags (source:/kind:/obtain:) merged at display, add/remove/bulk,
+tag filter + "Tag all shown" in the Encyclopedia for fast bulk tagging. Remaining:
+- **Eva-driven tagging** — let Eva turn "tag all crate-only vehicles as
+  needs-review" into a {filter, tag} the tool applies (search_indexes +
+  bulk_add_tag already make this a thin layer). Give Eva a tag-action output mode.
+- Provenance-on-export — stamp exported units with a source tag so a re-indexed
+  library keeps "from:<mod>".
+- Tag presets / colors, and cross-mod (library-wide) tags.
+
 ## Unit encyclopedia — SHIPPED (v1), extend
 Tools → Encyclopedia…: multi-mod load, search (name/kind/mod), per-unit page
 (stats + weapon chain + art/sound + asset locations loose/mix + missing-vs-vanilla

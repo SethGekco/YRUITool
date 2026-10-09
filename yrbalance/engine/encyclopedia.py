@@ -22,6 +22,7 @@ from .weapons import ALL_WEAPON_TAGS
 from .obtain import classify_obtainability
 from .mixlib import build_media_catalog, resolve_media, mix_id
 from .portmod import _clean, _ordered_keys, _resolve_art, _resolve_sound
+from .tags import load_tags
 
 # Stat fields shown on a unit page, in order.
 STAT_FIELDS = ("Cost", "Strength", "Armor", "TechLevel", "Speed", "Sight",
@@ -50,7 +51,16 @@ class UnitEntry:
     art_name: str = ""
     sound_names: list = field(default_factory=list)
     assets: list = field(default_factory=list)          # [AssetRef]
+    tags: list = field(default_factory=list)            # stored custom tags
     warnings: list = field(default_factory=list)
+
+
+def effective_tags(entry):
+    """Custom tags plus the automatic ones (source mod / kind / obtain)."""
+    auto = {f"source:{entry.mod.lower()}", f"kind:{entry.kind}"}
+    if entry.obtain:
+        auto.add(f"obtain:{entry.obtain}")
+    return sorted(set(t.lower() for t in entry.tags) | auto)
 
 
 @dataclass
@@ -112,6 +122,7 @@ def build_mod_index(rules_path, label=None, config=None, vanilla_ids=None,
         progress("cataloguing assets…")
     catalog = build_media_catalog([folder])
     obtain = classify_obtainability(rules_map, config, art_map=art_map or None)
+    custom_tags = load_tags(rules_path)
 
     idx = ModIndex(label=label, folder=folder, rules_path=rules_path,
                    rules_map=rules_map, art_map=art_map, sound_map=sound_map,
@@ -121,7 +132,8 @@ def build_mod_index(rules_path, label=None, config=None, vanilla_ids=None,
         for name in parse_type_list(rules_map, section):
             if name.lower() in idx.units:
                 continue
-            e = UnitEntry(name=name, mod=label, kind=kind)
+            e = UnitEntry(name=name, mod=label, kind=kind,
+                          tags=list(custom_tags.get(name.lower(), [])))
             ob = obtain.get(name.lower())
             if ob:
                 e.obtain = ob.cls
@@ -153,10 +165,12 @@ def build_mod_index(rules_path, label=None, config=None, vanilla_ids=None,
     return idx
 
 
-def search_indexes(indexes, query="", kind=None, mod=None):
+def search_indexes(indexes, query="", kind=None, mod=None, tag=None):
     """Return UnitEntry list across indexes matching a name substring (and optional
-    kind / mod label filters), sorted by name then mod."""
+    kind / mod / tag filters), sorted by name then mod. `tag` matches any of the
+    unit's effective tags (custom + auto) as a substring."""
     q = query.lower().strip()
+    tq = tag.lower().strip() if tag else ""
     out = []
     for idx in indexes:
         if mod and idx.label != mod:
@@ -165,6 +179,8 @@ def search_indexes(indexes, query="", kind=None, mod=None):
             if q and q not in u.name.lower() and q not in u.obtain.lower():
                 continue
             if kind and u.kind != kind:
+                continue
+            if tq and not any(tq in t for t in effective_tags(u)):
                 continue
             out.append(u)
     out.sort(key=lambda u: (u.name.lower(), u.mod.lower()))
@@ -176,6 +192,7 @@ def unit_report(entry):
     L = [f"[{entry.name}]   {entry.kind}   —   {entry.mod}"]
     if entry.obtain:
         L.append(f"obtain: {entry.obtain}  ({'; '.join(entry.obtain_reasons)})")
+    L.append("tags: " + ", ".join(effective_tags(entry)))
     L.append("")
     L.append("stats:")
     for k, v in entry.stats.items():

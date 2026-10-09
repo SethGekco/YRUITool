@@ -164,8 +164,12 @@ from .mixlib import (
     parse_audio_idx, read_audio_sample,
 )
 from .encyclopedia import (
-    build_mod_index, search_indexes, unit_report, export_unit,
+    build_mod_index, search_indexes, unit_report, export_unit, effective_tags,
     ModIndex, UnitEntry, AssetRef,
+)
+from .tags import (
+    load_tags, set_unit_tags, add_unit_tag, remove_unit_tag,
+    bulk_add_tag, bulk_remove_tag, all_tags,
 )
 from .bookmarks import (
     load_bookmarks, add_bookmark, remove_bookmark, is_bookmarked,
@@ -259,7 +263,10 @@ __all__ = [
     "classify_missing", "parse_audio_idx", "read_audio_sample",
     # encyclopedia
     "build_mod_index", "search_indexes", "unit_report", "export_unit",
-    "ModIndex", "UnitEntry", "AssetRef",
+    "effective_tags", "ModIndex", "UnitEntry", "AssetRef",
+    # tags
+    "load_tags", "set_unit_tags", "add_unit_tag", "remove_unit_tag",
+    "bulk_add_tag", "bulk_remove_tag", "all_tags",
     # bookmarks
     "load_bookmarks", "add_bookmark", "remove_bookmark", "is_bookmarked",
     # modhistory

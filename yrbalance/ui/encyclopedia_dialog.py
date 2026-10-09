@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from ..engine import (
     build_mod_index, search_indexes, unit_report, export_unit, vanilla_asset_ids,
     load_bookmarks, add_bookmark, unit_history,
+    add_unit_tag, remove_unit_tag, bulk_add_tag, load_tags,
 )
 
 _STATUS_COLOR = {"present": "#2e7d32", "vanilla": "#888888", "missing": "#c62828"}
@@ -102,11 +103,32 @@ class EncyclopediaDialog(QDialog):
         self.mod_box.addItem("(all)")
         self.mod_box.currentIndexChanged.connect(self._refresh)
         frow.addWidget(self.mod_box)
+        frow.addWidget(QLabel("Tag:"))
+        self.tag_filter = QLineEdit()
+        self.tag_filter.setMaximumWidth(140)
+        self.tag_filter.setPlaceholderText("e.g. obtain:crate")
+        self.tag_filter.textChanged.connect(self._refresh)
+        frow.addWidget(self.tag_filter)
         root.addLayout(frow)
 
+        # tag editing: one tag, applied to the selected unit or all shown
+        trow = QHBoxLayout()
+        trow.addWidget(QLabel("Tag:"))
+        self.tag_edit = QLineEdit()
+        self.tag_edit.setPlaceholderText("a label, e.g. reviewed / from-oldmod / OP")
+        trow.addWidget(self.tag_edit, 1)
+        for label, fn in (("Tag selected", self._tag_selected),
+                          ("Untag selected", self._untag_selected),
+                          ("Tag all shown", self._tag_all_shown)):
+            btn = QPushButton(label)
+            btn.clicked.connect(fn)
+            trow.addWidget(btn)
+        root.addLayout(trow)
+
         split = QSplitter(Qt.Horizontal)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["unit", "mod", "kind", "obtain"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["unit", "mod", "kind", "obtain",
+                                              "tags"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -204,7 +226,8 @@ class EncyclopediaDialog(QDialog):
         results = search_indexes(
             self.indexes, self.search_edit.text(),
             kind=None if kind == "(all)" else kind,
-            mod=None if mod == "(all)" else mod)
+            mod=None if mod == "(all)" else mod,
+            tag=self.tag_filter.text() or None)
         self._results = results
         self.table.setRowCount(len(results))
         for r, u in enumerate(results):
@@ -217,6 +240,7 @@ class EncyclopediaDialog(QDialog):
             if miss:
                 ob.setText(f"{u.obtain}  ⚠{miss}")
             self.table.setItem(r, 3, ob)
+            self.table.setItem(r, 4, QTableWidgetItem(", ".join(u.tags)))
         self.status.setText(f"{len(results)} unit(s)")
 
     def _selected(self):
@@ -235,6 +259,57 @@ class EncyclopediaDialog(QDialog):
             if hist:
                 text += "\n\nhistory:\n" + "\n".join(f"  {h}" for h in hist[:12])
         self.detail.setPlainText(text)
+
+    # ── tags ───────────────────────────────────────────────────────────────────
+    def _idx_for(self, u):
+        return next((i for i in self.indexes if i.label == u.mod), None)
+
+    def _reload_tags(self, idx):
+        stored = load_tags(idx.rules_path)
+        for u in idx.units.values():
+            u.tags = list(stored.get(u.name.lower(), []))
+
+    def _tag_selected(self):
+        u = self._selected()
+        t = self.tag_edit.text().strip()
+        if not u or not t:
+            self.status.setText("Pick a unit and type a tag.")
+            return
+        idx = self._idx_for(u)
+        add_unit_tag(idx.rules_path, u.name, t)
+        self._reload_tags(idx)
+        self._refresh()
+        self._show_detail()
+        self.status.setText(f"Tagged {u.name} '{t}'.")
+
+    def _untag_selected(self):
+        u = self._selected()
+        t = self.tag_edit.text().strip()
+        if not u or not t:
+            return
+        idx = self._idx_for(u)
+        remove_unit_tag(idx.rules_path, u.name, t)
+        self._reload_tags(idx)
+        self._refresh()
+        self._show_detail()
+        self.status.setText(f"Removed '{t}' from {u.name}.")
+
+    def _tag_all_shown(self):
+        t = self.tag_edit.text().strip()
+        if not t or not self._results:
+            self.status.setText("Type a tag; it applies to every unit shown.")
+            return
+        by_mod = {}
+        for u in self._results:
+            by_mod.setdefault(u.mod, []).append(u.name)
+        total = 0
+        for mod, names in by_mod.items():
+            idx = next((i for i in self.indexes if i.label == mod), None)
+            if idx:
+                total += bulk_add_tag(idx.rules_path, names, t)
+                self._reload_tags(idx)
+        self._refresh()
+        self.status.setText(f"Tagged {total} unit(s) '{t}'.")
 
     # ── bookmarks / bridge ─────────────────────────────────────────────────────
     def _refresh_bookmarks(self):
