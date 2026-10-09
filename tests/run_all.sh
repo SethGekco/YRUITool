@@ -7,7 +7,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 pass=0; fail=0
 
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
-no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia)
+no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia test_bookmarks_history)
 # test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
 need_rules+=(test_eva)
 

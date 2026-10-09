@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from ..engine import (
     build_mod_index, search_indexes, unit_report, export_unit, vanilla_asset_ids,
+    load_bookmarks, add_bookmark, unit_history,
 )
 
 _STATUS_COLOR = {"present": "#2e7d32", "vanilla": "#888888", "missing": "#c62828"}
@@ -65,6 +66,21 @@ class EncyclopediaDialog(QDialog):
         top.addWidget(vb)
         root.addLayout(top)
 
+        # bookmarks (a library of mod sources)
+        brow = QHBoxLayout()
+        brow.addWidget(QLabel("Bookmarked mods:"))
+        self.bm_box = QComboBox()
+        self.bm_box.setMinimumWidth(220)
+        brow.addWidget(self.bm_box, 1)
+        load_bm = QPushButton("Load")
+        load_bm.clicked.connect(self._load_bookmark)
+        brow.addWidget(load_bm)
+        star = QPushButton("★ Bookmark loaded")
+        star.clicked.connect(self._bookmark_loaded)
+        brow.addWidget(star)
+        root.addLayout(brow)
+        self._refresh_bookmarks()
+
         self.mods_label = QLabel("No mods loaded.")
         self.mods_label.setWordWrap(True)
         root.addWidget(self.mods_label)
@@ -112,8 +128,11 @@ class EncyclopediaDialog(QDialog):
         self.export_btn.clicked.connect(self._export)
         self.copy_btn = QPushButton("Copy report")
         self.copy_btn.clicked.connect(self._copy)
+        self.porter_btn = QPushButton("Open in Porter as source")
+        self.porter_btn.clicked.connect(self._send_to_porter)
         brow.addWidget(self.export_btn)
         brow.addWidget(self.copy_btn)
+        brow.addWidget(self.porter_btn)
         brow.addStretch(1)
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
@@ -206,7 +225,52 @@ class EncyclopediaDialog(QDialog):
 
     def _show_detail(self):
         u = self._selected()
-        self.detail.setPlainText(unit_report(u) if u else "")
+        if not u:
+            self.detail.setPlainText("")
+            return
+        text = unit_report(u)
+        idx = next((i for i in self.indexes if i.label == u.mod), None)
+        if idx is not None:
+            hist = unit_history(idx.rules_path, u.name)
+            if hist:
+                text += "\n\nhistory:\n" + "\n".join(f"  {h}" for h in hist[:12])
+        self.detail.setPlainText(text)
+
+    # ── bookmarks / bridge ─────────────────────────────────────────────────────
+    def _refresh_bookmarks(self):
+        self.bm_box.clear()
+        for b in load_bookmarks():
+            tag = "" if b["exists"] else "  (missing)"
+            self.bm_box.addItem(f"{b['label']}{tag}", b["rules_path"])
+
+    def _load_bookmark(self):
+        p = self.bm_box.currentData()
+        if p and os.path.isfile(p):
+            self._load_index(p)
+        elif p:
+            self.status.setText("Bookmarked file no longer exists.")
+
+    def _bookmark_loaded(self):
+        for i in self.indexes:
+            add_bookmark(i.rules_path, i.label)
+        self._refresh_bookmarks()
+        self.status.setText(f"Bookmarked {len(self.indexes)} loaded mod(s).")
+
+    def _send_to_porter(self):
+        u = self._selected()
+        idx = next((i for i in self.indexes if i.label == u.mod), None) if u else None
+        if idx is None:
+            self.status.setText("Select a unit whose mod to use as porter source.")
+            return
+        from .port_dialog import PortDialog
+        if not self.mw.source_path:
+            QMessageBox.information(self, "Porter",
+                                   "Load a target rules file first (the mod you're "
+                                   "importing INTO).")
+            return
+        dlg = PortDialog(self.mw)
+        dlg.src_edit.setText(idx.rules_path)
+        dlg.show()
 
     def _copy(self):
         u = self._selected()

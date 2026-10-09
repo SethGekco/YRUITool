@@ -15,14 +15,14 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QTableWidget,
     QTableWidgetItem, QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox,
-    QPlainTextEdit, QGroupBox, QSplitter, QWidget,
+    QPlainTextEdit, QGroupBox, QSplitter, QWidget, QComboBox,
 )
 
 from ..engine import (
     parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
     plan_to_blueprint, make_backup, get_val,
     build_media_catalog, resolve_media, pack_media_mixes,
-    vanilla_asset_ids, classify_missing,
+    vanilla_asset_ids, classify_missing, load_bookmarks,
 )
 
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
@@ -77,6 +77,13 @@ class PortDialog(QDialog):
         b1 = QPushButton("Browse…")
         b1.clicked.connect(self._browse_source)
         pick.addWidget(b1, 0, 2)
+        self.bm_box = QComboBox()
+        self.bm_box.addItem("bookmarks…", "")
+        for b in load_bookmarks():
+            if b["exists"]:
+                self.bm_box.addItem(b["label"], b["rules_path"])
+        self.bm_box.currentIndexChanged.connect(self._pick_bookmark)
+        pick.addWidget(self.bm_box, 0, 3)
         pick.addWidget(QLabel("Vanilla baseline:"), 1, 0)
         self.van_edit = QLineEdit(self._default_vanilla())
         self.van_edit.setPlaceholderText("optional — improves balance confidence")
@@ -175,6 +182,11 @@ class PortDialog(QDialog):
         cand = os.path.expanduser(
             "~/.yrbalancetool/knowledge/read/vanilla_yr_rulesmd.ini")
         return cand if os.path.isfile(cand) else ""
+
+    def _pick_bookmark(self):
+        p = self.bm_box.currentData()
+        if p:
+            self.src_edit.setText(p)
 
     def _browse_source(self):
         start = os.path.dirname(self.src_edit.text()) or ""

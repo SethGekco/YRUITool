@@ -558,6 +558,39 @@ class MainWindow(QMainWindow):
         self.history_tab.set_rules(self.lines, self.section_map, self.config)
         self._archive_rules(path)
         self.settings.setValue("last_rules", path)
+        self._record_load_history(path)
+
+    def _record_load_history(self, path):
+        """Snapshot sections on load and report what changed since last time."""
+        try:
+            from ..engine import record_load
+            diff = record_load(path, self.lines, self.section_map)
+            n = len(diff["changed"]) + len(diff["added"]) + len(diff["removed"])
+            if n:
+                self.statusBar().showMessage(
+                    f"Loaded {os.path.basename(path)} — since last load: "
+                    f"{len(diff['changed'])} changed, {len(diff['added'])} added, "
+                    f"{len(diff['removed'])} removed.")
+        except Exception:
+            pass
+
+    def _log_applied_history(self, out_path, note):
+        """Log what an apply changed (edit event) + refresh the snapshot so the
+        next load doesn't re-report it. Best-effort; never breaks an apply."""
+        try:
+            from ..engine import (section_fingerprints, diff_fingerprints,
+                                   record_changes, update_snapshot,
+                                   parse_ini_lines, build_section_map)
+            old = section_fingerprints(self.lines, self.section_map)
+            nl = parse_ini_lines(out_path)
+            nm = build_section_map(nl)[0]
+            d = diff_fingerprints(old, section_fingerprints(nl, nm))
+            touched = d["changed"] + d["added"]
+            if touched:
+                record_changes(out_path, touched, note=note)
+            update_snapshot(out_path, nl, nm)
+        except Exception:
+            pass
 
     def _archive_rules(self, path):
         """Keep a copy of the loaded rules as a historical record (once per file)."""
@@ -896,6 +929,7 @@ class MainWindow(QMainWindow):
         dlg.setText(msg + "\n" + controller.summarize(summary, results))
         if summary.weapon_conflict_text.strip():
             dlg.setDetailedText(summary.weapon_conflict_text)
+        self._log_applied_history(out, title)
         dlg.exec()
 
     def apply_and_save(self):

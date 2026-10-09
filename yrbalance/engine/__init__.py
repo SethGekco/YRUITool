@@ -167,6 +167,13 @@ from .encyclopedia import (
     build_mod_index, search_indexes, unit_report, export_unit,
     ModIndex, UnitEntry, AssetRef,
 )
+from .bookmarks import (
+    load_bookmarks, add_bookmark, remove_bookmark, is_bookmarked,
+)
+from .modhistory import (
+    section_fingerprints, diff_fingerprints, load_history,
+    record_load, record_changes, update_snapshot, unit_history,
+)
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     apply_port_plan, clean_owner, clean_prereq, target_countries,
@@ -252,4 +259,9 @@ __all__ = [
     # encyclopedia
     "build_mod_index", "search_indexes", "unit_report", "export_unit",
     "ModIndex", "UnitEntry", "AssetRef",
+    # bookmarks
+    "load_bookmarks", "add_bookmark", "remove_bookmark", "is_bookmarked",
+    # modhistory
+    "section_fingerprints", "diff_fingerprints", "load_history",
+    "record_load", "record_changes", "update_snapshot", "unit_history",
 ]
