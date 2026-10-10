@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""
+LibraryTab smoke test (offscreen Qt): pre-populate a source, build the tab, check
+the kind sub-tabs fill + aggregate the AI trigger, live search shrinks a list,
+selecting a mod folder shows its balance culture, and add-to-collection works.
+Isolated HOME.
+
+    QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_library_ui.py
+"""
+
+import os
+import sys
+import tempfile
+import importlib.util
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+
+# reuse the engine test's fixtures
+_spec = importlib.util.spec_from_file_location(
+    "tl", os.path.join(HERE, "test_library.py"))
+tl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(tl)
+
+
+def main():
+    ok = True
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HOME"] = home
+        from PySide6.QtWidgets import (QApplication, QWidget, QMessageBox,
+                                       QInputDialog)
+        app = QApplication.instance() or QApplication([])
+        QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
+        QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+
+        from yrbalance.engine import add_source, create_collection, load_catalog
+
+        van = _w(home, "vanilla.ini", tl.VANILLA)
+        mod_dir = os.path.join(home, "turkey-mod")
+        os.makedirs(mod_dir)
+        rules = _w(mod_dir, "rulesmd.ini", tl.MOD)
+        _w(mod_dir, "aimd.ini", tl.MOD_AIMD)
+        add_source(rules, label="turkey-mod", mode="reference",
+                   added_at="2026-01-01", vanilla_path=van)
+        create_collection("favs")
+
+        from yrbalance.ui.library_tab import LibraryTab
+        mw = QWidget()
+        mw.source_path = rules
+        tab = LibraryTab(mw)
+        tab.show()                 # fire showEvent → lazy first-load
+        app.processEvents()
+
+        # collection list: All sources + auto mod folder + user collection
+        col_texts = [tab.col_list.item(i).text()
+                     for i in range(tab.col_list.count())]
+        col_ok = (any("All sources" in t for t in col_texts)
+                  and any("turkey-mod" in t for t in col_texts)
+                  and any("favs" in t for t in col_texts))
+        print(f"collections listed (All + folder + user): "
+              f"{'OK' if col_ok else 'FAIL'}  {col_texts}")
+        ok = ok and col_ok
+
+        # kind tabs populated: a vehicle NEWTANK and the AI trigger TR1
+        veh_tbl, veh_items = tab._tables["vehicle"]
+        ai_tbl, ai_items = tab._tables["ai"]
+        kind_ok = (any(i.name.lower() == "newtank" for i in veh_items)
+                   and any(i.name.lower() == "tr1" for i in ai_items))
+        print(f"kind tabs aggregate techno + AI: {'OK' if kind_ok else 'FAIL'}")
+        ok = ok and kind_ok
+
+        # live search shrinks the vehicle list
+        tab.ktabs.setCurrentIndex(0)        # Vehicles
+        tab.search.setText("newtank")
+        vis = sum(1 for r in range(veh_tbl.rowCount())
+                  if not veh_tbl.isRowHidden(r))
+        search_ok = vis == 1 and "(1)" in tab.ktabs.tabText(0)
+        print(f"live search shrinks list to NEWTANK: "
+              f"{'OK' if search_ok else 'FAIL'}  visible={vis}")
+        ok = ok and search_ok
+        tab.search.clear()
+
+        # select the mod folder → balance culture shown
+        folder_row = next(i for i in range(tab.col_list.count())
+                          if "turkey-mod" in tab.col_list.item(i).text())
+        tab.col_list.setCurrentRow(folder_row)
+        bal = tab.balance_text.toPlainText()
+        bal_ok = "cheaper" in bal and "vehicle" in bal and "2.0" in bal
+        print(f"balance culture shown for folder: {'OK' if bal_ok else 'FAIL'}")
+        ok = ok and bal_ok
+
+        # add selected vehicle to 'favs' (mock the collection picker)
+        QInputDialog.getItem = staticmethod(lambda *a, **k: ("favs", True))
+        tab.ktabs.setCurrentIndex(0)
+        nt_row = next(r for r, it in enumerate(veh_items)
+                      if it.name.lower() == "newtank")
+        veh_tbl.setCurrentCell(nt_row, 0)
+        tab._add_selected_to_collection()
+        _s, cols = load_catalog()
+        favs = next(c for c in cols if c.name == "favs")
+        addcol_ok = any(k[2].lower() == "newtank" for k in favs.items)
+        print(f"add selected → collection: {'OK' if addcol_ok else 'FAIL'}")
+        ok = ok and addcol_ok
+
+        # selecting the 'favs' collection filters to just that item
+        favs_row = next(i for i in range(tab.col_list.count())
+                        if "favs" in tab.col_list.item(i).text())
+        tab.col_list.setCurrentRow(favs_row)
+        veh_tbl, veh_items = tab._tables["vehicle"]
+        vis2 = sum(1 for r in range(veh_tbl.rowCount())
+                   if not veh_tbl.isRowHidden(r))
+        filt_ok = vis2 == 1
+        print(f"collection filter narrows to its items: "
+              f"{'OK' if filt_ok else 'FAIL'}  visible={vis2}")
+        ok = ok and filt_ok
+
+    print("\nPASS" if ok else "\nFAIL")
+    return 0 if ok else 1
+
+
+def _w(d, name, text):
+    p = os.path.join(d, name)
+    open(p, "w").write(text)
+    return p
+
+
+if __name__ == "__main__":
+    sys.exit(main())

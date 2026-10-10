@@ -192,6 +192,14 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, PullPlan, PullItem,
 )
+from .library import (
+    load_catalog, save_catalog, library_catalog_path,
+    add_source, remove_source, set_source_summary,
+    create_collection, delete_collection, add_to_collection,
+    remove_from_collection, collection_keys, scan_items,
+    balance_culture, describe_culture, conversion_factors,
+    LibrarySource, Collection, LibraryItem,
+)
 
 __all__ = [
     # config
@@ -265,6 +273,13 @@ __all__ = [
     "load_library", "save_library", "add_entry", "remove_entry", "set_entry_meta",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
+    # library (asset/AI catalog)
+    "load_catalog", "save_catalog", "library_catalog_path",
+    "add_source", "remove_source", "set_source_summary",
+    "create_collection", "delete_collection", "add_to_collection",
+    "remove_from_collection", "collection_keys", "scan_items",
+    "balance_culture", "describe_culture", "conversion_factors",
+    "LibrarySource", "Collection", "LibraryItem",
     # obtain
     "classify_obtainability", "Obtainability",
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",

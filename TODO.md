@@ -75,6 +75,25 @@ Validated: unit test + offscreen UI test; real-data self-pull reuses all 6 block
 cross-mod pull adds 0 new ref errors. Remaining: library-wide search/tags; a
 "grade this AI / find bugs" pass (long-term, per Rex).
 
+## Library tab — cross-mod asset/AI catalog — SHIPPED (v1)
+`engine/library.py` + `ui/library_tab.py` (main-window "Library" tab). Adds mods
+as *sources* by REFERENCE (read live) or SNAPSHOT (rules/aimd/art/sound copied
+into ~/.yrbalancetool/library/<id>/). Fixed KIND sub-tabs (Vehicles/Buildings/
+Infantry/Aircraft/AI content/Other) aggregate that kind across every source; a
+live search box hides non-matching rows as you type. Left panel = collections:
+"All sources", one auto 📁 folder per mod, plus user ★ collections (create/delete,
+add selected item, filter). Each source carries an estimated **balance culture**
+— per-kind factors vs vanilla via `compute_factors` (factor = mod/vanilla), with
+a deterministic `describe_culture` summary and an **Ask Eva to summarize** button
+(`eva.summarize_balance`). `conversion_factors(A, B)` gives per-stat multipliers
+to move content between two mods' scales. Source scan is lazy (first tab show) so
+big mods never slow startup. Sidecar `~/.yrbalancetool/library.json`. Tested
+(engine + offscreen UI). Remaining:
+- Per-item detail/open (jump to encyclopedia or porter from a library row).
+- Cross-mod tags on library items; "convert selected into THIS mod's culture"
+  action wired to the porter using `conversion_factors`.
+- Background/incremental scan + caching keyed on rules mtime for very large mods.
+
 ## Version-aware vanilla baselines
 Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
 the right baseline when diffing/porting (the port's balance cross-check and the

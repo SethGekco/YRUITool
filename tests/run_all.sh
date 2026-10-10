@@ -7,7 +7,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 pass=0; fail=0
 
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
-no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia test_bookmarks_history test_tags test_portai test_ailib)
+no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia test_bookmarks_history test_tags test_portai test_ailib test_library)
 # test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
 need_rules+=(test_eva)
 
@@ -47,6 +47,11 @@ elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_encyclopedia_ui.py" >/dev/
 printf '%-18s ' "test_ailib_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_ailib_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
+# Library tab UI smoke (PySide6 + offscreen Qt).
+printf '%-18s ' "test_library_ui"
+if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_library_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
 echo
 echo "passed=$pass failed=$fail"
