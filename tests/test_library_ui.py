@@ -114,6 +114,37 @@ def main():
         print(f"detail pane: AI closure shown: {'OK' if ai_det_ok else 'FAIL'}")
         ok = ok and ai_det_ok
 
+        # filter checkbox: NEWTANK is buildable? it has no Owner/prereq so it's
+        # likely 'other'/unknown — hide non-buildable should drop non-buildables.
+        # Use the dummy/civilian/no-art paths deterministically instead:
+        tab.col_list.setCurrentRow(0)          # All sources
+        tab.ktabs.setCurrentIndex(0)           # Vehicles
+        veh_tbl, veh_items = tab._tables["vehicle"]
+        base_vis = sum(1 for r in range(veh_tbl.rowCount())
+                       if not veh_tbl.isRowHidden(r))
+        tab.hide_noart.setChecked(True)        # fixture units have no art → all hidden
+        noart_vis = sum(1 for r in range(veh_tbl.rowCount())
+                        if not veh_tbl.isRowHidden(r))
+        tab.hide_noart.setChecked(False)
+        filt_ok = base_vis > 0 and noart_vis == 0
+        print(f"filter 'no art files' hides art-less units: "
+              f"{'OK' if filt_ok else 'FAIL'}  {base_vis}->{noart_vis}")
+        ok = ok and filt_ok
+
+        # AI items are exempt from techno filters (stay visible)
+        ai_i = [k for k, _ in __import__(
+            "yrbalance.ui.library_tab", fromlist=["_KIND_ORDER"]
+        )._KIND_ORDER].index("ai")
+        ai_tbl3, _ = tab._tables["ai"]
+        tab.hide_nonbuild.setChecked(True)
+        ai_vis = sum(1 for r in range(ai_tbl3.rowCount())
+                     if not ai_tbl3.isRowHidden(r))
+        tab.hide_nonbuild.setChecked(False)
+        ai_exempt_ok = ai_vis >= 1
+        print(f"AI exempt from 'hide non-buildable': "
+              f"{'OK' if ai_exempt_ok else 'FAIL'}")
+        ok = ok and ai_exempt_ok
+
         # add selected vehicle to 'favs' (mock the collection picker)
         QInputDialog.getItem = staticmethod(lambda *a, **k: ("favs", True))
         tab.ktabs.setCurrentIndex(0)

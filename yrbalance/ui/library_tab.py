@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
-    QHeaderView, QAbstractItemView, QComboBox,
+    QHeaderView, QAbstractItemView, QCheckBox,
 )
 
 from ..engine import (
@@ -49,6 +49,7 @@ class LibraryTab(QWidget):
         self._scan_by_source = {}          # source_id -> SourceScan (index + aimd)
         self._tables = {}                  # kind -> (QTableWidget, [LibraryItem])
         self._col_desc = []                # per col_list row: ("all"/"auto"/"col", key)
+        self._has_art = {}                 # (source_id, name_lower) -> bool
 
         root = QVBoxLayout(self)
         bar = QHBoxLayout()
@@ -68,6 +69,20 @@ class LibraryTab(QWidget):
         bar.addWidget(self.search)
         root.addLayout(bar)
 
+        # ── filter checkboxes (techno kinds; AI items ignore these) ───────────
+        frow = QHBoxLayout()
+        frow.addWidget(QLabel("Hide:"))
+        self.hide_nonbuild = QCheckBox("non-buildable")
+        self.hide_dummy = QCheckBox("dummy")
+        self.hide_civilian = QCheckBox("civilian")
+        self.hide_noart = QCheckBox("no art files")
+        for cb in (self.hide_nonbuild, self.hide_dummy, self.hide_civilian,
+                   self.hide_noart):
+            cb.toggled.connect(self._apply_filter)
+            frow.addWidget(cb)
+        frow.addStretch(1)
+        root.addLayout(frow)
+
         split = QSplitter(Qt.Horizontal)
 
         # ── left: collections ────────────────────────────────────────────────
@@ -84,7 +99,6 @@ class LibraryTab(QWidget):
         self.remove_btn = QPushButton("Remove selected folder/collection")
         self.remove_btn.clicked.connect(self._remove_selected)
         ll.addWidget(self.remove_btn)
-        split.addWidget(left)
 
         # ── center: kind tabs (top) + detail pane (bottom) ───────────────────
         center = QSplitter(Qt.Vertical)
@@ -96,9 +110,11 @@ class LibraryTab(QWidget):
             tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
             tbl.setSelectionMode(QAbstractItemView.SingleSelection)
             tbl.verticalHeader().setVisible(False)
-            tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-            tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-            tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            kh = tbl.horizontalHeader()
+            kh.setSectionResizeMode(0, QHeaderView.Stretch)       # Name
+            kh.setSectionResizeMode(1, QHeaderView.Interactive)   # Source
+            kh.setSectionResizeMode(2, QHeaderView.Interactive)   # Obtain / detail
+            kh.setStretchLastSection(False)
             tbl.itemSelectionChanged.connect(self._show_detail)
             self.ktabs.addTab(tbl, title)
             self._tables[kind] = (tbl, [])
@@ -106,11 +122,10 @@ class LibraryTab(QWidget):
         center.addWidget(self.ktabs)
         center.addWidget(self._build_detail())
         center.setSizes([360, 260])
-        split.addWidget(center)
 
-        # ── right: balance culture ───────────────────────────────────────────
-        right = QGroupBox("Balance culture")
-        rl = QVBoxLayout(right)
+        # ── balance culture (stacked under collections in the left column) ────
+        bal_box = QGroupBox("Balance culture")
+        rl = QVBoxLayout(bal_box)
         self.balance_text = QPlainTextEdit()
         self.balance_text.setReadOnly(True)
         self.balance_text.setFont(QFont("monospace"))
@@ -119,9 +134,15 @@ class LibraryTab(QWidget):
         self.eva_btn.clicked.connect(self._eva_summarize)
         self.eva_btn.setEnabled(False)
         rl.addWidget(self.eva_btn)
-        split.addWidget(right)
 
-        split.setSizes([220, 620, 300])
+        left_col = QSplitter(Qt.Vertical)
+        left_col.addWidget(left)
+        left_col.addWidget(bal_box)
+        left_col.setSizes([420, 240])
+
+        split.addWidget(left_col)
+        split.addWidget(center)
+        split.setSizes([250, 820])        # give the lists/detail the bulk of the width
         root.addWidget(split, 1)
 
         self.status = QLabel("")
@@ -162,12 +183,16 @@ class LibraryTab(QWidget):
         self.file_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.file_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.file_table.verticalHeader().setVisible(False)
-        self.file_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Stretch)
-        self.file_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeToContents)
-        self.file_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeToContents)
+        fh = self.file_table.horizontalHeader()
+        fh.setSectionResizeMode(0, QHeaderView.Interactive)   # File — draggable
+        fh.setSectionResizeMode(1, QHeaderView.Stretch)       # Location — fills
+        fh.setSectionResizeMode(2, QHeaderView.Interactive)   # status
+        fh.setStretchLastSection(False)
+        self.file_table.setColumnWidth(0, 240)
+        self.file_table.setColumnWidth(2, 90)
+        self.file_table.setWordWrap(False)
+        self.file_table.setTextElideMode(Qt.ElideNone)
+        self.file_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         rl.addWidget(self.file_table, 1)
         self.preview = QLabel("Art / audio preview: select an item.")
         self.preview.setWordWrap(True)
@@ -247,8 +272,12 @@ class LibraryTab(QWidget):
     def _fill_files(self, assets):
         self.file_table.setRowCount(len(assets))
         for r, a in enumerate(assets):
-            self.file_table.setItem(r, 0, QTableWidgetItem(a.name))
-            self.file_table.setItem(r, 1, QTableWidgetItem(a.location))
+            name = QTableWidgetItem(a.name)
+            name.setToolTip(a.name)                 # full name on hover
+            loc = QTableWidgetItem(a.location)
+            loc.setToolTip(a.location)
+            self.file_table.setItem(r, 0, name)
+            self.file_table.setItem(r, 1, loc)
             self.file_table.setItem(r, 2, QTableWidgetItem(
                 self._STATUS.get(a.status, a.status)))
 
@@ -299,12 +328,22 @@ class LibraryTab(QWidget):
             else 0)
 
     def _rebuild_tables(self):
+        self._has_art = {}
+        for sid, scan in self._scan_by_source.items():
+            if scan is None or scan.index is None:
+                continue
+            for u in scan.index.units.values():
+                has = any(a.name.lower().endswith((".shp", ".vxl"))
+                          for a in u.assets)
+                self._has_art[(sid, u.name.lower())] = has
         for kind, (tbl, _rows) in self._tables.items():
             items = [it for it in self._all_items() if it.kind == kind]
             items.sort(key=lambda i: i.name.lower())
             tbl.setRowCount(len(items))
             for r, it in enumerate(items):
-                tbl.setItem(r, 0, QTableWidgetItem(it.name))
+                name = QTableWidgetItem(it.name)
+                name.setToolTip(it.name)
+                tbl.setItem(r, 0, name)
                 tbl.setItem(r, 1, QTableWidgetItem(self._source_label(it.source_id)))
                 tbl.setItem(r, 2, QTableWidgetItem(it.detail or it.obtain))
             self._tables[kind] = (tbl, items)
@@ -323,6 +362,22 @@ class LibraryTab(QWidget):
         keyset = {(k[0], k[1], k[2].lower()) for k in (col.items if col else [])}
         return lambda it: (it.source_id, it.kind, it.name.lower()) in keyset
 
+    def _passes_checks(self, it):
+        """Obtain/no-art hide checkboxes. AI items are exempt (no obtain/art)."""
+        if it.kind == "ai":
+            return True
+        ob = (it.obtain or "").lower()
+        if self.hide_nonbuild.isChecked() and ob != "buildable":
+            return False
+        if self.hide_dummy.isChecked() and ob == "dummy":
+            return False
+        if self.hide_civilian.isChecked() and ob == "civilian":
+            return False
+        if self.hide_noart.isChecked() and \
+                not self._has_art.get((it.source_id, it.name.lower()), False):
+            return False
+        return True
+
     def _apply_filter(self):
         pred = self._current_predicate()
         text = self.search.text().strip().lower()
@@ -330,7 +385,7 @@ class LibraryTab(QWidget):
             tbl, items = self._tables[kind]
             shown = 0
             for r, it in enumerate(items):
-                vis = pred(it) and (
+                vis = pred(it) and self._passes_checks(it) and (
                     not text or text in it.name.lower()
                     or text in self._source_label(it.source_id).lower()
                     or text in (it.detail or it.obtain).lower())
