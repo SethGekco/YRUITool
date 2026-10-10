@@ -32,7 +32,7 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
-    bag_sample_to_wav,
+    bag_sample_to_wav, parse_vxl, render_vxl, voxel_count,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -269,37 +269,62 @@ class LibraryTab(QWidget):
         self._fill_files(entry.assets)
         self._render_art(entry, it.source_id, scan)
         self._populate_audio(entry, scan)
-        vxl = [a.name for a in entry.assets if a.name.lower().endswith(".vxl")]
-        self.preview.setText("voxel: " + ", ".join(vxl[:4]) + " (VXL render pending)"
-                             if vxl else "")
+        self.preview.setText("")
 
     def _render_art(self, entry, sid, scan):
-        """Best-effort SHP still preview into art_img. Never raises."""
+        """Best-effort SHP/VXL still preview into art_img. Never raises."""
         self.art_img.clear()
+        if scan is None or scan.index is None:
+            self.art_img.setText("(no art to preview)")
+            return
+        cat = scan.index.catalog
+
+        def _resolve(name):
+            found, _ = resolve_media(cat, [name])
+            return found.get(name) or next(
+                (v for k, v in found.items() if k.lower() == name.lower()), None)
+
         shp = next((a.name for a in entry.assets
                     if a.name.lower().endswith(".shp")
                     and a.status in ("present", "vanilla")), None)
-        if not shp or scan is None or scan.index is None:
-            self.art_img.setText("(no SHP art to preview)")
-            return
+        vxl = next((a.name for a in entry.assets
+                    if a.name.lower().endswith(".vxl")
+                    and a.status in ("present", "vanilla")), None)
         try:
-            found, _missing = resolve_media(scan.index.catalog, [shp])
-            data = found.get(shp) or next(
-                (v for k, v in found.items() if k.lower() == shp.lower()), None)
-            if not data:
-                self.art_img.setText("(SHP not found in sources)")
+            if shp:
+                data = _resolve(shp)
+                if not data:
+                    self.art_img.setText("(SHP not found in sources)")
+                    return
+                img = parse_shp(data)
+                pal = self._preview_palette(sid, scan)
+                w, h, rgba = frame_to_rgba(
+                    img, img.frames[best_frame_index(img)], pal)
+                self._set_art_pixmap(w, h, rgba)
                 return
-            img = parse_shp(data)
-            pal = self._preview_palette(sid, scan)
-            w, h, rgba = frame_to_rgba(img, img.frames[best_frame_index(img)], pal)
-            qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
-            pm = QPixmap.fromImage(qimg)
-            if pm.width() > 240 or pm.height() > 180:
-                pm = pm.scaled(240, 180, Qt.KeepAspectRatio,
-                               Qt.SmoothTransformation)
-            self.art_img.setPixmap(pm)
+            if vxl:
+                data = _resolve(vxl)
+                if not data:
+                    self.art_img.setText("(VXL not found in sources)")
+                    return
+                model = parse_vxl(data)
+                if voxel_count(model) == 0:
+                    self.art_img.setText("(empty voxel model)")
+                    return
+                pal = self._preview_palette(sid, scan)
+                w, h, rgba = render_vxl(model, palette=pal)
+                self._set_art_pixmap(w, h, rgba)
+                return
+            self.art_img.setText("(no SHP/VXL art to preview)")
         except Exception as e:
-            self.art_img.setText(f"(SHP preview failed: {type(e).__name__})")
+            self.art_img.setText(f"(preview failed: {type(e).__name__})")
+
+    def _set_art_pixmap(self, w, h, rgba):
+        qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
+        pm = QPixmap.fromImage(qimg)
+        if pm.width() > 240 or pm.height() > 200:
+            pm = pm.scaled(240, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.art_img.setPixmap(pm)
 
     _PAL_NAMES = ("unittem.pal", "temperat.pal", "isotemp.pal", "cameo.pal")
 

@@ -109,10 +109,19 @@ aimd) so detail is instant. Remaining:
   verified valid by stdlib `wave`. Tested (`test_audio` + UI). Remaining audio:
   playback for samples inside a mix (currently loose-bag catalog entries), and
   bundling QtMultimedia for in-app playback without a system player.
-- **Still to render:** **VXL** (the hard one — voxel spans + normals + HVA
-  transforms + VPL lighting + ~30° isometric projection; refs: Banshee's OS
-  Voxel Viewer (Delphi/OpenGL, svn.ppmsite.com), XCC). **PCX** cameos. SHP
-  animation + remap-aware palettes.
+- **VXL preview — SHIPPED (v1).** `engine/vxl.py` parses VXL (header/sections/
+  span bodies/tailers) and renders a fixed ~2:1 isometric still with a z-buffer +
+  mild height shading. Validated across 17 real files (8 rendered, 9 genuinely
+  empty body-sections, 0 errors) and visually (usaguntur reads as the USA cannon).
+  RA2 VXLs embed an EMPTY palette, so colour comes from an external unit palette
+  (same resolver as SHP: loose unit*.pal → mod mix → grayscale fallback) — grayscale
+  is recognizable, a real `unittem.pal` gives full colour. Tested (`test_vxl` +
+  UI). Remaining: **normal/VPL lighting** (needs TS/RA2 normal tables — refs:
+  Banshee's OS Voxel Viewer Delphi/OpenGL at svn.ppmsite.com, XCC), **HVA +
+  per-section/turret placement** (currently all sections share voxel coords),
+  selectable view angle, and a **bundled/standard `unittem.pal`** so colour is the
+  default without the user supplying one. **PCX** cameos and SHP animation also
+  remain.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

@@ -208,6 +208,24 @@ def main():
         else:
             print("real SHP render: SKIP (no sample on this machine)")
 
+        # real VXL render path
+        vcand = glob.glob("/home/rex/snap/cncra2yr/common/.wine/drive_c/"
+                          "Westwood/RA2/usaguntur.vxl")
+        if vcand:
+            shutil.copy(vcand[0], os.path.join(mod_dir, "prevvxl.vxl"))
+            vcat = build_media_catalog([mod_dir])
+            vscan = types.SimpleNamespace(
+                index=types.SimpleNamespace(catalog=vcat), aimd_map=None)
+            ventry = types.SimpleNamespace(
+                assets=[AssetRef("PREVVXL.VXL", "loose", "present")])
+            tab._render_art(ventry, "turkey-mod", vscan)
+            vpm = tab.art_img.pixmap()
+            vxl_ok = vpm is not None and not vpm.isNull() and vpm.width() > 0
+            print(f"real VXL → pixmap render: {'OK' if vxl_ok else 'FAIL'}")
+            ok = ok and vxl_ok
+        else:
+            print("real VXL render: SKIP (no sample on this machine)")
+
         # audio: populate the combo + export WAV using a real audio.bag if present
         import types as _t
         real_bag = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/RA2 & "
