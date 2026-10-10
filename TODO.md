@@ -156,9 +156,15 @@ aimd) so detail is instant. Remaining:
   (synthetic HVA translation shifts a section by exactly HVAMultiplier·offset;
   two parts composite distinctly; usaguntur unchanged). Note: the loose sample
   units all have empty bodies + identity HVAs, so the visible payoff shows on real
-  turreted vehicles (inside the game mixes). Remaining voxel work: selectable view
-  angle, art.ini TurretOffset (forward turret shift), applying a house colour to
-  the remap range.
+  turreted vehicles (inside the game mixes).
+- **art.ini TurretOffset — SHIPPED.** `render_parts` parts may carry a per-part
+  world offset; the Library reads `TurretOffset` (ReadFloat) from the unit's art
+  entry and shifts the turret + barrel by `0.18 · TurretOffset` along world X —
+  ported from ccmaps-net (`UnitDrawable` sets `TurretVoxelOffset`, `VxlRenderer`
+  applies `translate(0.18·offset,0,0)` to turret/barrel only). Verified: a +X
+  offset of 10 shifts a part's projected ix by exactly 10; visually the turret
+  copy repositions forward. Remaining voxel work: selectable view angle, applying
+  a house colour to the remap range.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

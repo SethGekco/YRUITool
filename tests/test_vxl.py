@@ -152,6 +152,21 @@ def main():
           f"{'OK' if comp_ok else 'FAIL'}")
     ok = ok and comp_ok
 
+    # art.ini TurretOffset: a per-part world offset shifts that part (ix = wx-wy,
+    # so a +X offset of 10 moves ix by +10)
+    base2 = _collect_points(m, None, m.palette, None, 32, False, 0, (0.0, 0.0, 0.0))
+    shifted = _collect_points(m, None, m.palette, None, 32, False, 0,
+                              (10.0, 0.0, 0.0))
+    dxo = statistics.mean(p[0] for p in shifted) - \
+        statistics.mean(p[0] for p in base2)
+    off_ok = abs(dxo - 10.0) < 0.01
+    # and render_parts accepts 3-tuples (model, hva, offset)
+    _, _, r3 = render_parts([(m, None, (0.0, 0.0, 0.0))], palette=m.palette)
+    tuple_ok = any(r3[i] for i in range(3, len(r3), 4))
+    print(f"TurretOffset world shift + 3-tuple parts: "
+          f"{'OK' if off_ok and tuple_ok else 'FAIL'}  dx={dxo:.2f}")
+    ok = ok and off_ok and tuple_ok
+
     # real game vxl, if present
     real = glob.glob("/home/rex/snap/cncra2yr/common/.wine/drive_c/Westwood/"
                      "RA2/usaguntur.vxl")

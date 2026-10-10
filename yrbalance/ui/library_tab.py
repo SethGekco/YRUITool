@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from ..engine import (
     load_catalog, add_source, remove_source, set_source_summary,
     create_collection, delete_collection, add_to_collection, scan_source,
-    describe_culture, unit_report, extract_bundle, resolve_media,
+    describe_culture, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes,
@@ -307,8 +307,10 @@ class LibraryTab(QWidget):
                 return
             if vxl:
                 # composite the unit's body + turret + barrel voxels, each placed
-                # by its own HVA (frame 0), like the game draws a turreted unit
+                # by its own HVA (frame 0), like the game draws a turreted unit.
+                # art.ini TurretOffset shifts the turret/barrel forward (world X).
                 base = os.path.splitext(vxl)[0]
+                turret_dx = 0.18 * self._turret_offset(entry, scan)
                 parts = []
                 for suffix in ("", "TUR", "BARL"):
                     vdata = _resolve(f"{base}{suffix}.VXL")
@@ -327,7 +329,9 @@ class LibraryTab(QWidget):
                             hva = parse_hva(hdata)
                         except Exception:
                             hva = None
-                    parts.append((mdl, hva))
+                    off = (turret_dx, 0.0, 0.0) if suffix in ("TUR", "BARL") \
+                        else (0.0, 0.0, 0.0)
+                    parts.append((mdl, hva, off))
                 if not parts:
                     self.art_img.setText("(VXL not found / empty)")
                     return
@@ -346,6 +350,21 @@ class LibraryTab(QWidget):
         if pm.width() > 240 or pm.height() > 200:
             pm = pm.scaled(240, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.art_img.setPixmap(pm)
+
+    def _turret_offset(self, entry, scan):
+        """TurretOffset (a single float) from the unit's art entry, or 0. The game
+        reads it with ReadFloat for voxel turrets, so take the first number."""
+        art_map = getattr(getattr(scan, "index", None), "art_map", None)
+        art_name = getattr(entry, "art_name", "") or getattr(entry, "name", "")
+        if not art_map or not art_name:
+            return 0.0
+        raw = get_val(art_map, art_name, "TurretOffset")
+        if not raw:
+            return 0.0
+        try:
+            return float(str(raw).split(",")[0].strip())
+        except (ValueError, TypeError):
+            return 0.0
 
     _PAL_NAMES = ("unittem.pal", "temperat.pal", "isotemp.pal", "cameo.pal")
 

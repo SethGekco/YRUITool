@@ -146,11 +146,14 @@ def _shade(colour, nidx, z, maxz, pal, normals, light, pages, vpl):
             min(255, int(b * mult)))
 
 
-def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index):
+def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index,
+                    offset=(0.0, 0.0, 0.0)):
     """Project one (model, hva) into shared world space → list of
     (ix, iy, depth, r, g, b, cell_hint). HVA frame 0 places each section (a turret
-    on its body, a barrel on the turret). Without an HVA, sections sit at their
-    MinBounds (identity rotation)."""
+    on its body, a barrel on the turret). `offset` is an extra world translation
+    added to every voxel (used for art.ini TurretOffset on turret/barrel parts).
+    Without an HVA, sections sit at their MinBounds (identity rotation)."""
+    ofx, ofy, ofz = offset
     pts = []
     maxz = max((s.sz for s in model.sections), default=1) or 1
     for idx, sec in enumerate(model.sections):
@@ -176,9 +179,9 @@ def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index
             qx = x * scx + mnx
             qy = y * scy + mny
             qz = z * scz + mnz
-            wx = m[0] * qx + m[1] * qy + m[2] * qz + tx
-            wy = m[4] * qx + m[5] * qy + m[6] * qz + ty
-            wz = m[8] * qx + m[9] * qy + m[10] * qz + tz
+            wx = m[0] * qx + m[1] * qy + m[2] * qz + tx + ofx
+            wy = m[4] * qx + m[5] * qy + m[6] * qz + ty + ofy
+            wz = m[8] * qx + m[9] * qy + m[10] * qz + tz + ofz
             rr, gg, bb = _shade(colour, nidx, z, maxz, pal, normals, light,
                                 pages, vpl)
             # 2:1 isometric, z up; depth: nearer = larger wx+wy+wz
@@ -190,13 +193,17 @@ def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index
 def render_parts(parts, max_px=200, palette=None, lighting=True, vpl=None,
                  direction=32, transparent_index=0):
     """Composite several voxel parts (a unit's body + turret + barrel) into one
-    isometric still. `parts` is [(VxlModel, Hva|None)]; all are placed in shared
-    world space via their HVAs and z-buffered together. Returns (w, h, rgba)."""
+    isometric still. `parts` items are (VxlModel, Hva|None) or
+    (VxlModel, Hva|None, (ox,oy,oz)) — the optional world offset carries art.ini
+    TurretOffset on turret/barrel parts. All parts are placed in shared world
+    space and z-buffered together. Returns (w, h, rgba)."""
     pts = []
-    for model, hva in parts:
+    for part in parts:
+        model, hva = part[0], part[1]
+        offset = part[2] if len(part) > 2 else (0.0, 0.0, 0.0)
         pal = palette if palette else model.palette
         pts += _collect_points(model, hva, pal, vpl, direction, lighting,
-                               transparent_index)
+                               transparent_index, offset)
     if not pts:
         raise VxlError("no voxels to render")
 
