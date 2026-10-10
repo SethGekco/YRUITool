@@ -208,6 +208,33 @@ def main():
         else:
             print("real SHP render: SKIP (no sample on this machine)")
 
+        # audio: populate the combo + export WAV using a real audio.bag if present
+        import types as _t
+        real_bag = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/RA2 & "
+                    "Yuri's Revenge/0 World Powers/000-RA2YR Data - cncnet "
+                    "edition/audio.idx")
+        if os.path.isfile(real_bag):
+            from yrbalance.engine import build_media_catalog, AssetRef, parse_audio_idx
+            bagfolder = os.path.dirname(real_bag)
+            cat = build_media_catalog([bagfolder])
+            some = next(iter(parse_audio_idx(real_bag)))     # a real sample id
+            fake_scan = _t.SimpleNamespace(
+                index=_t.SimpleNamespace(catalog=cat), aimd_map=None)
+            entry = _t.SimpleNamespace(
+                assets=[AssetRef(some + ".WAV", "audio bag", "sound")])
+            tab._populate_audio(entry, fake_scan)
+            combo_ok = tab.audio_combo.count() == 1 and tab.export_btn.isEnabled()
+            print(f"audio combo populated from bag: "
+                  f"{'OK' if combo_ok else 'FAIL'}")
+            ok = ok and combo_ok
+            # decode + WAV bytes are produced
+            _name, wav = tab._current_wav()
+            wav_ok = wav and wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
+            print(f"bag sample → WAV bytes: {'OK' if wav_ok else 'FAIL'}")
+            ok = ok and wav_ok
+        else:
+            print("audio bag check: SKIP (no game audio.bag on this machine)")
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

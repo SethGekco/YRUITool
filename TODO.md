@@ -100,10 +100,18 @@ aimd) so detail is instant. Remaining:
   SHPs (`button14`, `ygplast_bd`, etc.) + synthetic round-trip test
   (`test_images`). Palette selection is approximate (not yet theater-aware) and
   SHP is static (no animation) — refine later.
+- **Audio playback — SHIPPED.** `engine/audio.py` decodes RA2/YR `.bag` samples
+  (Westwood IMA-ADPCM, state reset every `chunk_size` bytes per the `.idx`) to
+  16-bit PCM and wraps RIFF/WAVE. The detail pane lists a unit's resolvable bag
+  samples with **▶ Play** (best-effort OS player — paplay/aplay/afplay/winsound,
+  since QtMultimedia isn't bundled) and **Export WAV…**. Format was pinned on real
+  data (continuous decode railed ~22% of samples; per-chunk reset → 0%); output
+  verified valid by stdlib `wave`. Tested (`test_audio` + UI). Remaining audio:
+  playback for samples inside a mix (currently loose-bag catalog entries), and
+  bundling QtMultimedia for in-app playback without a system player.
 - **Still to render:** **VXL** (the hard one — voxel spans + normals + HVA
   transforms + VPL lighting + ~30° isometric projection; refs: Banshee's OS
-  Voxel Viewer (Delphi/OpenGL, svn.ppmsite.com), XCC). **Audio playback** —
-  AUD/`.bag` IMA-ADPCM decode → WAV → play button. **PCX** cameos. SHP
+  Voxel Viewer (Delphi/OpenGL, svn.ppmsite.com), XCC). **PCX** cameos. SHP
   animation + remap-aware palettes.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/

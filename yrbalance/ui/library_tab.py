@@ -11,6 +11,10 @@ summarized by Eva.
 """
 
 import os
+import sys
+import shutil
+import subprocess
+import tempfile
 import datetime
 
 from PySide6.QtCore import Qt, QSettings, QDir
@@ -20,7 +24,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton,
+    QRadioButton, QComboBox,
 )
 
 from ..engine import (
@@ -28,6 +32,7 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
+    bag_sample_to_wav,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -207,6 +212,24 @@ class LibraryTab(QWidget):
         self.preview.setWordWrap(True)
         self.preview.setStyleSheet("color:#888;")
         rl.addWidget(self.preview)
+
+        arow = QHBoxLayout()
+        arow.addWidget(QLabel("Audio:"))
+        self.audio_combo = QComboBox()
+        self.audio_combo.setMinimumWidth(120)
+        arow.addWidget(self.audio_combo, 1)
+        self.play_btn = QPushButton("▶ Play")
+        self.play_btn.clicked.connect(self._play_audio)
+        self.export_btn = QPushButton("Export WAV…")
+        self.export_btn.clicked.connect(self._export_audio)
+        arow.addWidget(self.play_btn)
+        arow.addWidget(self.export_btn)
+        rl.addLayout(arow)
+        self._player = _find_audio_player()
+        self._tmp_wavs = []
+        if not self._player:
+            self.play_btn.setToolTip(
+                "No system audio player found (paplay/aplay/afplay). Use Export.")
         lay.addWidget(right, 2)
         return w
 
@@ -223,6 +246,7 @@ class LibraryTab(QWidget):
             self.detail_text.setPlainText("")
             self.file_table.setRowCount(0)
             self.art_img.clear()
+            self._clear_audio()
             self.preview.setText("Art / audio preview: select an item.")
             return
         scan = self._scan_by_source.get(it.source_id)
@@ -244,16 +268,10 @@ class LibraryTab(QWidget):
         self.detail_text.setPlainText(unit_report(entry))
         self._fill_files(entry.assets)
         self._render_art(entry, it.source_id, scan)
-        # audio hint (playback pending ADPCM decode)
-        aud = [a.name for a in entry.assets if a.status == "sound"
-               or a.name.lower().endswith(".wav")]
+        self._populate_audio(entry, scan)
         vxl = [a.name for a in entry.assets if a.name.lower().endswith(".vxl")]
-        bits = []
-        if vxl:
-            bits.append("voxel: " + ", ".join(vxl[:4]) + " (VXL render pending)")
-        if aud:
-            bits.append("audio: " + ", ".join(aud[:4]) + " (playback pending)")
-        self.preview.setText("  |  ".join(bits))
+        self.preview.setText("voxel: " + ", ".join(vxl[:4]) + " (VXL render pending)"
+                             if vxl else "")
 
     def _render_art(self, entry, sid, scan):
         """Best-effort SHP still preview into art_img. Never raises."""
@@ -316,6 +334,7 @@ class LibraryTab(QWidget):
     def _detail_ai(self, it, scan):
         self.file_table.setRowCount(0)
         self.art_img.clear()
+        self._clear_audio()
         if scan is None or scan.aimd_map is None:
             self.detail_text.setPlainText(f"{it.name} — no aimd found for source.")
             self.preview.setText("")
@@ -347,6 +366,70 @@ class LibraryTab(QWidget):
             self.file_table.setItem(r, 1, loc)
             self.file_table.setItem(r, 2, QTableWidgetItem(
                 self._STATUS.get(a.status, a.status)))
+
+    # ── audio ──────────────────────────────────────────────────────────────
+    def _clear_audio(self):
+        self.audio_combo.clear()
+        self._audio_catalog = None
+        self.play_btn.setEnabled(False)
+        self.export_btn.setEnabled(False)
+
+    def _populate_audio(self, entry, scan):
+        self._clear_audio()
+        cat = scan.index.catalog if (scan and scan.index) else None
+        if not cat:
+            return
+        self._audio_catalog = cat
+        seen = set()
+        for a in entry.assets:
+            if a.status != "sound":
+                continue
+            loc = cat.get(a.name.upper())
+            if loc is not None and loc[0] == "bag" and a.name.upper() not in seen:
+                seen.add(a.name.upper())
+                self.audio_combo.addItem(a.name, a.name)
+        has = self.audio_combo.count() > 0
+        self.play_btn.setEnabled(has and bool(self._player))
+        self.export_btn.setEnabled(has)
+
+    def _current_wav(self):
+        name = self.audio_combo.currentData()
+        if not name or not getattr(self, "_audio_catalog", None):
+            return None, None
+        try:
+            return name, bag_sample_to_wav(self._audio_catalog, name)
+        except Exception as e:
+            self.status.setText(f"Audio decode failed: {type(e).__name__}: {e}")
+            return name, None
+
+    def _play_audio(self):
+        name, wav = self._current_wav()
+        if not wav or not self._player:
+            return
+        try:
+            fd, path = tempfile.mkstemp(suffix=".wav", prefix="yrbt_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(wav)
+            self._tmp_wavs.append(path)
+            _play_wav_file(self._player, path)
+            self.status.setText(f"Playing {name}…")
+        except Exception as e:
+            self.status.setText(f"Playback failed: {type(e).__name__}: {e}")
+
+    def _export_audio(self):
+        name, wav = self._current_wav()
+        if not wav:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export WAV",
+                                              f"{name}.wav", "WAV (*.wav)")
+        if not path:
+            return
+        try:
+            with open(path, "wb") as f:
+                f.write(wav)
+            self.status.setText(f"Exported {os.path.basename(path)}.")
+        except Exception as e:
+            self.status.setText(f"Export failed: {type(e).__name__}: {e}")
 
     # ── data ─────────────────────────────────────────────────────────────────
     def _reload(self, keep_row=None):
@@ -610,6 +693,34 @@ class LibraryTab(QWidget):
                 s.balance_summary = text
         self._show_balance()
         self.status.setText("Eva summarized the balance culture.")
+
+
+def _find_audio_player():
+    """Best-effort system WAV player (QtMultimedia isn't bundled). Returns an
+    identifier used by _play_wav_file, or None."""
+    if sys.platform == "win32":
+        return "winsound"
+    if sys.platform == "darwin":
+        return shutil.which("afplay")
+    for cmd in ("paplay", "aplay", "ffplay", "mpv", "cvlc"):
+        p = shutil.which(cmd)
+        if p:
+            return p
+    return None
+
+
+def _play_wav_file(player, path):
+    """Play a WAV file asynchronously via the detected player."""
+    if player == "winsound":
+        import winsound
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        return
+    args = [player, path]
+    if player.endswith("ffplay"):
+        args = [player, "-nodisp", "-autoexit", path]
+    elif player.endswith("cvlc"):
+        args = [player, "--play-and-exit", path]
+    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 class _AddSourceDialog(QDialog):

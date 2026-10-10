@@ -196,6 +196,9 @@ from .images import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     ShpImage, ShpFrame, ImageError,
 )
+from .audio import (
+    decode_ima_adpcm, to_wav, decode_bag_sample, bag_sample_to_wav, AudioSample,
+)
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
@@ -280,6 +283,9 @@ __all__ = [
     # images (SHP / palette)
     "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
     "best_frame_index", "ShpImage", "ShpFrame", "ImageError",
+    # audio (bag IMA-ADPCM → WAV)
+    "decode_ima_adpcm", "to_wav", "decode_bag_sample", "bag_sample_to_wav",
+    "AudioSample",
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",
