@@ -92,11 +92,19 @@ big mods never slow startup. Sidecar `~/.yrbalancetool/library.json`. Tested
 Files table with each asset's location/status; AI items show their trigger +
 closure via `extract_bundle`). Source scans are cached (`scan_source` → index +
 aimd) so detail is instant. Remaining:
-- **Art/audio rendering** — SHP/VXL thumbnail + audio playback in the detail
-  pane. Needs binary-format work (SHP+palette raster, VXL+HVA+VPL raster, AUD/
-  bag IMA-ADPCM decode→WAV). Reference impls to mirror: XCC (SHP/VXL/PAL/AUD),
-  OS SHP Builder, a VXL viewer (VXLSE III / OS Voxel Viewer). Hook into the
-  existing `resolve_media` extraction so previews work from loose files AND mixes.
+- **SHP preview — SHIPPED.** `engine/images.py` decodes SHP(TS/RA2) (raw +
+  RLE-Zero) and VGA `.pal` (6-bit→8-bit), renders a frame to RGBA (index 0
+  transparent). The Library detail pane shows the best frame as a QPixmap,
+  resolving the SHP via `resolve_media` (loose OR mix) and picking a palette
+  (loose unittem/temperat/… → mix → grayscale fallback). Validated on real game
+  SHPs (`button14`, `ygplast_bd`, etc.) + synthetic round-trip test
+  (`test_images`). Palette selection is approximate (not yet theater-aware) and
+  SHP is static (no animation) — refine later.
+- **Still to render:** **VXL** (the hard one — voxel spans + normals + HVA
+  transforms + VPL lighting + ~30° isometric projection; refs: Banshee's OS
+  Voxel Viewer (Delphi/OpenGL, svn.ppmsite.com), XCC). **Audio playback** —
+  AUD/`.bag` IMA-ADPCM decode → WAV → play button. **PCX** cameos. SHP
+  animation + remap-aware palettes.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

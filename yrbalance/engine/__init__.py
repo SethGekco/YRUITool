@@ -192,6 +192,10 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, PullPlan, PullItem,
 )
+from .images import (
+    parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
+    ShpImage, ShpFrame, ImageError,
+)
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
@@ -273,6 +277,9 @@ __all__ = [
     "load_library", "save_library", "add_entry", "remove_entry", "set_entry_meta",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
+    # images (SHP / palette)
+    "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
+    "best_frame_index", "ShpImage", "ShpFrame", "ImageError",
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",

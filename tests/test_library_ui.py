@@ -186,6 +186,28 @@ def main():
               f"{'OK' if filt_ok else 'FAIL'}  visible={vis2}")
         ok = ok and filt_ok
 
+        # real SHP render path (uses a game SHP if present on this machine)
+        import glob
+        import types
+        import shutil
+        from yrbalance.engine import build_media_catalog, AssetRef
+        cand = glob.glob("/home/rex/snap/cncra2yr/common/.wine/drive_c/"
+                         "Westwood/RA2/button14.shp")
+        if cand:
+            shutil.copy(cand[0], os.path.join(mod_dir, "prevart.shp"))
+            cat = build_media_catalog([mod_dir])
+            fake_scan = types.SimpleNamespace(
+                index=types.SimpleNamespace(catalog=cat), aimd_map=None)
+            entry = types.SimpleNamespace(
+                assets=[AssetRef("PREVART.SHP", "loose", "present")])
+            tab._render_art(entry, "turkey-mod", fake_scan)
+            pm = tab.art_img.pixmap()
+            render_ok = pm is not None and not pm.isNull() and pm.width() > 0
+            print(f"real SHP → pixmap render: {'OK' if render_ok else 'FAIL'}")
+            ok = ok and render_ok
+        else:
+            print("real SHP render: SKIP (no sample on this machine)")
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
