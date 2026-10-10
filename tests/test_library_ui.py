@@ -45,6 +45,22 @@ def main():
                    added_at="2026-01-01", vanilla_path=van)
         create_collection("favs")
 
+        # Add-source dialog resolves a pasted FOLDER (incl. hidden path) to its
+        # rules file, and reports bad paths
+        from yrbalance.ui.library_tab import _AddSourceDialog
+        hidden = os.path.join(home, ".wine", "drive_c", "m2")
+        os.makedirs(hidden)
+        _w(hidden, "rulesmd.ini", "[GI]\n")
+        asd = _AddSourceDialog(None, "")
+        fp, e1 = asd._resolve(hidden)                 # paste folder
+        fp2, _ = asd._resolve(os.path.join(hidden, "rulesmd.ini"))   # paste file
+        _, ebad = asd._resolve("/no/such/dir")
+        add_dlg_ok = (fp.endswith("rulesmd.ini") and not e1
+                      and fp2.endswith("rulesmd.ini") and ebad)
+        print(f"add-source resolves folder/file/hidden/bad: "
+              f"{'OK' if add_dlg_ok else 'FAIL'}")
+        ok = ok and add_dlg_ok
+
         from yrbalance.ui.library_tab import LibraryTab
         mw = QWidget()
         mw.source_path = rules
