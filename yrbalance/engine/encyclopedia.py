@@ -228,10 +228,13 @@ def _section_block(section_map, name, ending="\n"):
     return out
 
 
-def export_unit(index, unit_name, dest_folder):
+def export_unit(index, unit_name, dest_folder, user_notes=None, credits=None):
     """Snag a unit out of a mod into dest_folder: write <unit>.ini (its rules
     section + weapon/warhead/projectile sections + art/sound entries) and extract
-    its referenced media files. Returns a summary dict."""
+    its referenced media files. Also writes a <unit>.notes.md sidecar with a
+    private-details section and a separate Credits box (created as a template on
+    first export, preserved on re-export unless new text is supplied).
+    Returns a summary dict."""
     os.makedirs(dest_folder, exist_ok=True)
     e = index.units.get(unit_name.lower())
     if e is None:
@@ -266,9 +269,56 @@ def export_unit(index, unit_name, dest_folder):
     for fn, data in found.items():
         with open(os.path.join(dest_folder, fn), "wb") as f:
             f.write(data)
+    # private notes + Credits sidecar (don't clobber prior user edits)
+    notes_path = os.path.join(dest_folder, f"{e.name}.notes.md")
+    write_notes = user_notes is not None or credits is not None \
+        or not os.path.exists(notes_path)
+    if write_notes:
+        _write_notes_md(notes_path, e.name, e.mod, user_notes, credits)
+
     vanilla = [a.name for a in e.assets if a.status == "vanilla"]
     truly_missing = [a.name for a in e.assets if a.status == "missing"] + missing
     return {"ini": os.path.basename(ini_path),
             "media": sorted(found),
+            "notes": os.path.basename(notes_path),
             "vanilla_assets": vanilla,
             "missing": truly_missing}
+
+
+def _write_notes_md(path, name, mod, user_notes, credits):
+    """Write/refresh the private-notes + Credits sidecar, keeping existing text for
+    any box not being replaced this call."""
+    prev_notes, prev_credits = _read_notes_md(path)
+    notes = user_notes if user_notes is not None else prev_notes
+    cred = credits if credits is not None else prev_credits
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# {name}\n\n")
+        f.write(f"_Exported from {mod or 'unknown mod'}._\n\n")
+        f.write("## Private notes\n\n")
+        f.write((notes.strip() or "<!-- your private details here -->") + "\n\n")
+        f.write("## Credits\n\n")
+        f.write((cred.strip() or "<!-- original author / source credits here -->")
+                + "\n")
+
+
+def _read_notes_md(path):
+    """Return (private_notes, credits) text from an existing sidecar, or ('','')."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except (FileNotFoundError, OSError):
+        return "", ""
+    notes, cred, cur = [], [], None
+    for ln in text.splitlines():
+        low = ln.strip().lower()
+        if low.startswith("## private notes"):
+            cur = notes
+            continue
+        if low.startswith("## credits"):
+            cur = cred
+            continue
+        if ln.startswith("# ") or ln.startswith("_Exported"):
+            continue
+        if cur is not None and "<!--" not in ln:
+            cur.append(ln)
+    return "\n".join(notes).strip(), "\n".join(cred).strip()

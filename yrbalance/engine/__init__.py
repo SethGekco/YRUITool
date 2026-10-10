@@ -184,6 +184,14 @@ from .portmod import (
     apply_port_plan, clean_owner, clean_prereq, target_countries,
     PortPlan, PortObject, StatFactor, StatChange,
 )
+from .portai import (
+    build_ai_import_plan, apply_ai_import, AIImportPlan, AIEntry,
+)
+from .ailib import (
+    load_library, save_library, add_entry, remove_entry, set_entry_meta,
+    library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
+    LibEntry, LibBlock, PullPlan, PullItem,
+)
 
 __all__ = [
     # config
@@ -251,6 +259,12 @@ __all__ = [
     "build_port_plan", "classify_new_objects", "compute_factors",
     "plan_to_blueprint", "apply_port_plan", "clean_owner", "clean_prereq",
     "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
+    # portai
+    "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",
+    # ailib
+    "load_library", "save_library", "add_entry", "remove_entry", "set_entry_meta",
+    "library_path", "extract_block", "extract_bundle", "build_pull_plan",
+    "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
     # obtain
     "classify_obtainability", "Obtainability",
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",

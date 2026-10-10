@@ -399,6 +399,7 @@ class MainWindow(QMainWindow):
 
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
+        tools.addAction("AI library…", self.open_ai_library)
         tools.addAction("Port mod content…", self.port_mod_content)
         tools.addAction("Encyclopedia…", self.open_encyclopedia)
         tools.addAction("MIX browser…", self.open_mix_browser)
@@ -422,6 +423,11 @@ class MainWindow(QMainWindow):
         """Open the MIX archive browser."""
         from .mix_dialog import MixBrowserDialog
         MixBrowserDialog(self).exec()
+
+    def open_ai_library(self):
+        """Open the AI library (store/pull AITrigger bundles & blocks)."""
+        from .ai_library_dialog import AILibraryDialog
+        AILibraryDialog(self).exec()
 
     def port_mod_content(self):
         """Open the mod-content porter dialog."""

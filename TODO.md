@@ -39,6 +39,42 @@ dialog (base mix name + max files/mix). Remaining niceties:
 - **Cameo gaps** — some units' cameos aren't in the mod's mixes; media transfer
   reports them as not-found. Could cross-check vanilla cameos / warn in the UI.
 
+## AI-import (transplant an old mod's aimd.ini AI) — SHIPPED
+`engine/portai.py`: for a set of ported units, closes over the AI graph
+(unit→TaskForce→TeamType+Script→AITrigger via the PRIMARY team), re-mints every
+id collision-free (`F0000000-G…`), rewrites all id-string references, cleans
+`House=`/trigger `Owner` against the target's countries, neutralizes non-imported
+backup teams (Team2→0 with a note), and flags dangling units + index-ref script
+actions (18 Join Team) for manual review. `apply_ai_import` appends sections +
+registers them in the index lists + appends triggers to `[AITriggerTypes]`.
+Wired into the Port dialog as the opt-in **"Also import AI (aimd)"** checkbox
+(backs up the target aimd, lints the result). Validated on the turkey-mod →
+cncnet-edition target: 10 units → 29 TF / 14 script / 32 team / 36 trigger, **0
+new ref-resolution errors** (the 9 that remain are the target mod's own
+pre-existing dangling triggers). Tested (`tests/test_portai.py`). Remaining:
+proper script *formation* and role/feasibility grading are the generator's job,
+not import's — see the AI library item next.
+
+## AI library — store AI blocks out of aimd.ini — SHIPPED
+`engine/ailib.py` + `ui/ai_library_dialog.py` (Tools → AI library…). Stores
+AITrigger *bundles* (trigger + primary/backup teams + their TaskForces & Scripts)
+or single blocks (TaskForce/Script/TeamType) in a sidecar
+(`~/.yrbalancetool/ailibrary.json`, never the mod). Pull back into any aimd reuses
+portai's re-mint + ref-rewrite + Owner/House cleanup, PLUS:
+- **dedup/merge** — a block byte-identical (ignoring Name) to one already in the
+  target is *reused* (refs repoint, nothing minted); near-identical blocks
+  (Jaccard ≥ threshold, default 95%, adjustable in the pull dialog) are added as
+  new WITH a warning;
+- **unit deps** — referenced units are listed; per unit the user can leave-and-warn,
+  remap to an existing unit, or bring a bundled stub TechnoType section;
+- every entry carries a free-form **Private notes** box and a separate **Credits**
+  box (round-trip in the sidecar; editable in the dialog). Exported encyclopedia
+  units get the same via a `<unit>.notes.md` sidecar (template on first export,
+  preserved on re-export).
+Validated: unit test + offscreen UI test; real-data self-pull reuses all 6 blocks,
+cross-mod pull adds 0 new ref errors. Remaining: library-wide search/tags; a
+"grade this AI / find bugs" pass (long-term, per Rex).
+
 ## Version-aware vanilla baselines
 Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
 the right baseline when diffing/porting (the port's balance cross-check and the
