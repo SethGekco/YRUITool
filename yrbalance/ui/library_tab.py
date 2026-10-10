@@ -33,6 +33,7 @@ from ..engine import (
     describe_culture, unit_report, extract_bundle, resolve_media,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     bag_sample_to_wav, parse_vxl, render_vxl, voxel_count, parse_vpl,
+    find_in_mixes,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -58,6 +59,8 @@ class LibraryTab(QWidget):
         self._col_desc = []                # per col_list row: ("all"/"auto"/"col", key)
         self._has_art = {}                 # (source_id, name_lower) -> bool
         self._pal_cache = {}               # source_id -> palette (list of rgb)
+        self._shared_vpl = None            # imported voxels.vpl (game lighting)
+        self._vpl_import_started = False
 
         root = QVBoxLayout(self)
         bar = QHBoxLayout()
@@ -357,29 +360,74 @@ class LibraryTab(QWidget):
         return pal
 
     def _preview_vpl(self, sid):
-        """A parsed voxels.vpl for game-accurate voxel lighting, if one is
-        available: loose in the source folder, else ~/.yrbalancetool/voxels.vpl.
-        None → render_vxl uses diffuse normal lighting. Cached across sources."""
-        if hasattr(self, "_vpl_cache"):
-            if sid in self._vpl_cache:
-                return self._vpl_cache[sid]
-        else:
-            self._vpl_cache = {}
-        vpl = None
+        """A parsed voxels.vpl for game-accurate voxel lighting, or None (→
+        render_vxl uses diffuse lighting). Order: a voxels.vpl the mod ships loose,
+        then a shared copy imported once from the game mixes to
+        ~/.yrbalancetool/voxels.vpl. If none is cached yet, a one-time background
+        import is kicked off from the source's game mixes (non-blocking)."""
         src = next((s for s in self.sources if s.id == sid), None)
         folder = os.path.dirname(src.rules_path) if src else ""
-        candidates = [os.path.join(folder, "voxels.vpl"),
-                      os.path.join(os.path.expanduser("~"), ".yrbalancetool",
-                                   "voxels.vpl")]
-        for p in candidates:
-            if os.path.isfile(p):
-                try:
-                    vpl = parse_vpl(open(p, "rb").read())
-                    break
-                except Exception:
-                    vpl = None
-        self._vpl_cache[sid] = vpl
-        return vpl
+        loose = os.path.join(folder, "voxels.vpl")
+        if os.path.isfile(loose):
+            try:
+                return parse_vpl(open(loose, "rb").read())
+            except Exception:
+                pass
+        if self._shared_vpl is not None:
+            return self._shared_vpl
+        cache = _vpl_cache_path()
+        if os.path.isfile(cache):
+            try:
+                self._shared_vpl = parse_vpl(open(cache, "rb").read())
+                return self._shared_vpl
+            except Exception:
+                pass
+        self._maybe_import_vpl(folder)
+        return None
+
+    def _maybe_import_vpl(self, folder):
+        """Kick a one-time background extraction of voxels.vpl from the game mixes
+        in `folder` (ra2*.mix / local.mix), caching it for all sources."""
+        if self._vpl_import_started or not folder:
+            return
+        import glob as _glob
+        has_game_mixes = (_glob.glob(os.path.join(folder, "ra2*.mix"))
+                          or os.path.isfile(os.path.join(folder, "local.mix")))
+        if not has_game_mixes:
+            return
+        self._vpl_import_started = True
+        self.status.setText("Importing voxels.vpl from game mixes (one-time)…")
+        cache = _vpl_cache_path()
+
+        def work():
+            data = find_in_mixes([folder], "voxels.vpl")
+            if data:
+                os.makedirs(os.path.dirname(cache), exist_ok=True)
+                with open(cache, "wb") as fh:
+                    fh.write(data)
+            return bool(data)
+
+        self._vpl_worker = _Worker(work)
+        self._vpl_worker.done.connect(self._vpl_imported)
+        self._vpl_worker.failed.connect(
+            lambda m: self.status.setText(f"voxels.vpl import failed: {m}"))
+        self._vpl_worker.start()
+
+    def _vpl_imported(self, found):
+        if found:
+            try:
+                self._shared_vpl = parse_vpl(open(_vpl_cache_path(), "rb").read())
+            except Exception:
+                self._shared_vpl = None
+            self.status.setText(
+                "voxels.vpl imported — voxel previews now use game lighting.")
+            try:
+                self._show_detail()      # re-render current item with VPL
+            except Exception:
+                pass
+        else:
+            self.status.setText(
+                "voxels.vpl not found in game mixes; using diffuse lighting.")
 
     def _detail_ai(self, it, scan):
         self.file_table.setRowCount(0)
@@ -487,7 +535,6 @@ class LibraryTab(QWidget):
         self._items_by_source = {}
         self._scan_by_source = {}
         self._pal_cache = {}
-        self._vpl_cache = {}
         for s in self.sources:
             try:
                 scan = scan_source(s)
@@ -744,6 +791,10 @@ class LibraryTab(QWidget):
                 s.balance_summary = text
         self._show_balance()
         self.status.setText("Eva summarized the balance culture.")
+
+
+def _vpl_cache_path():
+    return os.path.join(os.path.expanduser("~"), ".yrbalancetool", "voxels.vpl")
 
 
 def _find_audio_player():

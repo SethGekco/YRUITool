@@ -139,10 +139,13 @@ aimd) so detail is instant. Remaining:
   (`rgb = unit_palette[vpl[page][colour]]`) — the game's real voxel lighting.
   Verified against a real 32-page `voxels.vpl` extracted from ra2.mix (looks
   game-accurate; house-remap voxels show as magenta as expected without a house
-  colour). The Library uses a `voxels.vpl` found loose in the mod folder or at
-  `~/.yrbalancetool/voxels.vpl`, else falls back to diffuse lighting. Tested
-  (`test_vpl`). Remaining voxel work: HVA/per-section placement, selectable view
-  angle, applying a house colour to the remap range.
+  colour). The Library uses a `voxels.vpl` the mod ships loose, else a shared copy
+  **auto-imported once from the game mixes** (`mixlib.find_in_mixes` deep-searches
+  nested/encrypted mixes; ~20s in a background thread, cached to
+  `~/.yrbalancetool/voxels.vpl` and reused forever), else diffuse. Tested
+  (`test_vpl` incl. a synthetic nested-mix `find_in_mixes`; import flow verified
+  end-to-end on real mixes). Remaining voxel work: HVA/per-section placement,
+  selectable view angle, applying a house colour to the remap range.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

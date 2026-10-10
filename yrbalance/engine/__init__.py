@@ -159,7 +159,7 @@ from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
     is_vanilla_mix, is_stock_mix, stock_mix_names,
     VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
-    build_media_catalog, resolve_media, pack_media_mixes,
+    build_media_catalog, resolve_media, pack_media_mixes, find_in_mixes,
     collect_asset_ids, build_vanilla_asset_ids, vanilla_asset_ids, classify_missing,
     parse_audio_idx, read_audio_sample,
 )
@@ -308,7 +308,7 @@ __all__ = [
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
     "is_vanilla_mix", "is_stock_mix", "stock_mix_names",
     "VANILLA_MIX_NAMES", "STOCK_MIX_NAMES", "KNOWN_FRAMEWORK_FILES",
-    "build_media_catalog", "resolve_media", "pack_media_mixes",
+    "build_media_catalog", "resolve_media", "pack_media_mixes", "find_in_mixes",
     "collect_asset_ids", "build_vanilla_asset_ids", "vanilla_asset_ids",
     "classify_missing", "parse_audio_idx", "read_audio_sample",
     # encyclopedia

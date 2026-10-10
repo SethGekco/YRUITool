@@ -497,6 +497,67 @@ def pack_media_mixes(files, dest_folder, base_name, per_mix_limit=0,
     return written
 
 
+def find_in_mixes(folders, filename, max_depth=3,
+                  priority=("ra2md.mix", "ra2.mix"),
+                  max_sub_size=64 * 1024 * 1024):
+    """Deep-search the loose mixes in `folders` (including nested / encrypted
+    sub-mixes) for `filename` by its mix id. Returns the file's bytes, or None.
+
+    Only entries that themselves parse as a complete mix (`is_complete`) are
+    descended into, so leaf assets aren't misread; entries outside
+    [84, max_sub_size] bytes are skipped (avoids reading huge movie blobs). Mixes
+    whose basename is in `priority` are searched first — e.g. voxels.vpl lives in
+    local.mix inside ra2(md).mix."""
+    if isinstance(folders, str):
+        folders = [folders]
+    target = mix_id(filename)
+    prio = [p.lower() for p in priority]
+    paths = []
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            p = os.path.join(folder, fn)
+            if fn.lower().endswith(".mix") and os.path.isfile(p):
+                paths.append(p)
+    paths.sort(key=lambda p: (prio.index(os.path.basename(p).lower())
+                              if os.path.basename(p).lower() in prio else len(prio),
+                              os.path.basename(p).lower()))
+
+    def search(mf, depth):
+        if target in mf.by_id:
+            try:
+                return mf.read_id(target)
+            except (MixError, KeyError, OSError):
+                return None
+        if depth >= max_depth:
+            return None
+        for e in mf.entries:
+            if e.size < 84 or e.size > max_sub_size:
+                continue
+            try:
+                blob = mf.read_id(e.id)
+                sub = MixFile.from_bytes(blob)
+            except (MixError, KeyError, OSError):
+                continue
+            if not sub.is_complete:
+                continue
+            r = search(sub, depth + 1)
+            if r is not None:
+                return r
+        return None
+
+    for mp in paths:
+        try:
+            mf = MixFile(mp)
+        except (MixError, OSError):
+            continue
+        r = search(mf, 0)
+        if r is not None:
+            return r
+    return None
+
+
 # ── vanilla asset index (recursive) + missing-file classification ────────────
 import json as _json   # noqa: E402  (kept local to this feature)
 

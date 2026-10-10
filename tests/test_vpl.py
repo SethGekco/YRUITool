@@ -46,6 +46,23 @@ def main():
           f"{'OK' if pages_ok else 'FAIL'}")
     ok = ok and pages_ok
 
+    # find_in_mixes recursion: a file nested inside a mix-inside-a-mix
+    import tempfile
+    from yrbalance.engine import write_mix, find_in_mixes
+    with tempfile.TemporaryDirectory() as d:
+        payload = b"NESTED-VPL-PAYLOAD" * 8
+        inner_path = os.path.join(d, "inner.mix")
+        write_mix(inner_path, {"voxels.vpl": payload})
+        inner_bytes = open(inner_path, "rb").read()
+        os.remove(inner_path)                       # don't leave it loose
+        mixdir = os.path.join(d, "mixes")
+        os.makedirs(mixdir)
+        write_mix(os.path.join(mixdir, "outer.mix"), {"inner.mix": inner_bytes})
+        got = find_in_mixes([mixdir], "voxels.vpl")
+        nested_ok = got == payload
+    print(f"find_in_mixes descends nested mixes: {'OK' if nested_ok else 'FAIL'}")
+    ok = ok and nested_ok
+
     # real voxels.vpl if we cached one, else extract from game mixes
     vpl_path = "/tmp/voxels.vpl"
     if not os.path.isfile(vpl_path):
