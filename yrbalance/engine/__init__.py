@@ -202,6 +202,7 @@ from .audio import (
 from .vxl import (
     parse_vxl, render_vxl, voxel_count, VxlModel, VxlSection, VxlError,
 )
+from .vpl import parse_vpl, vpl_pages, Vpl, VplError
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
@@ -291,6 +292,8 @@ __all__ = [
     "AudioSample",
     # vxl (voxel parse + isometric render)
     "parse_vxl", "render_vxl", "voxel_count", "VxlModel", "VxlSection", "VxlError",
+    # vpl (voxel palette lookup — game-accurate lighting)
+    "parse_vpl", "vpl_pages", "Vpl", "VplError",
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",

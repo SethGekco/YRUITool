@@ -32,7 +32,7 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
-    bag_sample_to_wav, parse_vxl, render_vxl, voxel_count,
+    bag_sample_to_wav, parse_vxl, render_vxl, voxel_count, parse_vpl,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -312,7 +312,7 @@ class LibraryTab(QWidget):
                     self.art_img.setText("(empty voxel model)")
                     return
                 pal = self._preview_palette(sid, scan)
-                w, h, rgba = render_vxl(model, palette=pal)
+                w, h, rgba = render_vxl(model, palette=pal, vpl=self._preview_vpl(sid))
                 self._set_art_pixmap(w, h, rgba)
                 return
             self.art_img.setText("(no SHP/VXL art to preview)")
@@ -355,6 +355,31 @@ class LibraryTab(QWidget):
             pal = grayscale_palette()
         self._pal_cache[sid] = pal
         return pal
+
+    def _preview_vpl(self, sid):
+        """A parsed voxels.vpl for game-accurate voxel lighting, if one is
+        available: loose in the source folder, else ~/.yrbalancetool/voxels.vpl.
+        None → render_vxl uses diffuse normal lighting. Cached across sources."""
+        if hasattr(self, "_vpl_cache"):
+            if sid in self._vpl_cache:
+                return self._vpl_cache[sid]
+        else:
+            self._vpl_cache = {}
+        vpl = None
+        src = next((s for s in self.sources if s.id == sid), None)
+        folder = os.path.dirname(src.rules_path) if src else ""
+        candidates = [os.path.join(folder, "voxels.vpl"),
+                      os.path.join(os.path.expanduser("~"), ".yrbalancetool",
+                                   "voxels.vpl")]
+        for p in candidates:
+            if os.path.isfile(p):
+                try:
+                    vpl = parse_vpl(open(p, "rb").read())
+                    break
+                except Exception:
+                    vpl = None
+        self._vpl_cache[sid] = vpl
+        return vpl
 
     def _detail_ai(self, it, scan):
         self.file_table.setRowCount(0)
@@ -462,6 +487,7 @@ class LibraryTab(QWidget):
         self._items_by_source = {}
         self._scan_by_source = {}
         self._pal_cache = {}
+        self._vpl_cache = {}
         for s in self.sources:
             try:
                 scan = scan_source(s)

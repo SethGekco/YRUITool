@@ -120,14 +120,17 @@ def _read_section_voxels(data, body_base, span_start_off, span_data_off, sec):
 
 
 def render_vxl(model, max_px=200, transparent_index=0, palette=None,
-               lighting=True):
+               lighting=True, vpl=None, direction=32):
     """Fixed isometric still of every section's voxels → (w, h, rgba). Nearest
     voxel wins (z-buffer). RA2 VXLs embed an empty palette, so pass an external
     unit palette (`palette`); else the embedded one is used (TS voxels).
 
-    With `lighting`, each voxel is diffuse-lit from its stored surface normal
-    (ccmaps-net model: colour × (Ambient + Diffuse·max(dot(N, light), 0))); if a
-    section has no usable normal table, it falls back to mild height shading.
+    Lighting, best → fallback:
+      1. `vpl` (a parsed voxels.vpl): game-accurate — each voxel's normal picks a
+         lighting page and the colour index is remapped through it before the
+         palette lookup (`direction` is the unit facing 0..255).
+      2. `lighting`: diffuse from the stored normal (Ambient + Diffuse·max(dot,0)).
+      3. mild height shading when a section has no normal table.
     Raises VxlError if there are no voxels."""
     pal = palette if palette else model.palette
     pts = []                       # (px, py, depth, r, g, b)
@@ -135,19 +138,29 @@ def render_vxl(model, max_px=200, transparent_index=0, palette=None,
     for sec in model.sections:
         normals = NORMALS_BY_MODE.get(sec.normal_type) if lighting else None
         light = _LIGHT.get(sec.normal_type, _LIGHT[4])
+        pages = None
+        if vpl is not None and normals:
+            from .vpl import vpl_pages
+            pages = vpl_pages(normals, ra2=(sec.normal_type == 4),
+                              direction=direction)
         for (x, y, z), (colour, nidx) in sec.voxels.items():
             if colour == transparent_index:
                 continue
-            r, g, b = pal[colour]
-            if normals:
-                nx, ny, nz = normals[nidx] if nidx < len(normals) else normals[-1]
-                d = nx * light[0] + ny * light[1] + nz * light[2]
-                mult = _AMBIENT + _DIFFUSE * (d if d > 0 else 0.0)
+            if pages is not None:
+                page = pages[nidx] if nidx < len(pages) else 0
+                rr, gg, bb = pal[vpl.remap(page, colour)]
             else:
-                mult = 0.55 + 0.45 * (z / maxz)
-            rr = min(255, int(r * mult))
-            gg = min(255, int(g * mult))
-            bb = min(255, int(b * mult))
+                r, g, b = pal[colour]
+                if normals:
+                    nx, ny, nz = (normals[nidx] if nidx < len(normals)
+                                  else normals[-1])
+                    d = nx * light[0] + ny * light[1] + nz * light[2]
+                    mult = _AMBIENT + _DIFFUSE * (d if d > 0 else 0.0)
+                else:
+                    mult = 0.55 + 0.45 * (z / maxz)
+                rr = min(255, int(r * mult))
+                gg = min(255, int(g * mult))
+                bb = min(255, int(b * mult))
             # 2:1 isometric, z up; depth: nearer = larger x+y+z
             pts.append(((x - y), (x + y) * 0.5 - z, x + y + z, rr, gg, bb))
     if not pts:

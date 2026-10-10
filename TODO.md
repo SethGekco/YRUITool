@@ -131,6 +131,18 @@ aimd) so detail is instant. Remaining:
   table. Verified visually (usaguntur shows proper dome curvature + barrel
   depth). Still approximate vs the game: no VPL page remap (uses direct RGB
   diffuse), base light direction only (no per-section HVA transform), fixed view.
+- **VPL page lighting — SHIPPED.** `engine/vpl.py` parses `voxels.vpl` (header +
+  768 palette + numSections×256 pages) and computes the per-normal lighting page
+  (Blinn-Phong `clamp((diffuse+specular)*16)`, specularStrength 3.0, neutral
+  253-255) — ported verbatim from ccmaps-net. `render_vxl(..., vpl=, direction=32)`
+  remaps each voxel's colour index through its page before the palette lookup
+  (`rgb = unit_palette[vpl[page][colour]]`) — the game's real voxel lighting.
+  Verified against a real 32-page `voxels.vpl` extracted from ra2.mix (looks
+  game-accurate; house-remap voxels show as magenta as expected without a house
+  colour). The Library uses a `voxels.vpl` found loose in the mod folder or at
+  `~/.yrbalancetool/voxels.vpl`, else falls back to diffuse lighting. Tested
+  (`test_vpl`). Remaining voxel work: HVA/per-section placement, selectable view
+  angle, applying a house colour to the remap range.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.
