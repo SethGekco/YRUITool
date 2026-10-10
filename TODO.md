@@ -122,6 +122,15 @@ aimd) so detail is instant. Remaining:
   selectable view angle, and a **bundled/standard `unittem.pal`** so colour is the
   default without the user supplying one. **PCX** cameos and SHP animation also
   remain.
+- **VXL normal lighting — SHIPPED.** `engine/vxl_normals.py` carries the TS (36)
+  and RA2 (245) surface-normal tables extracted verbatim from zzattack's
+  ccmaps-net (`VxlFile.cs`; all unit vectors). `render_vxl` now diffuse-lights each
+  voxel from its stored normal — colour × (Ambient 0.8 + Diffuse 1.3 · max(dot(N,
+  light), 0)), light = TS −X / YR −X rotated 45° about Z — matching ccmaps-net's
+  software rasterizer; falls back to height shading when a section has no normal
+  table. Verified visually (usaguntur shows proper dome curvature + barrel
+  depth). Still approximate vs the game: no VPL page remap (uses direct RGB
+  diffuse), base light direction only (no per-section HVA transform), fixed view.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

@@ -24,6 +24,15 @@ import struct
 from dataclasses import dataclass, field
 
 from .images import load_palette
+from .vxl_normals import NORMALS_BY_MODE
+
+# diffuse lighting, matching zzattack's ccmaps-net software rasterizer:
+#   colour *= Ambient + Diffuse * max(dot(normal, light), 0)
+_AMBIENT = 0.8
+_DIFFUSE = 1.3
+# game light directions: TS = -X; YR = -X rotated 45° about Z
+_LIGHT = {2: (-1.0, 0.0, 0.0),
+          4: (-0.7071067811865476, -0.7071067811865476, 0.0)}
 
 
 class VxlError(Exception):
@@ -110,25 +119,37 @@ def _read_section_voxels(data, body_base, span_start_off, span_data_off, sec):
             p += 1          # trailing count byte
 
 
-def render_vxl(model, max_px=200, transparent_index=0, palette=None):
+def render_vxl(model, max_px=200, transparent_index=0, palette=None,
+               lighting=True):
     """Fixed isometric still of every section's voxels → (w, h, rgba). Nearest
-    voxel wins (z-buffer); colour with mild height shading. RA2 VXLs embed an
-    empty palette, so pass an external unit palette (`palette`); it's preferred
-    when given, else the embedded one is used (TS voxels). Raises VxlError if
-    there are no voxels."""
+    voxel wins (z-buffer). RA2 VXLs embed an empty palette, so pass an external
+    unit palette (`palette`); else the embedded one is used (TS voxels).
+
+    With `lighting`, each voxel is diffuse-lit from its stored surface normal
+    (ccmaps-net model: colour × (Ambient + Diffuse·max(dot(N, light), 0))); if a
+    section has no usable normal table, it falls back to mild height shading.
+    Raises VxlError if there are no voxels."""
     pal = palette if palette else model.palette
-    pts = []
-    maxz = 1
+    pts = []                       # (px, py, depth, r, g, b)
+    maxz = max((s.sz for s in model.sections), default=1) or 1
     for sec in model.sections:
-        if sec.sz > maxz:
-            maxz = sec.sz
-        for (x, y, z), (colour, _n) in sec.voxels.items():
+        normals = NORMALS_BY_MODE.get(sec.normal_type) if lighting else None
+        light = _LIGHT.get(sec.normal_type, _LIGHT[4])
+        for (x, y, z), (colour, nidx) in sec.voxels.items():
             if colour == transparent_index:
                 continue
+            r, g, b = pal[colour]
+            if normals:
+                nx, ny, nz = normals[nidx] if nidx < len(normals) else normals[-1]
+                d = nx * light[0] + ny * light[1] + nz * light[2]
+                mult = _AMBIENT + _DIFFUSE * (d if d > 0 else 0.0)
+            else:
+                mult = 0.55 + 0.45 * (z / maxz)
+            rr = min(255, int(r * mult))
+            gg = min(255, int(g * mult))
+            bb = min(255, int(b * mult))
             # 2:1 isometric, z up; depth: nearer = larger x+y+z
-            px = (x - y)
-            py = (x + y) * 0.5 - z
-            pts.append((px, py, x + y + z, colour, z))
+            pts.append(((x - y), (x + y) * 0.5 - z, x + y + z, rr, gg, bb))
     if not pts:
         raise VxlError("no voxels to render")
 
@@ -144,12 +165,9 @@ def render_vxl(model, max_px=200, transparent_index=0, palette=None):
 
     buf = bytearray(W * H * 4)
     zbuf = [-10 ** 9] * (W * H)
-    for (px, py, depth, colour, z) in pts:
+    for (px, py, depth, rr, gg, bb) in pts:
         sx = int((px - min_px) * scale)
         sy = int((py - min_py) * scale)
-        r, g, b = pal[colour]
-        shade = 0.55 + 0.45 * (z / maxz)
-        rr, gg, bb = int(r * shade), int(g * shade), int(b * shade)
         for dy in range(scale):
             yy = sy + dy
             if yy < 0 or yy >= H:

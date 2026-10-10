@@ -91,6 +91,22 @@ def main():
           f"{'OK' if render_ok else 'FAIL'}")
     ok = ok and render_ok
 
+    # normal tables loaded (TS=36, RA2=245) and lighting changes the output
+    from yrbalance.engine.vxl_normals import NORMALS_BY_MODE
+    import math
+    tables_ok = (len(NORMALS_BY_MODE[2]) == 36 and len(NORMALS_BY_MODE[4]) == 245
+                 and all(abs(math.sqrt(x * x + y * y + z * z) - 1.0) < 1e-3
+                         for x, y, z in NORMALS_BY_MODE[4]))
+    print(f"normal tables (TS=36, RA2=245, unit vectors): "
+          f"{'OK' if tables_ok else 'FAIL'}")
+    ok = ok and tables_ok
+
+    _, _, lit = render_vxl(m, palette=m.palette, lighting=True)
+    _, _, unlit = render_vxl(m, palette=m.palette, lighting=False)
+    light_ok = lit != unlit
+    print(f"lighting changes render output: {'OK' if light_ok else 'FAIL'}")
+    ok = ok and light_ok
+
     # real game vxl, if present
     real = glob.glob("/home/rex/snap/cncra2yr/common/.wine/drive_c/Westwood/"
                      "RA2/usaguntur.vxl")
