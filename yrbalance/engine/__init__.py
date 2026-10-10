@@ -200,9 +200,11 @@ from .audio import (
     decode_ima_adpcm, to_wav, decode_bag_sample, bag_sample_to_wav, AudioSample,
 )
 from .vxl import (
-    parse_vxl, render_vxl, voxel_count, VxlModel, VxlSection, VxlError,
+    parse_vxl, render_vxl, render_parts, voxel_count,
+    VxlModel, VxlSection, VxlError,
 )
 from .vpl import parse_vpl, vpl_pages, Vpl, VplError
+from .hva import parse_hva, Hva, HvaError
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
@@ -291,9 +293,12 @@ __all__ = [
     "decode_ima_adpcm", "to_wav", "decode_bag_sample", "bag_sample_to_wav",
     "AudioSample",
     # vxl (voxel parse + isometric render)
-    "parse_vxl", "render_vxl", "voxel_count", "VxlModel", "VxlSection", "VxlError",
+    "parse_vxl", "render_vxl", "render_parts", "voxel_count",
+    "VxlModel", "VxlSection", "VxlError",
     # vpl (voxel palette lookup — game-accurate lighting)
     "parse_vpl", "vpl_pages", "Vpl", "VplError",
+    # hva (voxel animation transforms)
+    "parse_hva", "Hva", "HvaError",
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",

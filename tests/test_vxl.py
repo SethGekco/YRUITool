@@ -107,6 +107,51 @@ def main():
     print(f"lighting changes render output: {'OK' if light_ok else 'FAIL'}")
     ok = ok and light_ok
 
+    # HVA parse + placement: a translating HVA shifts a section in world space
+    from yrbalance.engine import parse_hva, Hva
+    from yrbalance.engine.vxl import _collect_points
+
+    def _build_hva(mats):
+        d = b"t".ljust(16, b"\x00") + struct.pack("<ii", 1, len(mats))
+        for i in range(len(mats)):
+            d += f"s{i}".encode().ljust(16, b"\x00")
+        for row in mats:
+            d += struct.pack("<12f", *row)
+        return d
+
+    hv = parse_hva(_build_hva([(1, 0, 0, 3, 0, 1, 0, 4, 0, 0, 1, 5)]))
+    hva_parse_ok = (hv.num_frames == 1 and hv.matrix(0)[3] == 3
+                    and hv.matrix(0)[7] == 4 and hv.matrix(9) == hv.matrix(99))
+    print(f"parse HVA + identity fallback: {'OK' if hva_parse_ok else 'FAIL'}")
+    ok = ok and hva_parse_ok
+
+    # cube hva_multiplier=0.083, scaleX=1 → an x-translation of 100 shifts world x
+    # by 100*0.083 = 8.3, and iso ix = wx-wy shifts by the same
+    import statistics
+    base_pts = _collect_points(m, None, m.palette, None, 32, False, 0)
+    thva = Hva(1, ["c"], [[(1, 0, 0, 100.0, 0, 1, 0, 0.0, 0, 0, 1, 0.0)]])
+    moved_pts = _collect_points(m, thva, m.palette, None, 32, False, 0)
+    dx = statistics.mean(p[0] for p in moved_pts) - \
+        statistics.mean(p[0] for p in base_pts)
+    place_ok = abs(dx - 8.3) < 0.5
+    print(f"HVA translation places section (ix shift ≈ 8.3): "
+          f"{'OK' if place_ok else 'FAIL'}  dx={dx:.2f}")
+    ok = ok and place_ok
+
+    # compositing: both parts contribute points, and the offset part is placed
+    # distinctly from the base (turret-on-body mechanics)
+    from yrbalance.engine import render_parts
+    off = Hva(1, ["c"], [[(1, 0, 0, 60.0, 0, 1, 0, 60.0, 0, 0, 1, 0.0)]])
+    a = _collect_points(m, None, m.palette, None, 32, False, 0)
+    b = _collect_points(m, off, m.palette, None, 32, False, 0)
+    w2, h2, two = render_parts([(m, None), (m, off)], palette=m.palette)
+    comp_ok = (len(a) > 0 and len(b) == len(a)
+               and {p[:2] for p in a} != {p[:2] for p in b}       # placed apart
+               and any(two[i] for i in range(3, len(two), 4)))      # renders
+    print(f"composite places two parts distinctly + renders: "
+          f"{'OK' if comp_ok else 'FAIL'}")
+    ok = ok and comp_ok
+
     # real game vxl, if present
     real = glob.glob("/home/rex/snap/cncra2yr/common/.wine/drive_c/Westwood/"
                      "RA2/usaguntur.vxl")

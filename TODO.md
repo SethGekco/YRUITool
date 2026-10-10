@@ -144,8 +144,21 @@ aimd) so detail is instant. Remaining:
   nested/encrypted mixes; ~20s in a background thread, cached to
   `~/.yrbalancetool/voxels.vpl` and reused forever), else diffuse. Tested
   (`test_vpl` incl. a synthetic nested-mix `find_in_mixes`; import flow verified
-  end-to-end on real mixes). Remaining voxel work: HVA/per-section placement,
-  selectable view angle, applying a house colour to the remap range.
+  end-to-end on real mixes).
+- **HVA / per-section turret placement — SHIPPED.** `engine/hva.py` parses the
+  animation transforms; `vxl.py` now places each section by its HVA frame-0 matrix
+  (translation scaled by HVAMultiplier·Scale, atop MinBounds, using real per-axis
+  Scale = (Max−Min)/Size — the tailer `tb+12` float was HVAMultiplier, not scale)
+  in a shared world space. `render_parts([(model, hva), …])` composites a unit's
+  **body + turret + barrel** (the game draws turrets as separate `*tur.vxl` /
+  `*barl.vxl` files); the Library auto-resolves those siblings + their `.hva`s and
+  renders them together. Matrix/placement math ported from ccmaps-net; verified
+  (synthetic HVA translation shifts a section by exactly HVAMultiplier·offset;
+  two parts composite distinctly; usaguntur unchanged). Note: the loose sample
+  units all have empty bodies + identity HVAs, so the visible payoff shows on real
+  turreted vehicles (inside the game mixes). Remaining voxel work: selectable view
+  angle, art.ini TurretOffset (forward turret shift), applying a house colour to
+  the remap range.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

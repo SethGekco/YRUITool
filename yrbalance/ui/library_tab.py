@@ -32,8 +32,8 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
-    bag_sample_to_wav, parse_vxl, render_vxl, voxel_count, parse_vpl,
-    find_in_mixes,
+    bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
+    parse_vpl, parse_hva, find_in_mixes,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -306,16 +306,34 @@ class LibraryTab(QWidget):
                 self._set_art_pixmap(w, h, rgba)
                 return
             if vxl:
-                data = _resolve(vxl)
-                if not data:
-                    self.art_img.setText("(VXL not found in sources)")
-                    return
-                model = parse_vxl(data)
-                if voxel_count(model) == 0:
-                    self.art_img.setText("(empty voxel model)")
+                # composite the unit's body + turret + barrel voxels, each placed
+                # by its own HVA (frame 0), like the game draws a turreted unit
+                base = os.path.splitext(vxl)[0]
+                parts = []
+                for suffix in ("", "TUR", "BARL"):
+                    vdata = _resolve(f"{base}{suffix}.VXL")
+                    if not vdata:
+                        continue
+                    try:
+                        mdl = parse_vxl(vdata)
+                    except Exception:
+                        continue
+                    if voxel_count(mdl) == 0:
+                        continue
+                    hva = None
+                    hdata = _resolve(f"{base}{suffix}.HVA")
+                    if hdata:
+                        try:
+                            hva = parse_hva(hdata)
+                        except Exception:
+                            hva = None
+                    parts.append((mdl, hva))
+                if not parts:
+                    self.art_img.setText("(VXL not found / empty)")
                     return
                 pal = self._preview_palette(sid, scan)
-                w, h, rgba = render_vxl(model, palette=pal, vpl=self._preview_vpl(sid))
+                w, h, rgba = render_parts(parts, palette=pal,
+                                          vpl=self._preview_vpl(sid))
                 self._set_art_pixmap(w, h, rgba)
                 return
             self.art_img.setText("(no SHP/VXL art to preview)")
