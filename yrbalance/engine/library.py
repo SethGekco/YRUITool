@@ -212,9 +212,16 @@ def collection_keys(collection):
 
 
 # ── item scanning ───────────────────────────────────────────────────────────
-def scan_items(source, config=None):
-    """All library items for a source, grouped later by kind. Reuses the
-    encyclopedia index for TechnoTypes and the sibling aimd for AITriggerTypes."""
+@dataclass
+class SourceScan:
+    items: list = field(default_factory=list)   # [LibraryItem]
+    index: object = None                         # encyclopedia ModIndex or None
+    aimd_map: dict = None                        # sibling aimd section map or None
+
+
+def scan_source(source, config=None):
+    """Scan a source once: the full encyclopedia index (for detail/assets), the
+    sibling aimd section map, and the flat item list grouped later by kind."""
     from .encyclopedia import build_mod_index   # local: avoids import cycle
     items = []
     try:
@@ -227,17 +234,21 @@ def scan_items(source, config=None):
             items.append(LibraryItem(source.id, u.name, kind,
                                      obtain=getattr(u, "obtain", ""),
                                      detail=getattr(u, "obtain", "")))
-    # AI triggers from the sibling aimd
+    aimd_map = None
     for aimd in _siblings(source.rules_path, ("aimd.ini", "ai.ini")):
-        amap = build_section_map(parse_ini_lines(aimd))[0]
-        trig = amap.get("aitriggertypes")
+        aimd_map = build_section_map(parse_ini_lines(aimd))[0]
+        trig = aimd_map.get("aitriggertypes")
         if trig:
             for _klow, (_li, kr, vr) in trig["keys"].items():
                 nm = vr.split(",", 1)[0].strip()
-                items.append(LibraryItem(source.id, kr, "ai",
-                                         detail=nm or kr))
+                items.append(LibraryItem(source.id, kr, "ai", detail=nm or kr))
         break
-    return items
+    return SourceScan(items=items, index=idx, aimd_map=aimd_map)
+
+
+def scan_items(source, config=None):
+    """Just the item list for a source (grouped later by kind)."""
+    return scan_source(source, config).items
 
 
 def _siblings(rules_path, names):

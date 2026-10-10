@@ -90,6 +90,30 @@ def main():
         print(f"balance culture shown for folder: {'OK' if bal_ok else 'FAIL'}")
         ok = ok and bal_ok
 
+        # clicking a techno item fills the detail pane (rules preview + files)
+        tab.ktabs.setCurrentIndex(0)
+        nt0 = next(r for r, it in enumerate(veh_items)
+                   if it.name.lower() == "newtank")
+        veh_tbl.setCurrentCell(nt0, 0)
+        det = tab.detail_text.toPlainText()
+        det_ok = "NEWTANK" in det and "Strength" in det
+        print(f"detail pane: techno rules preview: {'OK' if det_ok else 'FAIL'}")
+        ok = ok and det_ok
+
+        # clicking the AI trigger shows its closure
+        ai_idx = [k for k, _ in __import__(
+            "yrbalance.ui.library_tab", fromlist=["_KIND_ORDER"]
+        )._KIND_ORDER].index("ai")
+        tab.ktabs.setCurrentIndex(ai_idx)
+        ai_tbl2, ai_items2 = tab._tables["ai"]
+        tr_row = next(r for r, it in enumerate(ai_items2)
+                      if it.name.lower() == "tr1")
+        ai_tbl2.setCurrentCell(tr_row, 0)
+        aidet = tab.detail_text.toPlainText()
+        ai_det_ok = "Big Push" in aidet and "push team" in aidet
+        print(f"detail pane: AI closure shown: {'OK' if ai_det_ok else 'FAIL'}")
+        ok = ok and ai_det_ok
+
         # add selected vehicle to 'favs' (mock the collection picker)
         QInputDialog.getItem = staticmethod(lambda *a, **k: ("favs", True))
         tab.ktabs.setCurrentIndex(0)

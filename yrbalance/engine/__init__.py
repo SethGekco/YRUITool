@@ -196,9 +196,9 @@ from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
     create_collection, delete_collection, add_to_collection,
-    remove_from_collection, collection_keys, scan_items,
+    remove_from_collection, collection_keys, scan_items, scan_source,
     balance_culture, describe_culture, conversion_factors,
-    LibrarySource, Collection, LibraryItem,
+    LibrarySource, Collection, LibraryItem, SourceScan,
 )
 
 __all__ = [
@@ -277,9 +277,9 @@ __all__ = [
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",
     "create_collection", "delete_collection", "add_to_collection",
-    "remove_from_collection", "collection_keys", "scan_items",
+    "remove_from_collection", "collection_keys", "scan_items", "scan_source",
     "balance_culture", "describe_culture", "conversion_factors",
-    "LibrarySource", "Collection", "LibraryItem",
+    "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
     "classify_obtainability", "Obtainability",
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",

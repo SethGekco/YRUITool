@@ -88,10 +88,18 @@ a deterministic `describe_culture` summary and an **Ask Eva to summarize** butto
 (`eva.summarize_balance`). `conversion_factors(A, B)` gives per-stat multipliers
 to move content between two mods' scales. Source scan is lazy (first tab show) so
 big mods never slow startup. Sidecar `~/.yrbalancetool/library.json`. Tested
-(engine + offscreen UI). Remaining:
-- Per-item detail/open (jump to encyclopedia or porter from a library row).
-- Cross-mod tags on library items; "convert selected into THIS mod's culture"
-  action wired to the porter using `conversion_factors`.
+(engine + offscreen UI). Clicking an item opens a **detail pane** (rules preview via `unit_report` + a
+Files table with each asset's location/status; AI items show their trigger +
+closure via `extract_bundle`). Source scans are cached (`scan_source` → index +
+aimd) so detail is instant. Remaining:
+- **Art/audio rendering** — SHP/VXL thumbnail + audio playback in the detail
+  pane. Needs binary-format work (SHP+palette raster, VXL+HVA+VPL raster, AUD/
+  bag IMA-ADPCM decode→WAV). Reference impls to mirror: XCC (SHP/VXL/PAL/AUD),
+  OS SHP Builder, a VXL viewer (VXLSE III / OS Voxel Viewer). Hook into the
+  existing `resolve_media` extraction so previews work from loose files AND mixes.
+- "Convert selected into THIS mod's culture" action wired to the porter using
+  `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
+  porter from a row.
 - Background/incremental scan + caching keyed on rules mtime for very large mods.
 
 ## Version-aware vanilla baselines

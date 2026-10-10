@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
 
 from ..engine import (
     load_catalog, add_source, remove_source, set_source_summary,
-    create_collection, delete_collection, add_to_collection, scan_items,
-    describe_culture,
+    create_collection, delete_collection, add_to_collection, scan_source,
+    describe_culture, unit_report, extract_bundle,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -46,6 +46,7 @@ class LibraryTab(QWidget):
         self.sources = []
         self.collections = []
         self._items_by_source = {}         # source_id -> [LibraryItem]
+        self._scan_by_source = {}          # source_id -> SourceScan (index + aimd)
         self._tables = {}                  # kind -> (QTableWidget, [LibraryItem])
         self._col_desc = []                # per col_list row: ("all"/"auto"/"col", key)
 
@@ -85,7 +86,8 @@ class LibraryTab(QWidget):
         ll.addWidget(self.remove_btn)
         split.addWidget(left)
 
-        # ── center: kind tabs ────────────────────────────────────────────────
+        # ── center: kind tabs (top) + detail pane (bottom) ───────────────────
+        center = QSplitter(Qt.Vertical)
         self.ktabs = QTabWidget()
         for kind, title in _KIND_ORDER:
             tbl = QTableWidget(0, 3)
@@ -97,10 +99,14 @@ class LibraryTab(QWidget):
             tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
             tbl.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
             tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            tbl.itemSelectionChanged.connect(self._show_detail)
             self.ktabs.addTab(tbl, title)
             self._tables[kind] = (tbl, [])
-        self.ktabs.currentChanged.connect(lambda _i: self._apply_filter())
-        split.addWidget(self.ktabs)
+        self.ktabs.currentChanged.connect(self._on_tab_changed)
+        center.addWidget(self.ktabs)
+        center.addWidget(self._build_detail())
+        center.setSizes([360, 260])
+        split.addWidget(center)
 
         # ── right: balance culture ───────────────────────────────────────────
         right = QGroupBox("Balance culture")
@@ -131,15 +137,133 @@ class LibraryTab(QWidget):
             self._loaded = True
             self._reload()
 
+    # ── detail pane ───────────────────────────────────────────────────────────
+    def _build_detail(self):
+        w = QWidget()
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.addWidget(QLabel("<b>Detail</b> — rules preview"))
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setFont(QFont("monospace"))
+        ll.addWidget(self.detail_text, 1)
+        lay.addWidget(left, 3)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.addWidget(QLabel("<b>Files</b>"))
+        self.file_table = QTableWidget(0, 3)
+        self.file_table.setHorizontalHeaderLabels(["File", "Location", ""])
+        self.file_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.file_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.file_table.verticalHeader().setVisible(False)
+        self.file_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch)
+        self.file_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents)
+        self.file_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeToContents)
+        rl.addWidget(self.file_table, 1)
+        self.preview = QLabel("Art / audio preview: select an item.")
+        self.preview.setWordWrap(True)
+        self.preview.setStyleSheet("color:#888;")
+        rl.addWidget(self.preview)
+        lay.addWidget(right, 2)
+        return w
+
+    def _on_tab_changed(self, _i):
+        self._apply_filter()
+        self._show_detail()
+
+    _STATUS = {"present": "✓ present", "vanilla": "· vanilla",
+               "missing": "✗ missing", "sound": "♪ audio"}
+
+    def _show_detail(self):
+        it = self._selected_item()
+        if it is None:
+            self.detail_text.setPlainText("")
+            self.file_table.setRowCount(0)
+            self.preview.setText("Art / audio preview: select an item.")
+            return
+        scan = self._scan_by_source.get(it.source_id)
+        if it.kind == "ai":
+            self._detail_ai(it, scan)
+        else:
+            self._detail_techno(it, scan)
+
+    def _detail_techno(self, it, scan):
+        entry = None
+        if scan is not None and scan.index is not None:
+            entry = scan.index.units.get(it.name.lower())
+        if entry is None:
+            self.detail_text.setPlainText(f"[{it.name}] — no detail available "
+                                          "(source not scanned).")
+            self.file_table.setRowCount(0)
+            self.preview.setText("")
+            return
+        self.detail_text.setPlainText(unit_report(entry))
+        self._fill_files(entry.assets)
+        # art/audio hint from the asset list
+        art = [a.name for a in entry.assets
+               if a.name.lower().endswith((".vxl", ".shp"))]
+        aud = [a.name for a in entry.assets if a.status == "sound"
+               or a.name.lower().endswith(".wav")]
+        bits = []
+        if art:
+            bits.append("art: " + ", ".join(art[:4]))
+        if aud:
+            bits.append("audio: " + ", ".join(aud[:4]))
+        self.preview.setText(
+            ("  |  ".join(bits) + "\n(in-app rendering/playback pending viewer "
+             "integration)") if bits else "No art/audio assets referenced.")
+
+    def _detail_ai(self, it, scan):
+        self.file_table.setRowCount(0)
+        if scan is None or scan.aimd_map is None:
+            self.detail_text.setPlainText(f"{it.name} — no aimd found for source.")
+            self.preview.setText("")
+            return
+        try:
+            ent = extract_bundle(scan.aimd_map, it.name)
+        except Exception as e:
+            self.detail_text.setPlainText(f"{it.name}: {type(e).__name__}: {e}")
+            self.preview.setText("")
+            return
+        L = [f"[AITriggerTypes] {ent.trigger_id}", f"  {ent.trigger_def}", ""]
+        for b in ent.blocks:
+            L.append(f"[{b.id}]  ; {b.kind}")
+            L += [f"  {k}={v}" for k, v in b.keys]
+            L.append("")
+        if ent.units:
+            L.append("units fielded: " + ", ".join(ent.units))
+        self.detail_text.setPlainText("\n".join(L))
+        self.preview.setText("AI entry — no media; units above carry the art.")
+
+    def _fill_files(self, assets):
+        self.file_table.setRowCount(len(assets))
+        for r, a in enumerate(assets):
+            self.file_table.setItem(r, 0, QTableWidgetItem(a.name))
+            self.file_table.setItem(r, 1, QTableWidgetItem(a.location))
+            self.file_table.setItem(r, 2, QTableWidgetItem(
+                self._STATUS.get(a.status, a.status)))
+
     # ── data ─────────────────────────────────────────────────────────────────
     def _reload(self, keep_row=None):
         self.sources, self.collections = load_catalog()
         self._items_by_source = {}
+        self._scan_by_source = {}
         for s in self.sources:
             try:
-                self._items_by_source[s.id] = scan_items(s)
+                scan = scan_source(s)
             except Exception:
-                self._items_by_source[s.id] = []
+                scan = None
+            self._scan_by_source[s.id] = scan
+            self._items_by_source[s.id] = scan.items if scan else []
         self._rebuild_collections(keep_row)
         self._rebuild_tables()
         self._apply_filter()
