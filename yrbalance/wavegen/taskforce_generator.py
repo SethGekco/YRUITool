@@ -1125,6 +1125,17 @@ def role_unit_filter(role: str, rec: UnitRecord,
         return (rec.mobility in (MOBILITY_AERIAL, MOBILITY_AIRCRAFT,
                                   "Jumpjet", "Aircraft", "Helicopter")
                 and not rec.is_transport)
+    # Ground attack-type roles: require the matching anti-X capability so the
+    # roles actually differentiate. The WeaponAnalyzer tags each unit with the
+    # armour classes it can meaningfully hit (AG-Anti_Infantry / AG-Anti_Vehicle
+    # / AG-Anti_Building); without this a sniper lands in an ANTI_VEHICLE wave and
+    # a tank in an ANTI_INF wave (both roles produced identical compositions).
+    if role == "ANTI_INF":
+        return "AG-Anti_Infantry" in rec.roles
+    if role == "ANTI_VEHICLE":
+        return "AG-Anti_Vehicle" in rec.roles
+    if role == "ANTI_BUILDING":
+        return "AG-Anti_Building" in rec.roles
     # All other roles: exclude PURE transports (won't contribute DPS).
     # Combat-viable transports (Gunner=yes IFVs, weaponized Nighthawks) still
     # belong — see rulesmd_parser.is_combat_transport.

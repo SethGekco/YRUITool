@@ -1908,12 +1908,20 @@ class TransportCompositionGenerator:
     def _get_or_create_script(self, key: str,
                                actions: list[tuple[int,int]],
                                name: str) -> str:
-        # Validate action ordering against the vanilla-AI grammar so nonsensical
-        # sequences (e.g. unloading while gathered OUTSIDE the enemy base) are
-        # surfaced at generation time rather than discovered in-game.
+        # Validate action ordering against the vanilla-AI grammar, AUTO-REPAIR the
+        # known-safe ordering bugs (e.g. an assembly action sitting right before
+        # an unload → MoveToEnemyBldg so units unload AT the target, not at the
+        # gather point), and surface any remaining ERRORs at generation time
+        # rather than in-game.
+        actions = list(actions)
         try:
             from . import script_validator
-            for f in script_validator.validate(list(actions)):
+            fixed, notes = script_validator.repair(actions)
+            if notes:
+                actions = fixed
+                for note in notes:
+                    print(f"  [script-repair] '{name}' ({key}): {note}")
+            for f in script_validator.validate(actions):
                 if f.severity == "ERROR":
                     print(f"  [script-validate] ERROR in '{name}' ({key}) "
                           f"@action {f.index}: {f.message}")
