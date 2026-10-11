@@ -199,6 +199,30 @@ def main():
               f"{'OK' if conv_dlg_ok else 'FAIL'}")
         ok = ok and conv_dlg_ok
 
+        # cross-mod tags: set tags on NEWTANK, persist + appear in the filter
+        from yrbalance.engine import load_tags
+        tab.ktabs.setCurrentIndex(0)
+        veh_t, veh_i = tab._tables["vehicle"]
+        nt_r = next(r for r, i in enumerate(veh_i) if i.name.lower() == "newtank")
+        veh_t.setCurrentCell(nt_r, 0)
+        tab.tags_edit.setText("favourite, op")
+        tab._set_item_tags()
+        stored = load_tags(rules)
+        tag_ok = ("favourite" in stored.get("newtank", [])
+                  and tab.tag_combo.findData("op") >= 0)
+        print(f"tag set + persisted + in combo: {'OK' if tag_ok else 'FAIL'}")
+        ok = ok and tag_ok
+
+        # filter by the 'favourite' tag → only NEWTANK visible in Vehicles
+        tab.tag_combo.setCurrentIndex(tab.tag_combo.findData("favourite"))
+        tvis = sum(1 for r in range(veh_t.rowCount())
+                   if not veh_t.isRowHidden(r))
+        tfilt_ok = tvis == 1
+        print(f"tag filter narrows to tagged item: "
+              f"{'OK' if tfilt_ok else 'FAIL'}  visible={tvis}")
+        ok = ok and tfilt_ok
+        tab.tag_combo.setCurrentIndex(0)
+
         # real SHP render path (uses a game SHP if present on this machine)
         import glob
         import types

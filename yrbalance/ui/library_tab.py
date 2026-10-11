@@ -31,6 +31,7 @@ from ..engine import (
     load_catalog, add_source, remove_source, set_source_summary,
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, balance_culture, conversion_factors, convert_unit_stats,
+    convert_weapon_stats, load_tags, set_unit_tags, all_tags,
     unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
@@ -61,6 +62,7 @@ class LibraryTab(QWidget):
         self._col_desc = []                # per col_list row: ("all"/"auto"/"col", key)
         self._has_art = {}                 # (source_id, name_lower) -> bool
         self._pal_cache = {}               # source_id -> palette (list of rgb)
+        self._tags_by_source = {}          # source_id -> {unit_lower: [tags]}
         self._shared_vpl = None            # imported voxels.vpl (game lighting)
         self._vpl_import_started = False
 
@@ -80,6 +82,11 @@ class LibraryTab(QWidget):
         self.search.textChanged.connect(self._apply_filter)
         self.search.setMaximumWidth(280)
         bar.addWidget(self.search)
+        bar.addWidget(QLabel("Tag:"))
+        self.tag_combo = QComboBox()
+        self.tag_combo.addItem("All tags", None)
+        self.tag_combo.currentIndexChanged.connect(lambda _i: self._apply_filter())
+        bar.addWidget(self.tag_combo)
         root.addLayout(bar)
 
         # ── filter checkboxes (techno kinds; AI items ignore these) ───────────
@@ -191,6 +198,16 @@ class LibraryTab(QWidget):
         self.detail_text.setReadOnly(True)
         self.detail_text.setFont(QFont("monospace"))
         ll.addWidget(self.detail_text, 1)
+        trow = QHBoxLayout()
+        trow.addWidget(QLabel("Tags:"))
+        self.tags_edit = QLineEdit()
+        self.tags_edit.setPlaceholderText("comma-separated — cross-mod labels")
+        self.tags_edit.returnPressed.connect(self._set_item_tags)
+        trow.addWidget(self.tags_edit, 1)
+        set_tags = QPushButton("Set")
+        set_tags.clicked.connect(self._set_item_tags)
+        trow.addWidget(set_tags)
+        ll.addLayout(trow)
         lay.addWidget(left, 3)
 
         right = QWidget()
@@ -288,9 +305,13 @@ class LibraryTab(QWidget):
             self.file_table.setRowCount(0)
             self.art_img.clear()
             self.cameo_img.clear()
+            self.tags_edit.clear()
+            self.tags_edit.setEnabled(False)
             self._clear_audio()
             self.preview.setText("Art / audio preview: select an item.")
             return
+        self.tags_edit.setEnabled(True)
+        self.tags_edit.setText(", ".join(self._item_tags(it)))
         scan = self._scan_by_source.get(it.source_id)
         if it.kind == "ai":
             self._detail_ai(it, scan)
@@ -668,9 +689,36 @@ class LibraryTab(QWidget):
                 scan = None
             self._scan_by_source[s.id] = scan
             self._items_by_source[s.id] = scan.items if scan else []
+            try:
+                self._tags_by_source[s.id] = load_tags(s.rules_path)
+            except Exception:
+                self._tags_by_source[s.id] = {}
         self._rebuild_collections(keep_row)
         self._rebuild_tables()
+        self._refresh_tag_combo()
         self._apply_filter()
+
+    def _item_tags(self, item):
+        return self._tags_by_source.get(item.source_id, {}).get(
+            item.name.lower(), [])
+
+    def _all_tag_names(self):
+        names = set()
+        for tagmap in self._tags_by_source.values():
+            for tags in tagmap.values():
+                names.update(tags)
+        return sorted(names)
+
+    def _refresh_tag_combo(self):
+        cur = self.tag_combo.currentData()
+        self.tag_combo.blockSignals(True)
+        self.tag_combo.clear()
+        self.tag_combo.addItem("All tags", None)
+        for t in self._all_tag_names():
+            self.tag_combo.addItem(t, t)
+        i = self.tag_combo.findData(cur)
+        self.tag_combo.setCurrentIndex(i if i >= 0 else 0)
+        self.tag_combo.blockSignals(False)
 
     def _all_items(self):
         for sid, items in self._items_by_source.items():
@@ -756,11 +804,13 @@ class LibraryTab(QWidget):
     def _apply_filter(self):
         pred = self._current_predicate()
         text = self.search.text().strip().lower()
+        tag = self.tag_combo.currentData()
         for kind, title in _KIND_ORDER:
             tbl, items = self._tables[kind]
             shown = 0
             for r, it in enumerate(items):
                 vis = pred(it) and self._passes_checks(it) and (
+                    not tag or tag in self._item_tags(it)) and (
                     not text or text in it.name.lower()
                     or text in self._source_label(it.source_id).lower()
                     or text in (it.detail or it.obtain).lower())
@@ -855,6 +905,20 @@ class LibraryTab(QWidget):
             row = self.col_list.currentRow()
             self._reload(keep_row=row)
             self.status.setText(f"Added {it.name} → {name}.")
+
+    def _set_item_tags(self):
+        it = self._selected_item()
+        if it is None:
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            return
+        tags = [t.strip() for t in self.tags_edit.text().split(",") if t.strip()]
+        set_unit_tags(src.rules_path, it.name, tags)
+        self._tags_by_source[it.source_id] = load_tags(src.rules_path)
+        self._refresh_tag_combo()
+        self._apply_filter()
+        self.status.setText(f"Tagged {it.name}: {', '.join(tags) or '(none)'}")
 
     def _convert_selected(self):
         it = self._selected_item()
