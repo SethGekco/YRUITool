@@ -58,6 +58,92 @@ class _Worker(QThread):
             self.failed.emit(f"{type(e).__name__}: {e}")
 
 
+class _IncludeSelectDialog(QDialog):
+    """Per-file opt-in for the source mod's [#include] / [$include] graph. Shows the
+    include tree with a checkbox per file (checked = pull it in). Missing files are
+    shown disabled; mix-packed and cyclic files are labelled. Returns the set of
+    selected file identifiers (abs path for loose, ``mix:<name>`` for packed), or
+    None for "all" (nothing deselected)."""
+
+    def __init__(self, parent, graph):
+        super().__init__(parent)
+        self.setWindowTitle("Source includes — choose which to import")
+        self.resize(560, 420)
+        self._graph = graph
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel(
+            "Tick the included files to pull into the analysis. Unticking a file "
+            "also skips anything it includes. Missing files can't be selected."))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["include file", "source"])
+        self.tree.setColumnWidth(0, 360)
+        root.addWidget(self.tree, 1)
+
+        # children of the root node are the actual includes (skip the root file).
+        for child in graph.get("children", []):
+            self._add(self.tree.invisibleRootItem(), child)
+        self.tree.expandAll()
+
+        brow = QHBoxLayout()
+        all_b = QPushButton("All")
+        all_b.clicked.connect(lambda: self._set_all(True))
+        none_b = QPushButton("None")
+        none_b.clicked.connect(lambda: self._set_all(False))
+        brow.addWidget(all_b)
+        brow.addWidget(none_b)
+        brow.addStretch(1)
+        ok = QPushButton("OK")
+        ok.clicked.connect(self.accept)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        brow.addWidget(ok)
+        brow.addWidget(cancel)
+        root.addLayout(brow)
+
+    def _add(self, parent, node):
+        present = node.get("present", True)
+        cyc = node.get("cycle", False)
+        src = ("missing" if not present else
+               "cycle" if cyc else
+               "in mix" if node.get("in_mix") else "loose")
+        it = QTreeWidgetItem(parent, [node.get("name", "?"), src])
+        it.setData(0, Qt.UserRole, node.get("file"))
+        if present and not cyc:
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(0, Qt.Checked)
+        else:
+            it.setFlags(Qt.ItemIsEnabled)   # non-checkable, greyed
+        for c in node.get("children", []):
+            self._add(it, c)
+
+    def _iter(self, parent=None):
+        parent = parent or self.tree.invisibleRootItem()
+        for i in range(parent.childCount()):
+            it = parent.child(i)
+            yield it
+            yield from self._iter(it)
+
+    def _set_all(self, on):
+        for it in self._iter():
+            if it.flags() & Qt.ItemIsUserCheckable:
+                it.setCheckState(0, Qt.Checked if on else Qt.Unchecked)
+
+    def selection(self):
+        """Set of selected file ids, or None if every checkable file is checked
+        (i.e. nothing was deselected → equivalent to 'all')."""
+        sel, any_off = set(), False
+        for it in self._iter():
+            if not (it.flags() & Qt.ItemIsUserCheckable):
+                continue
+            if it.checkState(0) == Qt.Checked:
+                fid = it.data(0, Qt.UserRole)
+                if fid:
+                    sel.add(fid)
+            else:
+                any_off = True
+        return sel if any_off else None
+
+
 class PortDialog(QDialog):
     def __init__(self, main_window):
         super().__init__(main_window)
@@ -108,10 +194,21 @@ class PortDialog(QDialog):
             "Expand the old mod's Ares [#include] / Phobos [$include] graph so "
             "objects defined in included files (country / SW / split rules) are "
             "available to port, not just those in the main rulesmd.ini. Resolves "
-            "loose files relative to the source rules; missing ones are reported.")
+            "loose files relative to the source rules, then the mod's .mix "
+            "archives; missing ones are reported.")
+        self.inc_chk.toggled.connect(self._inc_toggled)
         arow.addWidget(self.inc_chk)
+        self.inc_btn = QPushButton("Includes…")
+        self.inc_btn.setToolTip(
+            "Choose per file which of the source mod's includes to pull in "
+            "(default: all).")
+        self.inc_btn.clicked.connect(self._choose_includes)
+        arow.addWidget(self.inc_btn)
         arow.addStretch(1)
         root.addLayout(arow)
+        # None = pull in every include (default); a set = only these file ids.
+        self._include_selection = None
+        self.src_edit.textChanged.connect(self._src_changed)
 
         self.status = QLabel("Pick the old mod and press Analyze.")
         self.status.setStyleSheet("color: gray;")
@@ -223,6 +320,48 @@ class PortDialog(QDialog):
     def _busy(self, busy):
         self.analyze_btn.setEnabled(not busy)
         self.run_btn.setEnabled(not busy and self.plan is not None)
+        self.inc_btn.setEnabled(not busy and self.inc_chk.isChecked())
+
+    def _src_changed(self, *_):
+        # a different source mod → reset the per-file include selection to "all".
+        self._include_selection = None
+
+    def _inc_toggled(self, on):
+        self.inc_btn.setEnabled(on)
+        if not on:
+            self._include_selection = None
+
+    def _choose_includes(self):
+        src = self.src_edit.text().strip()
+        if not src or not os.path.isfile(src):
+            QMessageBox.information(
+                self, "Includes", "Pick the old mod's rulesmd.ini first.")
+            return
+        try:
+            graph = include_graph(src)
+        except Exception as e:
+            QMessageBox.critical(self, "Includes", f"{type(e).__name__}: {e}")
+            return
+        if not graph.get("children"):
+            QMessageBox.information(
+                self, "Includes",
+                "This mod's rulesmd.ini has no [#include] / [$include] files.")
+            return
+        dlg = _IncludeSelectDialog(self, graph)
+        if self._include_selection is not None:
+            sel = self._include_selection
+            for it in dlg._iter():
+                if it.flags() & Qt.ItemIsUserCheckable:
+                    fid = it.data(0, Qt.UserRole)
+                    it.setCheckState(
+                        0, Qt.Checked if fid in sel else Qt.Unchecked)
+        if dlg.exec():
+            self._include_selection = dlg.selection()
+            n = ("all" if self._include_selection is None
+                 else str(len(self._include_selection)))
+            self.status.setText(
+                f"Include selection updated ({n} file(s) will be pulled in). "
+                "Press Analyze.")
 
     # ── analyze ─────────────────────────────────────────────────────────────
     def _analyze(self):
@@ -236,31 +375,36 @@ class PortDialog(QDialog):
         van = self.van_edit.text().strip()
         folder = os.path.dirname(src)
         resolve_inc = self.inc_chk.isChecked()
+        # Per-file opt-in applies to the rules include graph; None = pull all.
+        selection = self._include_selection if resolve_inc else None
+        allow = (lambda fid: fid in selection) if selection is not None else None
         self._busy(True)
         self.status.setText("Analyzing… (parsing mods, computing balance)")
 
-        def _map(path):
-            """Source map with includes resolved (when the toggle is on)."""
+        def _map(path, allow=None):
+            """Section map with includes resolved (when the toggle is on), honouring
+            the optional per-file `allow` opt-in."""
             if not path:
                 return None, []
             if resolve_inc:
                 missing = []
-                _l, smap, _o, _s = load_with_includes(path, missing=missing)
+                _l, smap, _o, _s = load_with_includes(
+                    path, allow=allow, missing=missing)
                 return smap, missing
             return build_section_map(parse_ini_lines(path))[0], []
 
         def work():
-            sm, src_missing = _map(src)
+            sm, src_missing = _map(src, allow=allow)      # rules: per-file opt-in
             vm = (build_section_map(parse_ini_lines(van))[0]
                   if van and os.path.isfile(van) else None)
             art_p = _sibling(folder, "artmd.ini", "art.ini")
             snd_p = _sibling(folder, "soundmd.ini", "sound.ini")
-            am, _ = _map(art_p) if art_p else (None, [])
+            am, _ = _map(art_p) if art_p else (None, [])   # art/sound: fully resolved
             sn, _ = _map(snd_p) if snd_p else (None, [])
             inc_files = []
             if resolve_inc:
                 inc_files = [os.path.basename(f) for f in
-                             flatten_graph(include_graph(src))][1:]
+                             flatten_graph(include_graph(src, allow=allow))][1:]
             plan = build_port_plan(sm, self.mw.section_map, vm,
                                    config=self.mw.config,
                                    src_art_map=am, src_sound_map=sn)
