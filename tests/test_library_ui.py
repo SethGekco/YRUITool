@@ -242,6 +242,20 @@ def main():
         print(f"rename mod folder → custom label: {'OK' if ren_ok else 'FAIL'}")
         ok = ok and ren_ok
 
+        # open-in-porter guards cleanly when no target rules are loaded
+        tab.ktabs.setCurrentIndex(0)
+        veh_t2, _vi = tab._tables["vehicle"]
+        veh_t2.setCurrentCell(0, 0)
+        mw.section_map = None                 # no target loaded in main window
+        try:
+            tab._open_in_porter()             # should hit the guard, not crash
+            porter_guard_ok = True
+        except Exception:
+            porter_guard_ok = False
+        print(f"open-in-porter guard (no target): "
+              f"{'OK' if porter_guard_ok else 'FAIL'}")
+        ok = ok and porter_guard_ok
+
         # real SHP render path (uses a game SHP if present on this machine)
         import glob
         import types

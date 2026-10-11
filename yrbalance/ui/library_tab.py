@@ -129,6 +129,11 @@ class LibraryTab(QWidget):
             "the mod currently loaded in the main window.")
         self.convert_btn.clicked.connect(self._convert_selected)
         ll.addWidget(self.convert_btn)
+        self.porter_btn = QPushButton("Open selected in Porter…")
+        self.porter_btn.setToolTip("Open the mod-content porter with this item's "
+                                   "mod as source, filtered to this unit.")
+        self.porter_btn.clicked.connect(self._open_in_porter)
+        ll.addWidget(self.porter_btn)
 
         # ── center: kind tabs (top) + detail pane (bottom) ───────────────────
         center = QSplitter(Qt.Vertical)
@@ -943,6 +948,33 @@ class LibraryTab(QWidget):
         self._refresh_tag_combo()
         self._apply_filter()
         self.status.setText(f"Tagged {it.name}: {', '.join(tags) or '(none)'}")
+
+    def _open_in_porter(self):
+        it = self._selected_item()
+        if it is None:
+            self.status.setText("Select an item to open in the porter.")
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            return
+        if not getattr(self.mw, "source_path", None) or \
+                getattr(self.mw, "section_map", None) is None:
+            QMessageBox.information(self, "Porter", "Load the target rules in the "
+                                    "main window first (the mod you're importing "
+                                    "INTO).")
+            return
+        from .port_dialog import PortDialog
+        dlg = PortDialog(self.mw)
+        dlg.src_edit.setText(src.rules_path)
+        if it.kind != "ai":
+            dlg.filter_edit.setText(it.name)
+        dlg._analyze()
+        # once the background scan fills the tree, filter it to this unit
+        if it.kind != "ai" and getattr(dlg, "_worker", None) is not None:
+            dlg._worker.done.connect(lambda _r: dlg._apply_filter(it.name))
+        dlg.show()
+        self.status.setText(f"Opened {it.name} in the porter "
+                            f"(source: {src.label}).")
 
     def _convert_selected(self):
         it = self._selected_item()
