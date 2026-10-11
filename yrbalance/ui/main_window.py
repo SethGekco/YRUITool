@@ -24,6 +24,7 @@ from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
 from .dynamic_section_tab import DynamicSectionTab
 from .history_tab import HistoryTab
+from .library_tab import LibraryTab
 from .eva_tab import EvaTab
 from .script_panel import ScriptPanel, ScriptTab, show_script_help
 
@@ -165,6 +166,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.category_tabs["bld"], "Structures")
         self.tabs.addTab(self.category_tabs["def"], "Defenses")
         self.tabs.addTab(self.history_tab, "History")
+        self.library_tab = LibraryTab(self)
+        self.tabs.addTab(self.library_tab, "Library")
         self.tabs.addTab(self.script_tab, "Custom Script")
         self.tabs.addTab(self.eva_tab, "Eva")
         root.addWidget(self.tabs)
@@ -399,6 +402,7 @@ class MainWindow(QMainWindow):
 
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
+        tools.addAction("AI library…", self.open_ai_library)
         tools.addAction("Port mod content…", self.port_mod_content)
         tools.addAction("Encyclopedia…", self.open_encyclopedia)
         tools.addAction("MIX browser…", self.open_mix_browser)
@@ -422,6 +426,11 @@ class MainWindow(QMainWindow):
         """Open the MIX archive browser."""
         from .mix_dialog import MixBrowserDialog
         MixBrowserDialog(self).exec()
+
+    def open_ai_library(self):
+        """Open the AI library (store/pull AITrigger bundles & blocks)."""
+        from .ai_library_dialog import AILibraryDialog
+        AILibraryDialog(self).exec()
 
     def port_mod_content(self):
         """Open the mod-content porter dialog."""

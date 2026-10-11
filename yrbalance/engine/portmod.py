@@ -413,16 +413,20 @@ def _resolve_sound(obj_name, src_map, src_sound_map):
 
 # ── plan assembly ───────────────────────────────────────────────────────────
 def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
-                    include_kinds=None, src_art_map=None, src_sound_map=None):
+                    include_kinds=None, src_art_map=None, src_sound_map=None,
+                    factors=None):
     """Produce a PortPlan. include_kinds limits which object kinds to port
     (default: all discovered). src_art_map/src_sound_map enable art/sound entry
-    resolution (the port then carries those entries, not just flags them)."""
+    resolution (the port then carries those entries, not just flags them).
+    `factors` ({factor_kind: {stat: StatFactor}}) overrides the computed
+    shared-unit factors — e.g. balance-culture conversion factors."""
     config = config or ModConfig.default()
     plan = PortPlan()
     plan.target_countries = target_countries(tgt_map)
     cset = plan.target_countries
     generics = _generic_prereqs(tgt_map)
-    plan.factors = compute_factors(src_map, tgt_map, vanilla_map)
+    plan.factors = (factors if factors is not None
+                    else compute_factors(src_map, tgt_map, vanilla_map))
     obtain = classify_obtainability(src_map, config, art_map=src_art_map)
 
     kinds = classify_new_objects(src_map, tgt_map, config, obtain=obtain)

@@ -210,7 +210,7 @@ def main(path):
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     expected = ["Global", "General", "AI", "Gameplay", "Infantry", "Vehicles",
                 "Naval", "Aircraft", "Structures", "Defenses", "History",
-                "Custom Script", "Eva"]
+                "Library", "Custom Script", "Eva"]
     struct_ok = labels == expected
     print(f"tab order/naming: {struct_ok}  {'OK' if struct_ok else 'FAIL ' + str(labels)}")
     ok = ok and struct_ok

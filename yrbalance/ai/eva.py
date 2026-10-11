@@ -127,6 +127,35 @@ def plan_tags(client, model, request, kinds, obtain_classes, existing_tags,
     return plan
 
 
+def summarize_balance(client, model, label, balance, num_ctx=None):
+    """Turn a mod's per-kind balance-culture factors into a short plain-English
+    profile. `balance` is {kind: {stat: {factor, confidence, samples}}} with
+    factor = mod/vanilla. Returns the prose, or an error string on failure."""
+    if not balance:
+        return "No vanilla baseline available — balance culture unknown."
+    rows = []
+    for kind, kd in balance.items():
+        stat_bits = ", ".join(
+            f"{stat} {d['factor']:.2f}× ({d['confidence']}, n={d['samples']})"
+            for stat, d in kd.items())
+        rows.append(f"- {kind}: {stat_bits}")
+    facts = "\n".join(rows)
+    sys_prompt = (
+        "You are a Red Alert 2 / Yuri's Revenge balance analyst. You are given a "
+        "mod's per-kind stat factors RELATIVE TO VANILLA (factor = mod / vanilla; "
+        ">1 means bigger than vanilla, <1 smaller). Write 2-4 sentences describing "
+        "this mod's 'balance culture' — its pace, economy, durability, tech feel — "
+        "so a modder can judge how to convert content into a differently-balanced "
+        "mod. Be concrete and cite the directions. No preamble, no markdown.")
+    messages = [{"role": "system", "content": sys_prompt},
+                {"role": "user",
+                 "content": f"Mod: {label}\nFactors vs vanilla:\n{facts}"}]
+    try:
+        return client.chat(messages, model, num_ctx=num_ctx).strip()
+    except Exception as e:
+        return f"(Eva unavailable: {type(e).__name__}: {e})"
+
+
 def _code_block(text):
     """Extract a fenced code block from a model reply.
 

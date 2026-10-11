@@ -159,7 +159,7 @@ from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
     is_vanilla_mix, is_stock_mix, stock_mix_names,
     VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
-    build_media_catalog, resolve_media, pack_media_mixes,
+    build_media_catalog, resolve_media, pack_media_mixes, find_in_mixes,
     collect_asset_ids, build_vanilla_asset_ids, vanilla_asset_ids, classify_missing,
     parse_audio_idx, read_audio_sample,
 )
@@ -183,6 +183,37 @@ from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     apply_port_plan, clean_owner, clean_prereq, target_countries,
     PortPlan, PortObject, StatFactor, StatChange,
+)
+from .portai import (
+    build_ai_import_plan, apply_ai_import, AIImportPlan, AIEntry,
+)
+from .ailib import (
+    load_library, save_library, add_entry, remove_entry, set_entry_meta,
+    library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
+    LibEntry, LibBlock, PullPlan, PullItem,
+)
+from .images import (
+    parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
+    house_remap_palette, HOUSE_COLORS, parse_pcx, ShpImage, ShpFrame, ImageError,
+)
+from .audio import (
+    decode_ima_adpcm, to_wav, decode_bag_sample, bag_sample_to_wav, AudioSample,
+)
+from .vxl import (
+    parse_vxl, render_vxl, render_parts, voxel_count,
+    VxlModel, VxlSection, VxlError,
+)
+from .vpl import parse_vpl, vpl_pages, Vpl, VplError
+from .hva import parse_hva, Hva, HvaError
+from .library import (
+    load_catalog, save_catalog, library_catalog_path,
+    add_source, remove_source, set_source_summary,
+    create_collection, delete_collection, rename_collection, rename_source,
+    add_to_collection,
+    remove_from_collection, collection_keys, scan_items, scan_source,
+    balance_culture, describe_culture, conversion_factors, convert_unit_stats,
+    convert_weapon_stats, culture_statfactors,
+    LibrarySource, Collection, LibraryItem, SourceScan,
 )
 
 __all__ = [
@@ -251,6 +282,35 @@ __all__ = [
     "build_port_plan", "classify_new_objects", "compute_factors",
     "plan_to_blueprint", "apply_port_plan", "clean_owner", "clean_prereq",
     "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
+    # portai
+    "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",
+    # ailib
+    "load_library", "save_library", "add_entry", "remove_entry", "set_entry_meta",
+    "library_path", "extract_block", "extract_bundle", "build_pull_plan",
+    "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
+    # images (SHP / palette)
+    "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
+    "best_frame_index", "house_remap_palette", "HOUSE_COLORS", "parse_pcx",
+    "ShpImage", "ShpFrame", "ImageError",
+    # audio (bag IMA-ADPCM → WAV)
+    "decode_ima_adpcm", "to_wav", "decode_bag_sample", "bag_sample_to_wav",
+    "AudioSample",
+    # vxl (voxel parse + isometric render)
+    "parse_vxl", "render_vxl", "render_parts", "voxel_count",
+    "VxlModel", "VxlSection", "VxlError",
+    # vpl (voxel palette lookup — game-accurate lighting)
+    "parse_vpl", "vpl_pages", "Vpl", "VplError",
+    # hva (voxel animation transforms)
+    "parse_hva", "Hva", "HvaError",
+    # library (asset/AI catalog)
+    "load_catalog", "save_catalog", "library_catalog_path",
+    "add_source", "remove_source", "set_source_summary",
+    "create_collection", "delete_collection", "rename_collection",
+    "rename_source", "add_to_collection",
+    "remove_from_collection", "collection_keys", "scan_items", "scan_source",
+    "balance_culture", "describe_culture", "conversion_factors",
+    "convert_unit_stats", "convert_weapon_stats", "culture_statfactors",
+    "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
     "classify_obtainability", "Obtainability",
     "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",
@@ -258,7 +318,7 @@ __all__ = [
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
     "is_vanilla_mix", "is_stock_mix", "stock_mix_names",
     "VANILLA_MIX_NAMES", "STOCK_MIX_NAMES", "KNOWN_FRAMEWORK_FILES",
-    "build_media_catalog", "resolve_media", "pack_media_mixes",
+    "build_media_catalog", "resolve_media", "pack_media_mixes", "find_in_mixes",
     "collect_asset_ids", "build_vanilla_asset_ids", "vanilla_asset_ids",
     "classify_missing", "parse_audio_idx", "read_audio_sample",
     # encyclopedia

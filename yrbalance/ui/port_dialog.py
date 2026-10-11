@@ -23,6 +23,7 @@ from ..engine import (
     plan_to_blueprint, make_backup, get_val,
     build_media_catalog, resolve_media, pack_media_mixes,
     vanilla_asset_ids, classify_missing, load_bookmarks,
+    build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
 )
 
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
@@ -165,8 +166,14 @@ class PortDialog(QDialog):
         self.apply_chk = QCheckBox("Apply to loaded mod (with backup)")
         self.apply_chk.setChecked(True)
         self.bp_chk = QCheckBox("Export blueprint")
+        self.ai_chk = QCheckBox("Also import AI (aimd)")
+        self.ai_chk.setToolTip(
+            "Bring the source mod's existing AI (TaskForces/Scripts/TeamTypes/"
+            "triggers) for the imported units into the target aimd.ini — re-mints "
+            "ids, rewrites references, cleans Owner/House. Backup kept.")
         drow.addWidget(self.apply_chk)
         drow.addWidget(self.bp_chk)
+        drow.addWidget(self.ai_chk)
         drow.addStretch(1)
         self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._run)
@@ -457,11 +464,61 @@ class PortDialog(QDialog):
         if self.media_chk.isChecked():
             media_msg = self._transfer_media(selected, folder)
 
+        ai_msg = ""
+        if self.ai_chk.isChecked():
+            ai_msg = self._import_ai(selected, folder, tmap)
+
         self.mw._load_rules_path(rules_path)   # refresh the loaded view
         return (f"Applied: {summ['sections']} section(s), "
                 f"{summ['registered']} registered, {summ['art']} art, "
                 f"{summ['sound']} sound. Wrote: {', '.join(written)} "
-                f"(backups kept).{media_msg}")
+                f"(backups kept).{media_msg}{ai_msg}")
+
+    def _import_ai(self, selected, target_folder, target_rules_map):
+        """Transplant the source mod's AI for the ported units into the target's
+        aimd.ini (sibling of the target rules). Backup kept; result is linted."""
+        techno_kinds = {"infantry", "vehicle", "aircraft", "building",
+                        "building_dummy"}
+        ported = {o.name for o in self.plan.objects
+                  if o.name in selected and o.kind in techno_kinds}
+        if not ported:
+            return "\nAI: no units selected — skipped."
+
+        src_ai = _sibling(os.path.dirname(self.src_edit.text()),
+                          "aimd.ini", "ai.ini")
+        tgt_ai = _sibling(target_folder, "aimd.ini", "ai.ini")
+        if not src_ai:
+            return "\nAI: source mod has no aimd.ini — skipped."
+        if not tgt_ai:
+            return "\nAI: target has no aimd.ini — skipped."
+
+        src_map = build_section_map(parse_ini_lines(src_ai))[0]
+        tl = parse_ini_lines(tgt_ai)
+        tgt_map = build_section_map(tl)[0]
+
+        avail = set(ported)
+        for reg in ("InfantryTypes", "VehicleTypes", "AircraftTypes",
+                    "BuildingTypes"):
+            avail.update(parse_type_list(target_rules_map, reg))
+        countries = list(self.plan.target_countries)
+
+        plan = build_ai_import_plan(src_map, tgt_map, ported_units=ported,
+                                    available_units=avail,
+                                    target_countries=countries)
+        if not plan.entries:
+            return "\nAI: no AI in the source references the imported units."
+
+        make_backup(tgt_ai, None, keep=10)
+        summ = apply_ai_import(tl, tgt_map, plan)
+        _write(tgt_ai, tl)
+
+        errs = sum(1 for f in lint_ai(build_section_map(tl)[0], target_rules_map)
+                   if f.severity == "error")
+        notes = sum(1 for e in plan.entries if e.warnings)
+        return (f"\nAI: imported {summ['teamtype']} team(s), "
+                f"{summ['taskforce']} taskforce(s), {summ['script']} script(s), "
+                f"{summ['trigger']} trigger(s) into {os.path.basename(tgt_ai)} "
+                f"(backup kept); {notes} with notes; lint: {errs} error(s).")
 
     def _transfer_media(self, selected, target_folder):
         names = set()

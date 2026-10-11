@@ -39,6 +39,167 @@ dialog (base mix name + max files/mix). Remaining niceties:
 - **Cameo gaps** — some units' cameos aren't in the mod's mixes; media transfer
   reports them as not-found. Could cross-check vanilla cameos / warn in the UI.
 
+## AI-import (transplant an old mod's aimd.ini AI) — SHIPPED
+`engine/portai.py`: for a set of ported units, closes over the AI graph
+(unit→TaskForce→TeamType+Script→AITrigger via the PRIMARY team), re-mints every
+id collision-free (`F0000000-G…`), rewrites all id-string references, cleans
+`House=`/trigger `Owner` against the target's countries, neutralizes non-imported
+backup teams (Team2→0 with a note), and flags dangling units + index-ref script
+actions (18 Join Team) for manual review. `apply_ai_import` appends sections +
+registers them in the index lists + appends triggers to `[AITriggerTypes]`.
+Wired into the Port dialog as the opt-in **"Also import AI (aimd)"** checkbox
+(backs up the target aimd, lints the result). Validated on the turkey-mod →
+cncnet-edition target: 10 units → 29 TF / 14 script / 32 team / 36 trigger, **0
+new ref-resolution errors** (the 9 that remain are the target mod's own
+pre-existing dangling triggers). Tested (`tests/test_portai.py`). Remaining:
+proper script *formation* and role/feasibility grading are the generator's job,
+not import's — see the AI library item next.
+
+## AI library — store AI blocks out of aimd.ini — SHIPPED
+`engine/ailib.py` + `ui/ai_library_dialog.py` (Tools → AI library…). Stores
+AITrigger *bundles* (trigger + primary/backup teams + their TaskForces & Scripts)
+or single blocks (TaskForce/Script/TeamType) in a sidecar
+(`~/.yrbalancetool/ailibrary.json`, never the mod). Pull back into any aimd reuses
+portai's re-mint + ref-rewrite + Owner/House cleanup, PLUS:
+- **dedup/merge** — a block byte-identical (ignoring Name) to one already in the
+  target is *reused* (refs repoint, nothing minted); near-identical blocks
+  (Jaccard ≥ threshold, default 95%, adjustable in the pull dialog) are added as
+  new WITH a warning;
+- **unit deps** — referenced units are listed; per unit the user can leave-and-warn,
+  remap to an existing unit, or bring a bundled stub TechnoType section;
+- every entry carries a free-form **Private notes** box and a separate **Credits**
+  box (round-trip in the sidecar; editable in the dialog). Exported encyclopedia
+  units get the same via a `<unit>.notes.md` sidecar (template on first export,
+  preserved on re-export).
+Validated: unit test + offscreen UI test; real-data self-pull reuses all 6 blocks,
+cross-mod pull adds 0 new ref errors. Remaining: library-wide search/tags; a
+"grade this AI / find bugs" pass (long-term, per Rex).
+
+## Library tab — cross-mod asset/AI catalog — SHIPPED (v1)
+`engine/library.py` + `ui/library_tab.py` (main-window "Library" tab). Adds mods
+as *sources* by REFERENCE (read live) or SNAPSHOT (rules/aimd/art/sound copied
+into ~/.yrbalancetool/library/<id>/). Fixed KIND sub-tabs (Vehicles/Buildings/
+Infantry/Aircraft/AI content/Other) aggregate that kind across every source; a
+live search box hides non-matching rows as you type. Left panel = collections:
+"All sources", one auto 📁 folder per mod, plus user ★ collections (create/delete,
+add selected item, filter). Each source carries an estimated **balance culture**
+— per-kind factors vs vanilla via `compute_factors` (factor = mod/vanilla), with
+a deterministic `describe_culture` summary and an **Ask Eva to summarize** button
+(`eva.summarize_balance`). `conversion_factors(A, B)` gives per-stat multipliers
+to move content between two mods' scales. Source scan is lazy (first tab show) so
+big mods never slow startup. Sidecar `~/.yrbalancetool/library.json`. Tested
+(engine + offscreen UI). Clicking an item opens a **detail pane** (rules preview via `unit_report` + a
+Files table with each asset's location/status; AI items show their trigger +
+closure via `extract_bundle`). Source scans are cached (`scan_source` → index +
+aimd) so detail is instant. Remaining:
+- **SHP preview — SHIPPED.** `engine/images.py` decodes SHP(TS/RA2) (raw +
+  RLE-Zero) and VGA `.pal` (6-bit→8-bit), renders a frame to RGBA (index 0
+  transparent). The Library detail pane shows the best frame as a QPixmap,
+  resolving the SHP via `resolve_media` (loose OR mix) and picking a palette
+  (loose unittem/temperat/… → mix → grayscale fallback). Validated on real game
+  SHPs (`button14`, `ygplast_bd`, etc.) + synthetic round-trip test
+  (`test_images`). Palette selection is approximate (not yet theater-aware) and
+  SHP is static (no animation) — refine later.
+- **Audio playback — SHIPPED.** `engine/audio.py` decodes RA2/YR `.bag` samples
+  (Westwood IMA-ADPCM, state reset every `chunk_size` bytes per the `.idx`) to
+  16-bit PCM and wraps RIFF/WAVE. The detail pane lists a unit's resolvable bag
+  samples with **▶ Play** (best-effort OS player — paplay/aplay/afplay/winsound,
+  since QtMultimedia isn't bundled) and **Export WAV…**. Format was pinned on real
+  data (continuous decode railed ~22% of samples; per-chunk reset → 0%); output
+  verified valid by stdlib `wave`. Tested (`test_audio` + UI). Remaining audio:
+  playback for samples inside a mix (currently loose-bag catalog entries), and
+  bundling QtMultimedia for in-app playback without a system player.
+- **VXL preview — SHIPPED (v1).** `engine/vxl.py` parses VXL (header/sections/
+  span bodies/tailers) and renders a fixed ~2:1 isometric still with a z-buffer +
+  mild height shading. Validated across 17 real files (8 rendered, 9 genuinely
+  empty body-sections, 0 errors) and visually (usaguntur reads as the USA cannon).
+  RA2 VXLs embed an EMPTY palette, so colour comes from an external unit palette
+  (same resolver as SHP: loose unit*.pal → mod mix → grayscale fallback) — grayscale
+  is recognizable, a real `unittem.pal` gives full colour. Tested (`test_vxl` +
+  UI). Remaining: **normal/VPL lighting** (needs TS/RA2 normal tables — refs:
+  Banshee's OS Voxel Viewer Delphi/OpenGL at svn.ppmsite.com, XCC), **HVA +
+  per-section/turret placement** (currently all sections share voxel coords),
+  selectable view angle, and a **bundled/standard `unittem.pal`** so colour is the
+  default without the user supplying one. SHP animation also remains.
+- **PCX cameos — SHIPPED.** `images.parse_pcx` decodes 8-bit RLE PCX (the format
+  RA2/Ares cameos use) with its trailing 256-colour palette → RGBA (validated on
+  real cameo PCX + tested). The Library detail pane shows a **cameo thumbnail**
+  from the unit's art `Cameo=` field — tries `<cameo>.PCX` then `<cameo>.SHP`
+  (house-remap palette) — so PCX cameos the encyclopedia had marked missing render.
+- **VXL normal lighting — SHIPPED.** `engine/vxl_normals.py` carries the TS (36)
+  and RA2 (245) surface-normal tables extracted verbatim from zzattack's
+  ccmaps-net (`VxlFile.cs`; all unit vectors). `render_vxl` now diffuse-lights each
+  voxel from its stored normal — colour × (Ambient 0.8 + Diffuse 1.3 · max(dot(N,
+  light), 0)), light = TS −X / YR −X rotated 45° about Z — matching ccmaps-net's
+  software rasterizer; falls back to height shading when a section has no normal
+  table. Verified visually (usaguntur shows proper dome curvature + barrel
+  depth). Still approximate vs the game: no VPL page remap (uses direct RGB
+  diffuse), base light direction only (no per-section HVA transform), fixed view.
+- **VPL page lighting — SHIPPED.** `engine/vpl.py` parses `voxels.vpl` (header +
+  768 palette + numSections×256 pages) and computes the per-normal lighting page
+  (Blinn-Phong `clamp((diffuse+specular)*16)`, specularStrength 3.0, neutral
+  253-255) — ported verbatim from ccmaps-net. `render_vxl(..., vpl=, direction=32)`
+  remaps each voxel's colour index through its page before the palette lookup
+  (`rgb = unit_palette[vpl[page][colour]]`) — the game's real voxel lighting.
+  Verified against a real 32-page `voxels.vpl` extracted from ra2.mix (looks
+  game-accurate; house-remap voxels show as magenta as expected without a house
+  colour). The Library uses a `voxels.vpl` the mod ships loose, else a shared copy
+  **auto-imported once from the game mixes** (`mixlib.find_in_mixes` deep-searches
+  nested/encrypted mixes; ~20s in a background thread, cached to
+  `~/.yrbalancetool/voxels.vpl` and reused forever), else diffuse. Tested
+  (`test_vpl` incl. a synthetic nested-mix `find_in_mixes`; import flow verified
+  end-to-end on real mixes).
+- **HVA / per-section turret placement — SHIPPED.** `engine/hva.py` parses the
+  animation transforms; `vxl.py` now places each section by its HVA frame-0 matrix
+  (translation scaled by HVAMultiplier·Scale, atop MinBounds, using real per-axis
+  Scale = (Max−Min)/Size — the tailer `tb+12` float was HVAMultiplier, not scale)
+  in a shared world space. `render_parts([(model, hva), …])` composites a unit's
+  **body + turret + barrel** (the game draws turrets as separate `*tur.vxl` /
+  `*barl.vxl` files); the Library auto-resolves those siblings + their `.hva`s and
+  renders them together. Matrix/placement math ported from ccmaps-net; verified
+  (synthetic HVA translation shifts a section by exactly HVAMultiplier·offset;
+  two parts composite distinctly; usaguntur unchanged). Note: the loose sample
+  units all have empty bodies + identity HVAs, so the visible payoff shows on real
+  turreted vehicles (inside the game mixes).
+- **art.ini TurretOffset — SHIPPED.** `render_parts` parts may carry a per-part
+  world offset; the Library reads `TurretOffset` (ReadFloat) from the unit's art
+  entry and shifts the turret + barrel by `0.18 · TurretOffset` along world X —
+  ported from ccmaps-net (`UnitDrawable` sets `TurretVoxelOffset`, `VxlRenderer`
+  applies `translate(0.18·offset,0,0)` to turret/barrel only). Verified: a +X
+  offset of 10 shifts a part's projected ix by exactly 10; visually the turret
+  copy repositions forward.
+- **House-colour tinting — SHIPPED.** `images.house_remap_palette(palette, hsv)`
+  rebuilds the remap range (indices 16-31, per the VPL header) into a house
+  colour's 16 shades using gamemd's exact builder (hue kept, saturation up a sine,
+  value down a cosine, via RA2's integer HSV→RGB) — ported from ccmaps-net
+  `Palette.Remap`. `HOUSE_COLORS` presets (Red/Blue/Green/…). The Library detail
+  pane has a House-colour combo (default Red, None to disable) applied to BOTH SHP
+  and VXL previews, so the player-colour parts render tinted instead of raw
+  magenta. Verified visually (usaguntur dome → red/blue) + tested.
+- **Selectable voxel view angle — SHIPPED.** `render_parts(..., view_deg=)` rotates
+  the model about Z before the isometric projection; the Library detail pane has a
+  View combo (0/45/…/315°) for voxels. Verified (180° mirrors the projection
+  exactly; visually the cannon faces different directions). Lighting stays attached
+  to the model faces (VPL computed in model space), fine for a preview.
+- **"Convert → current mod culture" — SHIPPED.** `convert_unit_stats` rescales a
+  unit's Cost/Strength/Speed by `conversion_factors(sourceMod, currentMod)` (both
+  cultures vs vanilla). The Library has a "Convert selected → current mod culture…"
+  button → a dialog showing from/to culture summaries, a per-stat from→to→×factor
+  table, and the converted rules section (copy to clipboard). Tested. Now also
+  converts the unit's **weapons** (Damage/ROF/Range via the 'weapon' culture
+  factor, which balance_culture already computes) — the dialog shows a Section
+  column and emits the unit + weapon sections together. **Apply through the porter
+  — SHIPPED:** `build_port_plan(factors=…)` now accepts an override, and
+  `culture_statfactors` wraps the conversion multipliers as the porter's StatFactor
+  shape; the Convert dialog's "Apply to current mod (porter)" button ports the unit
+  + its weapon chain into the loaded mod's rules with the culture factors (backup
+  kept, rules only — full media via Tools → Port). **Jump-to-porter — SHIPPED:**
+  an "Open selected in Porter…" button opens the Port dialog with this item's mod
+  as source, kicks the Analyze scan, and filters the list to the unit (mirrors the
+  encyclopedia's send-to-porter bridge). Remaining: jump-to-encyclopedia from a
+  row; media transfer on the one-click culture apply.
+- Background/incremental scan + caching keyed on rules mtime for very large mods.
+
 ## Version-aware vanilla baselines
 Keep multiple vanilla `rules`/`art`/… sets for different patch versions, and pick
 the right baseline when diffing/porting (the port's balance cross-check and the
