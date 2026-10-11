@@ -1,0 +1,661 @@
+; ============================================================================
+; AITriggerTypeExt — Full Tag Reference
+; ============================================================================
+;
+; Every tag added by the AITriggerTypeExt DLL is listed below with an equal
+; sign and a brief comment. This is INI syntax so it opens in any editor.
+;
+; This is a REFERENCE only. Do not copy the whole file into rulesmd.ini
+; or aimd.ini. Copy only the specific tags you want.
+;
+; Status marker legend (in the ; [ ] column):
+;   [ ]  designed, not implemented in DLL
+;   [C]  implemented (compiles clean)
+;   [T]  loaded in-game without errors
+;   [V]  verified working
+;   [X]  implemented but confirmed broken
+;
+; Version: matches YR AI Wave Generator v31 tooling notes.
+
+; ============================================================================
+; SECTION 1 — rulesmd.ini
+; ============================================================================
+
+[Debug]
+DisplayAIWaveMessages=no                     ; [ ] no/yes/log/both — global toggle for AIExt debug output
+
+[DPSGroupTypes]                              ; PLANNED — not in DLL yet
+GROUP_NAME=UNIT1,UNIT2                       ; [ ] comma-list of TechnoType IDs forming a named group
+GROUP_NAME.Ratio=1.0,1.0                     ; [ ] per-entry damage weight (default 1.0 for all)
+
+[AISuperWeaponValues]                        ; PLANNED — not in DLL yet
+IonCannon.Target=Enemy                       ; [ ] Owner/Enemy — house whose structures to score
+IonCannon.Weights=ConYard:100,WarFactory:100 ; [ ] category:weight pairs used in scoring
+IonCannon.HPWeighting=Inverse                ; [ ] Direct/Inverse — Inverse: damaged targets score lower
+IonCannon.FireThreshold=200                  ; [ ] minimum total score before superweapon fires
+ForceShield.Target=Owner                     ; [ ] Owner/Enemy — house whose structures to score
+ForceShield.Weights=ConYard:100,BattleLab:90 ; [ ] category:weight pairs
+ForceShield.HPWeighting=Direct               ; [ ] Direct: damaged own structures score higher (protect them)
+ForceShield.FireThreshold=150                ; [ ] minimum total score before Force Shield fires
+
+; ============================================================================
+; SECTION 2 — [TriggerName.AIExt] — trigger lifecycle debug
+; ============================================================================
+; Six tags fire once per state transition regardless of gates.
+
+DebugMessageDisplay.Start=                   ; [ ] CSF key — overlay text when trigger passes AIExt
+DebugMessageDisplay.Cancel=                  ; [ ] CSF key — overlay text when AIExt vetoes trigger
+DebugMessageDisplay.Finish=                  ; [ ] CSF key — overlay text when team spawns (Phase 2)
+DebugLog.Start=                              ; [ ] raw text — log line when trigger passes AIExt
+DebugLog.Cancel=                             ; [ ] raw text — log line when AIExt vetoes trigger
+DebugLog.Finish=                             ; [ ] raw text — log line when team spawns (Phase 2)
+
+; ============================================================================
+; SECTION 3 — [TriggerName.AIExt] — house-selection modes
+; ============================================================================
+
+TargetHouseMode=Current                      ; [ ] Current/Any/All/Most_Buildings/Least_Buildings/Most_Units/Least_Units
+TargetHouseMode.Debug.MessageDisplay=        ; [ ] CSF key — overlay text
+TargetHouseMode.Debug.ValueDisplay=no        ; [ ] yes/no — append resolved house name
+TargetHouseMode.Debug.LogMessage=            ; [ ] raw text — log line
+TargetHouseMode.Debug.LogWrite=no            ; [ ] yes/no — auto-write resolved-house detail to log
+TargetHouseMode.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+TargetHouseMode.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredAlliesMode=All                       ; [ ] Any/All/Most_Buildings/Least_Buildings/Most_Units/Least_Units
+RequiredAlliesMode.Debug.MessageDisplay=     ; [ ] CSF key — overlay text
+RequiredAlliesMode.Debug.ValueDisplay=no     ; [ ] yes/no — append resolved-ally-count or mode name
+RequiredAlliesMode.Debug.LogMessage=         ; [ ] raw text — log line
+RequiredAlliesMode.Debug.LogWrite=no         ; [ ] yes/no — auto-write mode-resolution detail
+RequiredAlliesMode.Debug.TriggerDisplay=finish ; [ ] comma-list start,cancel,finish,never
+RequiredAlliesMode.Debug.TriggerLog=finish   ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 4 — [TriggerName.AIExt] — Owner Buildings
+; ============================================================================
+
+RequiredOwnerBuildings=                      ; [ ] comma-list of BuildingType IDs
+RequiredOwnerBuildings.Debug.MessageDisplay= ; [ ] CSF key
+RequiredOwnerBuildings.Debug.ValueDisplay=no ; [ ] yes/no — append type-ID list
+RequiredOwnerBuildings.Debug.LogMessage=     ; [ ] raw text
+RequiredOwnerBuildings.Debug.LogWrite=no     ; [ ] yes/no — auto pass/fail per index
+RequiredOwnerBuildings.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerBuildings.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerBuildings.Debug.DetailsDisplay=no      ; [ ] yes/no — render bracket-format details per index
+RequiredOwnerBuildings.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredOwnerBuildings.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerBuildingsMin=                   ; [ ] comma-list of int, positional min (default 0)
+RequiredOwnerBuildingsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerBuildingsMin.Debug.ValueDisplay=no  ; [ ] yes/no — append min-values list
+RequiredOwnerBuildingsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerBuildingsMin.Debug.LogWrite=no      ; [ ] yes/no — auto min-vs-actual
+RequiredOwnerBuildingsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerBuildingsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerBuildingsMax=                   ; [ ] comma-list of int, positional max (-1 = uncapped)
+RequiredOwnerBuildingsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerBuildingsMax.Debug.ValueDisplay=no  ; [ ] yes/no — append max-values list
+RequiredOwnerBuildingsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerBuildingsMax.Debug.LogWrite=no      ; [ ] yes/no — auto max-vs-actual
+RequiredOwnerBuildingsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerBuildingsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerBuildingsCurrent — READ-ONLY debug anchor (no INI value)
+RequiredOwnerBuildingsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerBuildingsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no — append live count list
+RequiredOwnerBuildingsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerBuildingsCurrent.Debug.LogWrite=no      ; [ ] yes/no — auto current-count detail
+RequiredOwnerBuildingsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerBuildingsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 5 — [TriggerName.AIExt] — Owner Units
+; ============================================================================
+
+RequiredOwnerUnits=                          ; [ ] comma-list of TechnoType IDs (inf/veh/air)
+RequiredOwnerUnits.Debug.MessageDisplay=     ; [ ] CSF key
+RequiredOwnerUnits.Debug.ValueDisplay=no     ; [ ] yes/no
+RequiredOwnerUnits.Debug.LogMessage=         ; [ ] raw text
+RequiredOwnerUnits.Debug.LogWrite=no         ; [ ] yes/no
+RequiredOwnerUnits.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerUnits.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerUnits.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredOwnerUnits.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredOwnerUnits.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerUnitsMin=                       ; [ ] comma-list of int (default 0)
+RequiredOwnerUnitsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerUnitsMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerUnitsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerUnitsMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerUnitsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerUnitsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerUnitsMax=                       ; [ ] comma-list of int (-1 = uncapped)
+RequiredOwnerUnitsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerUnitsMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerUnitsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerUnitsMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerUnitsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerUnitsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerUnitsCurrent — READ-ONLY debug anchor
+RequiredOwnerUnitsCurrent.Debug.MessageDisplay=    ; [ ] CSF key
+RequiredOwnerUnitsCurrent.Debug.ValueDisplay=no    ; [ ] yes/no
+RequiredOwnerUnitsCurrent.Debug.LogMessage=        ; [ ] raw text
+RequiredOwnerUnitsCurrent.Debug.LogWrite=no        ; [ ] yes/no
+RequiredOwnerUnitsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerUnitsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 6 — [TriggerName.AIExt] — Owner SuperWeapons
+; ============================================================================
+
+RequiredOwnerSuperWeapons=                   ; [ ] comma-list of SuperWeaponType IDs
+RequiredOwnerSuperWeapons.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerSuperWeapons.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerSuperWeapons.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerSuperWeapons.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerSuperWeapons.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerSuperWeapons.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerSuperWeapons.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredOwnerSuperWeapons.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredOwnerSuperWeapons.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerSuperWeaponsReadyMin=           ; [ ] comma-list of int, min frames remaining (default 0)
+RequiredOwnerSuperWeaponsReadyMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerSuperWeaponsReadyMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerSuperWeaponsReadyMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerSuperWeaponsReadyMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerSuperWeaponsReadyMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerSuperWeaponsReadyMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerSuperWeaponsReadyMax=           ; [ ] comma-list of int, max frames remaining (-1 = uncapped)
+RequiredOwnerSuperWeaponsReadyMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerSuperWeaponsReadyMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerSuperWeaponsReadyMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerSuperWeaponsReadyMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerSuperWeaponsReadyMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerSuperWeaponsReadyMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerSuperWeaponsCurrent — READ-ONLY debug anchor
+RequiredOwnerSuperWeaponsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerSuperWeaponsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerSuperWeaponsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerSuperWeaponsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerSuperWeaponsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerSuperWeaponsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 7 — [TriggerName.AIExt] — Owner Credits
+; ============================================================================
+
+RequiredOwnerCreditsMin=                     ; [ ] int, minimum credits Owner must have
+RequiredOwnerCreditsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerCreditsMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerCreditsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerCreditsMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerCreditsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerCreditsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerCreditsMax=                     ; [ ] int, maximum credits (-1 = uncapped)
+RequiredOwnerCreditsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerCreditsMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerCreditsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerCreditsMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerCreditsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerCreditsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerCreditsCurrent — READ-ONLY debug anchor (scalar Current owns Details)
+RequiredOwnerCreditsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerCreditsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no — append live credits value
+RequiredOwnerCreditsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerCreditsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerCreditsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerCreditsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerCreditsCurrent.Debug.DetailsDisplay=no     ; [ ] yes/no
+RequiredOwnerCreditsCurrent.Debug.DetailsTypes=         ; [ ] comma-list of Minimum,Maximum,Current
+RequiredOwnerCreditsCurrent.Debug.DetailsTrigger=finish ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 8 — [TriggerName.AIExt] — Owner Power / PowerOutput / TechLevel
+; ============================================================================
+
+RequiredOwnerPowerMin=                       ; [ ] int, minimum net power (output - drain)
+RequiredOwnerPowerMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerPowerMax=                       ; [ ] int, maximum net power (-1 = uncapped)
+RequiredOwnerPowerMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerPowerCurrent — READ-ONLY debug anchor
+RequiredOwnerPowerCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerCurrent.Debug.DetailsDisplay=no     ; [ ] yes/no
+RequiredOwnerPowerCurrent.Debug.DetailsTypes=         ; [ ] comma-list of Minimum,Maximum,Current
+RequiredOwnerPowerCurrent.Debug.DetailsTrigger=finish ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerPowerOutputMin=                 ; [ ] int, minimum raw power output
+RequiredOwnerPowerOutputMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerOutputMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerOutputMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerOutputMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerOutputMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerOutputMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerPowerOutputMax=                 ; [ ] int, maximum raw power output (-1 = uncapped)
+RequiredOwnerPowerOutputMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerOutputMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerOutputMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerOutputMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerOutputMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerOutputMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerPowerOutputCurrent — READ-ONLY debug anchor
+RequiredOwnerPowerOutputCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerPowerOutputCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerPowerOutputCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerPowerOutputCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerPowerOutputCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerOutputCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerPowerOutputCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredOwnerPowerOutputCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredOwnerPowerOutputCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerTechLevelMin=                   ; [ ] int, minimum tech level 0-10
+RequiredOwnerTechLevelMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerTechLevelMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerTechLevelMin.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerTechLevelMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerTechLevelMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerTechLevelMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredOwnerTechLevelMax=                   ; [ ] int, maximum tech level (-1 = uncapped)
+RequiredOwnerTechLevelMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerTechLevelMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerTechLevelMax.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerTechLevelMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerTechLevelMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerTechLevelMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredOwnerTechLevelCurrent — READ-ONLY debug anchor
+RequiredOwnerTechLevelCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredOwnerTechLevelCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredOwnerTechLevelCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredOwnerTechLevelCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredOwnerTechLevelCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerTechLevelCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredOwnerTechLevelCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredOwnerTechLevelCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredOwnerTechLevelCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 9 — [TriggerName.AIExt] — Enemy Buildings / Units / SuperWeapons
+; ============================================================================
+
+RequiredEnemyBuildings=                      ; [ ] comma-list of BuildingType IDs
+RequiredEnemyBuildings.Debug.MessageDisplay= ; [ ] CSF key
+RequiredEnemyBuildings.Debug.ValueDisplay=no ; [ ] yes/no
+RequiredEnemyBuildings.Debug.LogMessage=     ; [ ] raw text
+RequiredEnemyBuildings.Debug.LogWrite=no     ; [ ] yes/no
+RequiredEnemyBuildings.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyBuildings.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyBuildings.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyBuildings.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredEnemyBuildings.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyBuildingsMin=                   ; [ ] comma-list of int (default 0)
+RequiredEnemyBuildingsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyBuildingsMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyBuildingsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyBuildingsMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyBuildingsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyBuildingsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyBuildingsMax=                   ; [ ] comma-list of int (-1 = uncapped)
+RequiredEnemyBuildingsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyBuildingsMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyBuildingsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyBuildingsMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyBuildingsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyBuildingsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyBuildingsCurrent — READ-ONLY debug anchor
+RequiredEnemyBuildingsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyBuildingsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyBuildingsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyBuildingsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyBuildingsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyBuildingsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyUnits=                          ; [ ] comma-list of TechnoType IDs
+RequiredEnemyUnits.Debug.MessageDisplay=     ; [ ] CSF key
+RequiredEnemyUnits.Debug.ValueDisplay=no     ; [ ] yes/no
+RequiredEnemyUnits.Debug.LogMessage=         ; [ ] raw text
+RequiredEnemyUnits.Debug.LogWrite=no         ; [ ] yes/no
+RequiredEnemyUnits.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyUnits.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyUnits.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyUnits.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredEnemyUnits.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyUnitsMin=                       ; [ ] comma-list of int (default 0)
+RequiredEnemyUnitsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyUnitsMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyUnitsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyUnitsMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyUnitsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyUnitsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyUnitsMax=                       ; [ ] comma-list of int (-1 = uncapped)
+RequiredEnemyUnitsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyUnitsMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyUnitsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyUnitsMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyUnitsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyUnitsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyUnitsCurrent — READ-ONLY debug anchor
+RequiredEnemyUnitsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyUnitsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyUnitsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyUnitsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyUnitsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyUnitsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemySuperWeapons=                   ; [ ] comma-list of SuperWeaponType IDs
+RequiredEnemySuperWeapons.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemySuperWeapons.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemySuperWeapons.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemySuperWeapons.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemySuperWeapons.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemySuperWeapons.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemySuperWeapons.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemySuperWeapons.Debug.DetailsTypes=          ; [ ] comma-list of Type,Minimum,Maximum,Current
+RequiredEnemySuperWeapons.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemySuperWeaponsReadyMin=           ; [ ] comma-list of int, min frames remaining (default 0)
+RequiredEnemySuperWeaponsReadyMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemySuperWeaponsReadyMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemySuperWeaponsReadyMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemySuperWeaponsReadyMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemySuperWeaponsReadyMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemySuperWeaponsReadyMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemySuperWeaponsReadyMax=           ; [ ] comma-list of int, max frames remaining (-1 = uncapped)
+RequiredEnemySuperWeaponsReadyMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemySuperWeaponsReadyMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemySuperWeaponsReadyMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemySuperWeaponsReadyMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemySuperWeaponsReadyMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemySuperWeaponsReadyMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemySuperWeaponsCurrent — READ-ONLY debug anchor
+RequiredEnemySuperWeaponsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemySuperWeaponsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemySuperWeaponsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemySuperWeaponsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemySuperWeaponsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemySuperWeaponsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 10 — [TriggerName.AIExt] — Enemy Credits / Power / PowerOutput / TechLevel
+; ============================================================================
+
+RequiredEnemyCreditsMin=                     ; [ ] int, minimum Enemy credits
+RequiredEnemyCreditsMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyCreditsMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyCreditsMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyCreditsMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyCreditsMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyCreditsMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyCreditsMax=                     ; [ ] int, maximum Enemy credits (-1 = uncapped)
+RequiredEnemyCreditsMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyCreditsMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyCreditsMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyCreditsMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyCreditsMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyCreditsMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyCreditsCurrent — READ-ONLY debug anchor
+RequiredEnemyCreditsCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyCreditsCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyCreditsCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyCreditsCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyCreditsCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyCreditsCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyCreditsCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyCreditsCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredEnemyCreditsCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyPowerMin=                       ; [ ] int, minimum Enemy net power
+RequiredEnemyPowerMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyPowerMax=                       ; [ ] int, maximum Enemy net power (-1 = uncapped)
+RequiredEnemyPowerMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyPowerCurrent — READ-ONLY debug anchor
+RequiredEnemyPowerCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyPowerCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredEnemyPowerCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyPowerOutputMin=                 ; [ ] int, minimum Enemy raw power output
+RequiredEnemyPowerOutputMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerOutputMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerOutputMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerOutputMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerOutputMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerOutputMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyPowerOutputMax=                 ; [ ] int, maximum Enemy raw power output (-1 = uncapped)
+RequiredEnemyPowerOutputMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerOutputMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerOutputMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerOutputMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerOutputMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerOutputMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyPowerOutputCurrent — READ-ONLY debug anchor
+RequiredEnemyPowerOutputCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyPowerOutputCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyPowerOutputCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyPowerOutputCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyPowerOutputCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerOutputCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyPowerOutputCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyPowerOutputCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredEnemyPowerOutputCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyTechLevelMin=                   ; [ ] int, minimum Enemy tech level 0-10
+RequiredEnemyTechLevelMin.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyTechLevelMin.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyTechLevelMin.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyTechLevelMin.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyTechLevelMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyTechLevelMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredEnemyTechLevelMax=                   ; [ ] int, maximum Enemy tech level (-1 = uncapped)
+RequiredEnemyTechLevelMax.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyTechLevelMax.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyTechLevelMax.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyTechLevelMax.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyTechLevelMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyTechLevelMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredEnemyTechLevelCurrent — READ-ONLY debug anchor
+RequiredEnemyTechLevelCurrent.Debug.MessageDisplay=  ; [ ] CSF key
+RequiredEnemyTechLevelCurrent.Debug.ValueDisplay=no  ; [ ] yes/no
+RequiredEnemyTechLevelCurrent.Debug.LogMessage=      ; [ ] raw text
+RequiredEnemyTechLevelCurrent.Debug.LogWrite=no      ; [ ] yes/no
+RequiredEnemyTechLevelCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyTechLevelCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredEnemyTechLevelCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredEnemyTechLevelCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredEnemyTechLevelCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 11 — [TriggerName.AIExt] — Allies (base tags only, debug same as Owner)
+; ============================================================================
+; Full debug sub-fields for every Allies tag follow the same nine-field pattern
+; shown in Sections 4-8. For brevity only the base tags are listed here — copy
+; the Owner debug lines and substitute "Allies" for "Owner" in the tag names.
+
+RequiredAlliesBuildings=                     ; [ ] comma-list of BuildingType IDs
+RequiredAlliesBuildingsMin=                  ; [ ] comma-list of int (default 0)
+RequiredAlliesBuildingsMax=                  ; [ ] comma-list of int (-1 = uncapped)
+; RequiredAlliesBuildingsCurrent — READ-ONLY debug anchor
+
+RequiredAlliesUnits=                         ; [ ] comma-list of TechnoType IDs
+RequiredAlliesUnitsMin=                      ; [ ] comma-list of int (default 0)
+RequiredAlliesUnitsMax=                      ; [ ] comma-list of int (-1 = uncapped)
+; RequiredAlliesUnitsCurrent — READ-ONLY debug anchor
+
+RequiredAlliesSuperWeapons=                  ; [ ] comma-list of SuperWeaponType IDs
+RequiredAlliesSuperWeaponsReadyMin=          ; [ ] comma-list of int, min frames (default 0)
+RequiredAlliesSuperWeaponsReadyMax=          ; [ ] comma-list of int, max frames (-1 = uncapped)
+; RequiredAlliesSuperWeaponsCurrent — READ-ONLY debug anchor
+
+RequiredAlliesCreditsMin=                    ; [ ] int, minimum allied credits
+RequiredAlliesCreditsMax=                    ; [ ] int, maximum allied credits (-1 = uncapped)
+; RequiredAlliesCreditsCurrent — READ-ONLY debug anchor
+
+RequiredAlliesPowerMin=                      ; [ ] int, minimum allied net power
+RequiredAlliesPowerMax=                      ; [ ] int, maximum allied net power (-1 = uncapped)
+; RequiredAlliesPowerCurrent — READ-ONLY debug anchor
+
+RequiredAlliesPowerOutputMin=                ; [ ] int, minimum allied raw power output
+RequiredAlliesPowerOutputMax=                ; [ ] int, maximum allied raw power output (-1 = uncapped)
+; RequiredAlliesPowerOutputCurrent — READ-ONLY debug anchor
+
+RequiredAlliesTechLevelMin=                  ; [ ] int, minimum allied tech level 0-10
+RequiredAlliesTechLevelMax=                  ; [ ] int, maximum allied tech level (-1 = uncapped)
+; RequiredAlliesTechLevelCurrent — READ-ONLY debug anchor
+
+; ============================================================================
+; SECTION 12 — [TriggerName.AIExt] — Neutral (base tags only, debug same as Owner)
+; ============================================================================
+; Full debug sub-fields for every Neutral tag follow the same nine-field pattern
+; shown in Sections 4-8. Only one neutral house exists per scenario so no mode
+; selector applies.
+
+RequiredNeutralBuildings=                    ; [ ] comma-list of BuildingType IDs
+RequiredNeutralBuildingsMin=                 ; [ ] comma-list of int (default 0)
+RequiredNeutralBuildingsMax=                 ; [ ] comma-list of int (-1 = uncapped)
+; RequiredNeutralBuildingsCurrent — READ-ONLY debug anchor
+
+RequiredNeutralUnits=                        ; [ ] comma-list of TechnoType IDs
+RequiredNeutralUnitsMin=                     ; [ ] comma-list of int (default 0)
+RequiredNeutralUnitsMax=                     ; [ ] comma-list of int (-1 = uncapped)
+; RequiredNeutralUnitsCurrent — READ-ONLY debug anchor
+
+RequiredNeutralSuperWeapons=                 ; [ ] comma-list of SuperWeaponType IDs
+RequiredNeutralSuperWeaponsReadyMin=         ; [ ] comma-list of int, min frames (default 0)
+RequiredNeutralSuperWeaponsReadyMax=         ; [ ] comma-list of int, max frames (-1 = uncapped)
+; RequiredNeutralSuperWeaponsCurrent — READ-ONLY debug anchor
+
+RequiredNeutralCreditsMin=                   ; [ ] int, minimum neutral credits
+RequiredNeutralCreditsMax=                   ; [ ] int, maximum neutral credits (-1 = uncapped)
+; RequiredNeutralCreditsCurrent — READ-ONLY debug anchor
+
+RequiredNeutralPowerMin=                     ; [ ] int, minimum neutral net power
+RequiredNeutralPowerMax=                     ; [ ] int, maximum neutral net power (-1 = uncapped)
+; RequiredNeutralPowerCurrent — READ-ONLY debug anchor
+
+RequiredNeutralPowerOutputMin=               ; [ ] int, minimum neutral raw power output
+RequiredNeutralPowerOutputMax=               ; [ ] int, maximum neutral raw power output (-1 = uncapped)
+; RequiredNeutralPowerOutputCurrent — READ-ONLY debug anchor
+
+RequiredNeutralTechLevelMin=                 ; [ ] int, minimum neutral tech level 0-10
+RequiredNeutralTechLevelMax=                 ; [ ] int, maximum neutral tech level (-1 = uncapped)
+; RequiredNeutralTechLevelCurrent — READ-ONLY debug anchor
+
+; ============================================================================
+; SECTION 13 — [TriggerName.AIExt] — global gates (ElapsedTime)
+; ============================================================================
+; 15 frames = 1 in-game second regardless of game speed.
+
+RequiredElapsedTimeMin=                      ; [ ] int, minimum frames since scenario start
+RequiredElapsedTimeMin.Debug.MessageDisplay= ; [ ] CSF key
+RequiredElapsedTimeMin.Debug.ValueDisplay=no ; [ ] yes/no
+RequiredElapsedTimeMin.Debug.LogMessage=     ; [ ] raw text
+RequiredElapsedTimeMin.Debug.LogWrite=no     ; [ ] yes/no
+RequiredElapsedTimeMin.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredElapsedTimeMin.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+RequiredElapsedTimeMax=                      ; [ ] int, maximum frames (-1 = uncapped)
+RequiredElapsedTimeMax.Debug.MessageDisplay= ; [ ] CSF key
+RequiredElapsedTimeMax.Debug.ValueDisplay=no ; [ ] yes/no
+RequiredElapsedTimeMax.Debug.LogMessage=     ; [ ] raw text
+RequiredElapsedTimeMax.Debug.LogWrite=no     ; [ ] yes/no
+RequiredElapsedTimeMax.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredElapsedTimeMax.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+
+; RequiredElapsedTimeCurrent — READ-ONLY debug anchor
+RequiredElapsedTimeCurrent.Debug.MessageDisplay=    ; [ ] CSF key
+RequiredElapsedTimeCurrent.Debug.ValueDisplay=no    ; [ ] yes/no
+RequiredElapsedTimeCurrent.Debug.LogMessage=        ; [ ] raw text
+RequiredElapsedTimeCurrent.Debug.LogWrite=no        ; [ ] yes/no
+RequiredElapsedTimeCurrent.Debug.TriggerDisplay=finish  ; [ ] comma-list start,cancel,finish,never
+RequiredElapsedTimeCurrent.Debug.TriggerLog=finish      ; [ ] comma-list start,cancel,finish,never
+RequiredElapsedTimeCurrent.Debug.DetailsDisplay=no      ; [ ] yes/no
+RequiredElapsedTimeCurrent.Debug.DetailsTypes=          ; [ ] comma-list of Minimum,Maximum,Current
+RequiredElapsedTimeCurrent.Debug.DetailsTrigger=finish  ; [ ] comma-list start,cancel,finish,never
+
+; ============================================================================
+; SECTION 14 — PLANNED features (not yet in DLL, listed for future testing)
+; ============================================================================
+
+; DPSCheck condition family — gates on weapon-DPS thresholds. Requires
+; [DPSGroupTypes] in rulesmd.ini. .0 is the check index; multiple per trigger
+; use .0, .1, .2, etc.
+DPSCheck.Target.0=Enemy                      ; [ ] Owner/Enemy/Friendly — which house's DPS to sum
+DPSCheck.Max.0=-1                            ; [ ] int, maximum DPS (-1 = uncapped)
+DPSCheck.Min.0=0                             ; [ ] int, minimum DPS
+DPSCheck.Lock.0=                             ; [ ] comma-list AA/AG/AN/AS — projectile-flag scope filter
+DPSCheck.Types.0=                            ; [ ] comma-list of [DPSGroupTypes] names — UNION with Lock
+DPSCheck.ArmorType.0=                        ; [ ] comma-list of armor types — apply Verses coefficient (avg if multi)
+DPSCheck.Warhead.0=                          ; [ ] single warhead ID — intersection with ArmorType if both set
+DPSCheck.CompareTo.0=                        ; [ ] Owner/Enemy/Friendly — comparative mode (ignores Min/Max)
+DPSCheck.RatioMin.0=0.0                      ; [ ] float, minimum ratio when CompareTo is set
+DPSCheck.RatioMax.0=-1                       ; [ ] float, maximum ratio when CompareTo is set (-1 = uncapped)
+
+; CreditsRateCheck — gates on rate of credits change over a rolling window
+CreditsRateCheck.Target.0=Enemy              ; [ ] Owner/Enemy/Friendly
+CreditsRateCheck.Min.0=0                     ; [ ] int, minimum credits/sec over window
+CreditsRateCheck.Max.0=-1                    ; [ ] int, maximum credits/sec (-1 = uncapped)
+CreditsRateCheck.Window.0=30                 ; [ ] int, rolling window in seconds
+
+; ============================================================================
+; End of file. Update markers as testing progresses.
+; ============================================================================

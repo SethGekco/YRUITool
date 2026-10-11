@@ -1,0 +1,1 @@
+python3 cli.py --rules rulesmd.ini --aimd aimd.ini --out-aimd aimd_output.ini --dummy-mode 0 --yes
