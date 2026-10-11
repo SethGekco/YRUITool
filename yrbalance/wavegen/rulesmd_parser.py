@@ -258,51 +258,57 @@ class IniParser:
         self.path = Path(path)
         self.sections = {}
         self._section_order = []
+        # Combined lines of the rules file with Ares [#include] / Phobos
+        # [$include] expanded (recursive, + .mix fallback) via the engine
+        # resolver, so sections split across included files are parsed too.
+        self._lines = self._read_resolved()
         self._parse()
+
+    def _read_resolved(self):
+        """Read the rules file with its include graph resolved into one line list.
+
+        Uses the engine's resolver (recursive, both directive spellings, loose +
+        .mix, cycle-safe, main-file-wins). Falls back to the single main file if
+        the resolver can't be imported."""
+        try:
+            from ..engine.includes import resolve_includes
+            lines, _prov = resolve_includes(str(self.path))
+            return lines
+        except Exception:
+            try:
+                with self.path.open(encoding="latin-1", errors="replace") as fh:
+                    return fh.readlines()
+            except OSError:
+                return []
 
     def _strip_comment(self, text):
         idx = text.find(";")
         return text[:idx].strip() if idx != -1 else text.strip()
 
     def _parse(self):
-        self._parse_file(self.path)
-        # After parsing the main file, load any [#include] files
-        include_sec = self.sections.get('#include', {})
-        for key in sorted(include_sec.keys()):
-            if not key.isdigit():
-                continue
-            inc_path = self.path.parent / include_sec[key].strip()
-            if inc_path.exists():
-                self._parse_file(inc_path)
-
-    def _parse_file(self, path: Path):
         current = None
-        try:
-            with path.open(encoding="latin-1", errors='replace') as fh:
-                for raw_line in fh:
-                    line = raw_line.strip()
-                    if not line or line.startswith(";"):
-                        continue
-                    if line.startswith("["):
-                        end = line.find("]")
-                        if end != -1:
-                            current = line[1:end]
-                            if current not in self.sections:
-                                self.sections[current] = {}
-                                self._section_order.append(current)
-                        continue
-                    if "=" in line and current is not None:
-                        key, _, val = line.partition("=")
-                        key = key.strip()
-                        if key.startswith(";"):
-                            continue
-                        # Don't overwrite keys already set by the main file
-                        # (main file takes precedence over includes)
-                        k_lower = key.lower()
-                        if k_lower not in self.sections[current]:
-                            self.sections[current][k_lower] = self._strip_comment(val)
-        except (OSError, IOError):
-            pass  # Include file missing — skip silently
+        for raw_line in self._lines:
+            line = raw_line.strip()
+            if not line or line.startswith(";"):
+                continue
+            if line.startswith("["):
+                end = line.find("]")
+                if end != -1:
+                    current = line[1:end]
+                    if current not in self.sections:
+                        self.sections[current] = {}
+                        self._section_order.append(current)
+                continue
+            if "=" in line and current is not None:
+                key, _, val = line.partition("=")
+                key = key.strip()
+                if key.startswith(";"):
+                    continue
+                # Don't overwrite keys already set earlier (main file wins over
+                # includes; first occurrence wins within a section).
+                k_lower = key.lower()
+                if k_lower not in self.sections[current]:
+                    self.sections[current][k_lower] = self._strip_comment(val)
 
     def get(self, section, key, default=""):
         return self.sections.get(section, {}).get(key.lower(), default)
@@ -373,34 +379,30 @@ class SidesRegistry:
         # Also scan root-level entries stored under any section header that
         # looks like a building/group definition (the ini parser assigns them
         # to the last section seen before them)
-        # Try a direct file scan for lines like GATECHPRE=GATECH,GATECHFR,...
-        try:
-            with self.ini.path.open(encoding='latin-1', errors='replace') as f:
-                in_section = False
-                current_section = None
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith(';'):
-                        continue
-                    if line.startswith('['):
-                        end = line.find(']')
-                        current_section = line[1:end] if end > 0 else None
-                        in_section = current_section is not None
-                        continue
-                    if '=' in line and in_section:
-                        key, _, val = line.partition('=')
-                        key = key.strip()
-                        if key.startswith(';'):
-                            continue
-                        if group_pattern.match(key.upper()):
-                            # Strip inline comments
-                            val = val.split(';')[0].strip()
-                            blds = [b.strip() for b in val.split(',')
-                                    if b.strip() and not b.strip().startswith(';')]
-                            if blds and key.upper() not in self.prereq_groups:
-                                self.prereq_groups[key.upper()] = blds
-        except (OSError, IOError):
-            pass
+        # Direct line scan for entries like GATECHPRE=GATECH,GATECHFR,... — over
+        # the include-resolved lines so aliases defined in included files count.
+        in_section = False
+        for line in getattr(self.ini, "_lines", []):
+            line = line.strip()
+            if not line or line.startswith(';'):
+                continue
+            if line.startswith('['):
+                end = line.find(']')
+                current_section = line[1:end] if end > 0 else None
+                in_section = current_section is not None
+                continue
+            if '=' in line and in_section:
+                key, _, val = line.partition('=')
+                key = key.strip()
+                if key.startswith(';'):
+                    continue
+                if group_pattern.match(key.upper()):
+                    # Strip inline comments
+                    val = val.split(';')[0].strip()
+                    blds = [b.strip() for b in val.split(',')
+                            if b.strip() and not b.strip().startswith(';')]
+                    if blds and key.upper() not in self.prereq_groups:
+                        self.prereq_groups[key.upper()] = blds
 
     def _load_sides(self):
         # Skip factions where no country has Multiplay=yes.
