@@ -175,8 +175,12 @@ aimd) so detail is instant. Remaining:
   `Palette.Remap`. `HOUSE_COLORS` presets (Red/Blue/Green/…). The Library detail
   pane has a House-colour combo (default Red, None to disable) applied to BOTH SHP
   and VXL previews, so the player-colour parts render tinted instead of raw
-  magenta. Verified visually (usaguntur dome → red/blue) + tested. Remaining voxel
-  work: selectable view angle.
+  magenta. Verified visually (usaguntur dome → red/blue) + tested.
+- **Selectable voxel view angle — SHIPPED.** `render_parts(..., view_deg=)` rotates
+  the model about Z before the isometric projection; the Library detail pane has a
+  View combo (0/45/…/315°) for voxels. Verified (180° mirrors the projection
+  exactly; visually the cannon faces different directions). Lighting stays attached
+  to the model faces (VPL computed in model space), fine for a preview.
 - **"Convert → current mod culture" — SHIPPED.** `convert_unit_stats` rescales a
   unit's Cost/Strength/Speed by `conversion_factors(sourceMod, currentMod)` (both
   cultures vs vanilla). The Library has a "Convert selected → current mod culture…"

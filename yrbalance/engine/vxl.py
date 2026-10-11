@@ -147,12 +147,13 @@ def _shade(colour, nidx, z, maxz, pal, normals, light, pages, vpl):
 
 
 def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index,
-                    offset=(0.0, 0.0, 0.0)):
+                    offset=(0.0, 0.0, 0.0), view_cos=1.0, view_sin=0.0):
     """Project one (model, hva) into shared world space → list of
     (ix, iy, depth, r, g, b, cell_hint). HVA frame 0 places each section (a turret
     on its body, a barrel on the turret). `offset` is an extra world translation
     added to every voxel (used for art.ini TurretOffset on turret/barrel parts).
-    Without an HVA, sections sit at their MinBounds (identity rotation)."""
+    `view_cos/view_sin` rotate the model about Z (the selectable view angle) before
+    the isometric projection. Without an HVA, sections sit at their MinBounds."""
     ofx, ofy, ofz = offset
     pts = []
     maxz = max((s.sz for s in model.sections), default=1) or 1
@@ -182,28 +183,35 @@ def _collect_points(model, hva, pal, vpl, direction, lighting, transparent_index
             wx = m[0] * qx + m[1] * qy + m[2] * qz + tx + ofx
             wy = m[4] * qx + m[5] * qy + m[6] * qz + ty + ofy
             wz = m[8] * qx + m[9] * qy + m[10] * qz + tz + ofz
+            # view rotation about Z (selectable view angle)
+            rx = wx * view_cos - wy * view_sin
+            ry = wx * view_sin + wy * view_cos
             rr, gg, bb = _shade(colour, nidx, z, maxz, pal, normals, light,
                                 pages, vpl)
-            # 2:1 isometric, z up; depth: nearer = larger wx+wy+wz
-            pts.append((wx - wy, (wx + wy) * 0.5 - wz, wx + wy + wz,
+            # 2:1 isometric, z up; depth: nearer = larger rx+ry+wz
+            pts.append((rx - ry, (rx + ry) * 0.5 - wz, rx + ry + wz,
                         rr, gg, bb, cell_hint))
     return pts
 
 
 def render_parts(parts, max_px=200, palette=None, lighting=True, vpl=None,
-                 direction=32, transparent_index=0):
+                 direction=32, transparent_index=0, view_deg=0.0):
     """Composite several voxel parts (a unit's body + turret + barrel) into one
     isometric still. `parts` items are (VxlModel, Hva|None) or
     (VxlModel, Hva|None, (ox,oy,oz)) — the optional world offset carries art.ini
-    TurretOffset on turret/barrel parts. All parts are placed in shared world
-    space and z-buffered together. Returns (w, h, rgba)."""
+    TurretOffset on turret/barrel parts. `view_deg` rotates the model about Z (the
+    selectable view angle). All parts are placed in shared world space and
+    z-buffered together. Returns (w, h, rgba)."""
+    import math
+    vc = math.cos(math.radians(view_deg))
+    vs = math.sin(math.radians(view_deg))
     pts = []
     for part in parts:
         model, hva = part[0], part[1]
         offset = part[2] if len(part) > 2 else (0.0, 0.0, 0.0)
         pal = palette if palette else model.palette
         pts += _collect_points(model, hva, pal, vpl, direction, lighting,
-                               transparent_index, offset)
+                               transparent_index, offset, vc, vs)
     if not pts:
         raise VxlError("no voxels to render")
 
@@ -246,14 +254,15 @@ def render_parts(parts, max_px=200, palette=None, lighting=True, vpl=None,
 
 
 def render_vxl(model, max_px=200, transparent_index=0, palette=None,
-               lighting=True, vpl=None, direction=32, hva=None):
+               lighting=True, vpl=None, direction=32, hva=None, view_deg=0.0):
     """Isometric still of a single VXL (see render_parts). Lighting, best →
     fallback: `vpl` (game-accurate page remap) → `lighting` (diffuse from the
-    stored normal) → height shading. `hva` (frame 0) places the sections."""
+    stored normal) → height shading. `hva` (frame 0) places the sections;
+    `view_deg` rotates the view about Z."""
     return render_parts([(model, hva)], max_px=max_px,
                          palette=palette if palette else model.palette,
                          lighting=lighting, vpl=vpl, direction=direction,
-                         transparent_index=transparent_index)
+                         transparent_index=transparent_index, view_deg=view_deg)
 
 
 def voxel_count(model):

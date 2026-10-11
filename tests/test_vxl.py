@@ -152,6 +152,22 @@ def main():
           f"{'OK' if comp_ok else 'FAIL'}")
     ok = ok and comp_ok
 
+    # selectable view angle: rotating 180° about Z mirrors the projection (a
+    # non-symmetric offset part lands on the opposite side), and 0° is unchanged
+    base_v = _collect_points(m, None, m.palette, None, 32, False, 0,
+                             (5.0, 0.0, 0.0), 1.0, 0.0)
+    import math as _m
+    c, s = _m.cos(_m.radians(180)), _m.sin(_m.radians(180))
+    rot_v = _collect_points(m, None, m.palette, None, 32, False, 0,
+                            (5.0, 0.0, 0.0), c, s)
+    mean_ix0 = statistics.mean(p[0] for p in base_v)
+    mean_ix180 = statistics.mean(p[0] for p in rot_v)
+    # 180°: (wx,wy)→(-wx,-wy) so ix = rx-ry = -(wx-wy) → mean negates
+    view_ok = abs(mean_ix180 + mean_ix0) < 0.01 and abs(mean_ix0) > 0.1
+    print(f"view rotation 180° mirrors ix: {'OK' if view_ok else 'FAIL'}  "
+          f"{mean_ix0:.2f} → {mean_ix180:.2f}")
+    ok = ok and view_ok
+
     # art.ini TurretOffset: a per-part world offset shifts that part (ix = wx-wy,
     # so a +X offset of 10 moves ix by +10)
     base2 = _collect_points(m, None, m.palette, None, 32, False, 0, (0.0, 0.0, 0.0))

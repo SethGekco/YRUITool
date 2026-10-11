@@ -223,6 +223,14 @@ class LibraryTab(QWidget):
         self.house_combo.currentIndexChanged.connect(
             lambda _i: self._show_detail())
         hrow.addWidget(self.house_combo)
+        hrow.addWidget(QLabel("View:"))
+        self.view_combo = QComboBox()
+        for deg in (0, 45, 90, 135, 180, 225, 270, 315):
+            self.view_combo.addItem(f"{deg}°", deg)
+        self.view_combo.setToolTip("Rotate the voxel view about the vertical axis")
+        self.view_combo.currentIndexChanged.connect(
+            lambda _i: self._show_detail())
+        hrow.addWidget(self.view_combo)
         hrow.addStretch(1)
         rl.addLayout(hrow)
 
@@ -369,7 +377,9 @@ class LibraryTab(QWidget):
                     return
                 pal = self._house_palette(self._preview_palette(sid, scan))
                 w, h, rgba = render_parts(parts, palette=pal,
-                                          vpl=self._preview_vpl(sid))
+                                          vpl=self._preview_vpl(sid),
+                                          view_deg=self.view_combo.currentData()
+                                          or 0)
                 self._set_art_pixmap(w, h, rgba)
                 return
             self.art_img.setText("(no SHP/VXL art to preview)")
