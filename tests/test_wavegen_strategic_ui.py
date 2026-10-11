@@ -66,6 +66,35 @@ def main():
           f"{'OK' if ins_ok else 'FAIL'}  {n0}→{n1}")
     ok = ok and ins_ok
 
+    # dummy opt-in: enable the group, Generate (phobos on for include files),
+    # Insert into COPIES of rules + aimd, and verify both files grow + backups.
+    aimd2 = os.path.join(d, "aimd2.ini")
+    shutil.copy(van_aimd, aimd2)
+    rules2 = os.path.join(d, "rulesmd.ini")
+    shutil.copy(rules, rules2)
+    dlg2 = StrategicTriggerDialog(None, rules2, aimd2)
+    for name, cb in dlg2.diff_boxes.items():
+        cb.setChecked(name == "Hard")
+    dlg2.dummies_box.setChecked(True)
+    dlg2.phobos.setChecked(True)          # include-file path
+    dlg2._generate()
+    dummy_gen_ok = ("presence" in dlg2.summary.text()
+                    and dlg2.insert_btn.isEnabled())
+    print(f"dummy generate fills note: {'OK' if dummy_gen_ok else 'FAIL'}")
+    ok = ok and dummy_gen_ok
+
+    r0 = len(open(rules2, encoding="latin-1").read().splitlines())
+    dlg2._insert()
+    r1 = len(open(rules2, encoding="latin-1").read().splitlines())
+    inc = [f for f in ("ai_prereq_present.ini", "ai_prereq_absent.ini",
+                       "ai_defense_dummies.ini")
+           if os.path.isfile(os.path.join(d, f))]
+    dummy_ins_ok = (r1 > r0 and len(inc) >= 3
+                    and len(list_backups(default_backup_dir(rules2), rules2)) >= 1)
+    print(f"dummy insert grows rules + include files + backup: "
+          f"{'OK' if dummy_ins_ok else 'FAIL'}  rules {r0}→{r1}, {len(inc)} files")
+    ok = ok and dummy_ins_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

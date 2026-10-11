@@ -508,3 +508,194 @@ def insert_strategic_triggers(rules_path, aimd_path, factions=None,
                                      difficulties, phobos, seed)
     sg.write_all(aimd_path)
     return wave_counts(sg)
+
+
+# ── strategic triggers WITH supporting base-state dummies ───────────────────
+# The full tactical system the cli builds: a bounded, request-driven dummy
+# prereq set (Construction Yards / War Factories / Shipyards / Power Plants +
+# powered-unit buildings) plus defense-tracking dummies. These let the strategic
+# triggers condition on real base state (enemy has no shipyard / no power / no
+# CY / no defenses / no AA), which roughly quadruples the triggers generated.
+#
+# The dummy sections land in SEPARATE ai_prereq_*.ini / ai_defense_dummies.ini
+# include files alongside rules.ini; rules.ini itself only gains [BuildingTypes]
+# / [SuperWeaponTypes] list entries + a small [#include]. Writing touches BOTH
+# rules.ini and aimd.ini, so callers must back up BOTH first.
+DEFENSE_INCLUDE_NAME = "ai_defense_dummies.ini"
+
+
+def _build_strat_dummies(rules_path, parser, phobos, max_combo,
+                         with_defense, require_isbasedefense):
+    """Build the bounded strategic dummy generator (presence + absence singles,
+    category-level absence/mixed requests registered) and, optionally, the
+    defense-tracking dummy generator. Mixed combos are NOT generated yet — the
+    strategic trigger generator registers its mixed requests during generate(),
+    after which strat_dummy._generate_mixed_all() must run. Returns
+    (strat_dummy, def_gen)."""
+    from .dummy_prereq_generator import (FullDummyPrereqGenerator,
+                                         DummyPrereqGenerator)
+    from .building_categorizer import BuildingCategorizer
+
+    blds = BuildingCategorizer(str(rules_path)).scan()
+    cats = {"Construction Yards", "War Factories", "Shipyards", "Power Plants"}
+    strat_blds = [(b.idx, b.bid) for b in blds if b.category in cats]
+
+    # Buildings that power PoweredUnit= units also need presence dummies.
+    powered = set()
+    for _uid, bld_ids in getattr(parser, "powered_unit_map", {}).items():
+        powered.update(bld_ids)
+    existing = {bid for _, bid in strat_blds}
+    nxt = max((i for i, _ in strat_blds), default=-1) + 1
+    for bid in sorted(powered - existing):
+        strat_blds.append((nxt, bid))
+        nxt += 1
+
+    sd = None
+    if strat_blds:
+        sd = FullDummyPrereqGenerator(
+            str(rules_path), max_combo_size=max_combo, mode=3,
+            use_ares_include=phobos, mixed_scope="auto")
+        sd.target_blds = sorted(strat_blds)
+        cy = [b.bid for b in blds if b.category == "Construction Yards"]
+        sy = [b.bid for b in blds if b.category == "Shipyards"]
+        pp = [b.bid for b in blds if b.category == "Power Plants"]
+        wf = [b.bid for b in blds if b.category == "War Factories"]
+        if len(cy) > 1:
+            sd.request_absence_combo(cy)
+        if len(sy) > 1:
+            sd.request_absence_combo(sy)
+        if len(pp) > 1:
+            sd.request_absence_combo(pp)
+        for w in wf:
+            sd.request_mixed_combo(present_ids=[w], absent_ids=cy)
+        DummyPrereqGenerator.generate_all(sd)   # presence singles
+        sd._generate_absence_all()              # absence singles + requested
+
+    dg = None
+    if with_defense:
+        from .defense_dummy_generator import DefenseDummyGenerator
+        dg = DefenseDummyGenerator(
+            str(rules_path), require_isbasedefense=require_isbasedefense)
+        dg.scan()
+        dg.generate()
+    return sd, dg
+
+
+def generate_strategic_full(rules_path, aimd_path, factions=None,
+                            difficulties=None, phobos=None, seed=None,
+                            dummy_max_combo=1, with_defense=True,
+                            require_isbasedefense=False):
+    """Strategic triggers + their supporting base-state dummies, wired exactly
+    as the cli does. Returns a bundle dict: {strat_gen, strat_dummy, def_gen,
+    phobos}. Nothing is written — use the preview / insert helpers."""
+    import io
+    import contextlib
+    from .strategic_trigger_generator import StrategicTriggerGenerator
+    parser = parse_rules(rules_path)
+    reg = _wavegen_registries(rules_path, aimd_path)
+    if factions is None:
+        factions = sorted(parser.sides.faction_countries.keys())
+    if difficulties is None:
+        difficulties = ["Easy", "Medium", "Hard"]
+    if phobos is None:
+        phobos = reg["phobos"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        sd, dg = _build_strat_dummies(
+            rules_path, parser, phobos, dummy_max_combo,
+            with_defense, require_isbasedefense)
+        sg = StrategicTriggerGenerator(
+            parser, reg["global"], reg["tf"], reg["sc"], reg["team"],
+            reg["trig"], reg["side_map"], dummy_gen=sd, defense_gen=dg,
+            seed=seed, ares=False)
+        sg.generate(factions=list(factions),
+                    difficulties=list(difficulties), phobos=phobos)
+        if sd is not None:
+            sd._generate_mixed_all()            # second pass: requested mixed
+    return {"strat_gen": sg, "strat_dummy": sd, "def_gen": dg,
+            "phobos": phobos}
+
+
+def strategic_full_counts(bundle):
+    """Counts for both halves: the aimd chain + the rules.ini dummy additions."""
+    c = wave_counts(bundle["strat_gen"])
+    sd = bundle.get("strat_dummy")
+    dg = bundle.get("def_gen")
+    c["presence_dummies"] = len(sd.dummy_blds) if sd else 0
+    c["absence_dummies"] = len(sd.absence_dummies) if sd else 0
+    c["mixed_dummies"] = len(getattr(sd, "_mixed_dummies", [])) if sd else 0
+    c["defense_dummies"] = len(dg.buildings) if dg else 0
+    return c
+
+
+def strategic_full_preview(rules_path, aimd_path, factions=None,
+                           difficulties=None, phobos=None, seed=None,
+                           dummy_max_combo=1, with_defense=True,
+                           require_isbasedefense=False):
+    """(bundle, aimd_text, rules_note): the strategic chain alone (written to a
+    temp aimd) plus a human-readable note of what the dummy system adds to
+    rules.ini and which include files it writes."""
+    import tempfile
+    import os
+    bundle = generate_strategic_full(
+        rules_path, aimd_path, factions, difficulties, phobos, seed,
+        dummy_max_combo, with_defense, require_isbasedefense)
+    t = tempfile.NamedTemporaryFile("w", suffix=".ini", delete=False)
+    t.close()
+    try:
+        bundle["strat_gen"].write_all(t.name + ".base", t.name)
+        with open(t.name, encoding="latin-1", errors="replace") as fh:
+            aimd_text = fh.read()
+    finally:
+        try:
+            os.unlink(t.name)
+        except OSError:
+            pass
+    c = strategic_full_counts(bundle)
+    files = []
+    sd = bundle.get("strat_dummy")
+    if sd and bundle["phobos"]:
+        if sd.mode in (1, 3, 4):
+            files.append("ai_prereq_present.ini")
+        if sd.mode in (2, 3, 4):
+            files.append("ai_prereq_absent.ini")
+        if getattr(sd, "_mixed_dummies", None):
+            files.append("ai_prereq_mixed.ini")
+    if bundle.get("def_gen"):
+        files.append(DEFENSE_INCLUDE_NAME)
+    note = (
+        f"Base-state dummies → rules.ini (backup kept): "
+        f"{c['presence_dummies']} presence, {c['absence_dummies']} absence, "
+        f"{c['mixed_dummies']} mixed, {c['defense_dummies']} defense-tracking.\n"
+        f"Bulk written to separate include file(s): "
+        f"{', '.join(files) if files else '(inline — non-Phobos mod)'}.\n"
+        f"rules.ini itself gains only [BuildingTypes]/[SuperWeaponTypes] list "
+        f"entries"
+        + (" + a [#include]." if bundle['phobos'] else " + dummy sections."))
+    return bundle, aimd_text, note
+
+
+def insert_strategic_full(rules_path, aimd_path, factions=None,
+                          difficulties=None, phobos=None, seed=None,
+                          dummy_max_combo=1, with_defense=True,
+                          require_isbasedefense=False,
+                          rules_out=None, out_dir=None):
+    """Regenerate and write the full strategic system. The dummy generators write
+    their sections to include files in out_dir and update [BuildingTypes] /
+    [SuperWeaponTypes] + [#include] in rules_out; the strategic triggers write to
+    aimd_path. The CALLER must back up BOTH rules.ini and aimd.ini first.
+    rules_out defaults to rules_path (in place); out_dir to rules_out's folder.
+    Returns the counts."""
+    import os
+    rules_out = rules_out or rules_path
+    out_dir = out_dir or os.path.dirname(os.path.abspath(rules_out))
+    bundle = generate_strategic_full(
+        rules_path, aimd_path, factions, difficulties, phobos, seed,
+        dummy_max_combo, with_defense, require_isbasedefense)
+    sd = bundle.get("strat_dummy")
+    dg = bundle.get("def_gen")
+    if sd is not None:
+        sd.write_all(rules_path, rules_out, out_dir)
+    if dg is not None:
+        dg.write_to_file(os.path.join(out_dir, DEFENSE_INCLUDE_NAME), rules_out)
+    bundle["strat_gen"].write_all(aimd_path)
+    return strategic_full_counts(bundle)
