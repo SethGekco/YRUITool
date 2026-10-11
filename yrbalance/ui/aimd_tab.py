@@ -56,12 +56,15 @@ class AimdTab(QWidget):
         gen_wave_b.clicked.connect(self._generate_waves)
         gen_spec_b = QPushButton("Specialty Waves…")
         gen_spec_b.clicked.connect(self._generate_specialty)
+        gen_all_b = QPushButton("Generate Everything…")
+        gen_all_b.clicked.connect(self._generate_everything)
         bar.addWidget(reload_b)
         bar.addWidget(lint_b)
         bar.addWidget(lib_b)
         bar.addWidget(gen_tf_b)
         bar.addWidget(gen_wave_b)
         bar.addWidget(gen_spec_b)
+        bar.addWidget(gen_all_b)
         bar.addWidget(QLabel("Search:"))
         self.search = QLineEdit()
         self.search.setClearButtonEnabled(True)
@@ -344,3 +347,16 @@ class AimdTab(QWidget):
         from .wavegen_specialty_dialog import SpecialtyWaveDialog
         SpecialtyWaveDialog(self, rules, aimd_path,
                             on_inserted=self._reload).exec()
+
+    def _generate_everything(self):
+        rules = getattr(self.mw, "source_path", None)
+        aimd_path = getattr(self, "aimd_path", None)
+        if not rules:
+            QMessageBox.information(self, "Generate", "Load a rules file first.")
+            return
+        if not aimd_path:
+            QMessageBox.information(self, "Generate", "This mod has no aimd.ini to "
+                                    "write into.")
+            return
+        from .wavegen_everything_dialog import EverythingDialog
+        EverythingDialog(self, rules, aimd_path, on_inserted=self._reload).exec()
