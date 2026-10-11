@@ -91,3 +91,18 @@ aren't in the mod is skipped. Shares the id registries so ids stay collision-fre
 vs the on-disk aimd. UI: AI (aimd) tab → **Specialty Waves…** — tick the types +
 difficulties/scale/seed, Generate → preview + counts, Insert (backup kept, reloads).
 Validated on vanilla (0 new unresolved refs). Tested (`test_wavegen_specialty` + UI).
+
+## Milestone 6 — "Generate Everything" + coverage fix (SHIPPED)
+`generate.py`: `generate_everything` / `everything_preview_text` /
+`insert_everything` / `everything_counts` — the full aimd pipeline with SHARED id
+registries: regular waves → pool teams → procedural extras (patrols / tech capture
+/ destroy-tech) → coverage pass (silent dedup + coverage fillers) → all applicable
+specialty waves. Each stage is wrapped so a non-applicable one is skipped.
+UI: AI (aimd) tab → **Generate Everything…** — wave counts / difficulties / scale /
+seed + pipeline toggles (pool / patrols / capture / destroy-tech / coverage /
+specialty), Generate → counts breakdown + attack-chain preview, Insert (backup, one
+pass, reloads).
+Salvage fix: `coverage_tracker` imported a non-existent `generate_script_for_taskforce`
+(a dead `# noqa: F401`), which crashed the entire coverage pass — removed, so the
+coverage dedup + fillers now run. Validated on vanilla (0 new unresolved refs across
+the full combined chain). Tested (`test_wavegen_everything` + UI).

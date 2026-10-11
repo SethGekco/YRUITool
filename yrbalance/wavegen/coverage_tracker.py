@@ -87,9 +87,8 @@ def generate_coverage_fillers(wave_gen, parser) -> int:
     # Grab (or generate) a very-simple attack script — same one whether
     # the unit is infantry or vehicle. Standard: gather at enemy, attack,
     # loop. Priority 3 so it loses to specific-role scripts.
-    from .script_generator import generate_script_for_taskforce  # noqa: F401
-    # We use the existing script generator by faking a taskforce label
-    # containing GENERAL_ATTACK — it picks the right script for us.
+    # (We use the existing script generator by faking a taskforce label
+    # containing GENERAL_ATTACK below — it picks the right script for us.)
 
     for rec in unused:
         faction = getattr(rec, 'faction', None) or 'gdi'

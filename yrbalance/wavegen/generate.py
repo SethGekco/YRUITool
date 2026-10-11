@@ -264,3 +264,164 @@ def insert_specialty_waves(rules_path, aimd_path, keys, difficulties, seed=None,
                                    seed=seed, taskforce_scale=taskforce_scale)
     gen.write_all(aimd_path)
     return wave_counts(gen)
+
+
+# ── "generate everything": the full CLI pipeline (aimd-only) ────────────────
+def _wavegen_registries(rules_path, aimd_path):
+    """Shared registries + side_map + phobos for a combined generation pass, so
+    every generator mints ids collision-free against the same base aimd."""
+    from pathlib import Path
+    from .id_registry import GlobalIDRegistry
+    from .taskforce_generator import IDRegistry
+    from .script_generator import ScriptRegistry
+    from .team_generator import TeamRegistry
+    from .trigger_generator import TriggerRegistry, build_side_map
+    gr = GlobalIDRegistry.from_aimd(aimd_path)
+    try:
+        from .cli import detect_extensions
+        _ares, phobos = detect_extensions(Path(rules_path), Path(aimd_path))
+    except Exception:
+        phobos = True
+    return {
+        "global": gr,
+        "tf": IDRegistry.from_aimd(aimd_path, gr),
+        "sc": ScriptRegistry.from_aimd(aimd_path, gr),
+        "team": TeamRegistry.from_aimd(aimd_path, gr),
+        "trig": TriggerRegistry.from_aimd(aimd_path, gr),
+        "side_map": build_side_map(rules_path),
+        "phobos": phobos,
+    }
+
+
+_DEFAULT_EVERYTHING_OPTS = {
+    "pool_teams": True, "patrols": True, "capture": True,
+    "destroy_tech": True, "coverage": True,
+}
+
+
+def generate_everything(rules_path, aimd_path, wave_cfg, specialty_keys,
+                        options=None, seed=None):
+    """Run the whole aimd pipeline with SHARED registries: regular waves + pool
+    teams + procedural extras (patrols/capture/destroy-tech) + coverage pass +
+    the selected specialty waves. Returns (wave_gen, transport_gen); both are
+    written (wave_gen first, then transport_gen) by the preview/insert helpers."""
+    import io
+    import contextlib
+    from .wave_generator import (WaveGenerator, WaveGeneratorConfig,
+                                 TransportCompositionGenerator)
+    opts = dict(_DEFAULT_EVERYTHING_OPTS)
+    opts.update(options or {})
+    parser = parse_rules(rules_path)
+    reg = _wavegen_registries(rules_path, aimd_path)
+    scale = wave_cfg.get("taskforce_scale", 1.0)
+
+    scan_result = aiext_cfg = None
+    try:
+        from .aiext_generator import scan_mod, AIExtConfig
+        scan_result = scan_mod(rules_path, parser=parser,
+                               sides_registry=parser.sides)
+        aiext_cfg = AIExtConfig()
+    except Exception:
+        scan_result = aiext_cfg = None
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        wg = WaveGenerator(parser, reg["global"], reg["tf"], reg["sc"],
+                           reg["team"], reg["trig"], reg["side_map"],
+                           phobos=reg["phobos"], seed=seed,
+                           scan_result=scan_result)
+        wcfg = WaveGeneratorConfig(aiext_config=aiext_cfg, **wave_cfg)
+        wg.aiext_writer.set_debug_messages(wcfg.debug_messages)
+        wg.generate(wcfg)
+
+        if opts["pool_teams"]:
+            try:
+                facs = sorted(parser.sides.faction_countries.keys())
+                pool = wg.team_gen.generate_pool_teams(
+                    facs, reg["tf"], reg["sc"], aimd_path, taskforce_scale=scale)
+                if pool:
+                    wg.teams.extend(pool)
+                    wg.triggers.extend(wg.trig_gen.generate_for_teams(pool))
+            except Exception:
+                pass
+        if opts["patrols"] or opts["capture"] or opts["destroy_tech"]:
+            try:
+                from .procedural_scripts import generate_procedural_extras
+                generate_procedural_extras(
+                    wg, parser, patrols=opts["patrols"],
+                    capture=opts["capture"], destroy_tech=opts["destroy_tech"])
+            except Exception:
+                pass
+        if opts["coverage"]:
+            try:
+                from .coverage_tracker import apply_coverage
+                apply_coverage(wg, parser)
+            except Exception:
+                pass
+
+        trg = None
+        if specialty_keys:
+            trg = TransportCompositionGenerator(
+                parser, reg["tf"], reg["sc"], reg["team"], reg["trig"],
+                reg["side_map"], phobos=reg["phobos"], seed=seed,
+                taskforce_scale=scale)
+            method_of = {k: m for k, _lbl, m in SPECIALTY_WAVES}
+            for key in specialty_keys:
+                m = getattr(trg, method_of.get(key, ""), None)
+                if m is None:
+                    continue
+                try:
+                    m(list(wave_cfg.get("difficulties", ["Hard"])))
+                except Exception:
+                    pass
+    return wg, trg
+
+
+def everything_counts(wg, trg):
+    c = wave_counts(wg)
+    if trg is not None:
+        tc = wave_counts(trg)
+        for k in c:
+            c[k] += tc[k]
+    return c
+
+
+def everything_preview_text(rules_path, aimd_path, wave_cfg, specialty_keys,
+                            options=None, seed=None):
+    """(wg, trg, preview_text): the full generated chain alone (both generators
+    written against an empty base, wave first then specialty)."""
+    import tempfile
+    import os
+    wg, trg = generate_everything(rules_path, aimd_path, wave_cfg,
+                                  specialty_keys, options=options, seed=seed)
+    t1 = tempfile.NamedTemporaryFile("w", suffix=".ini", delete=False)
+    t1.close()
+    t2 = tempfile.NamedTemporaryFile("w", suffix=".ini", delete=False)
+    t2.close()
+    try:
+        wg.write_all(t1.name + ".base", t1.name)
+        if trg is not None:
+            trg.write_all(t1.name, t2.name)
+            src = t2.name
+        else:
+            src = t1.name
+        with open(src, encoding="latin-1", errors="replace") as fh:
+            text = fh.read()
+    finally:
+        for t in (t1.name, t2.name):
+            try:
+                os.unlink(t)
+            except OSError:
+                pass
+    return wg, trg, text
+
+
+def insert_everything(rules_path, aimd_path, wave_cfg, specialty_keys,
+                      options=None, seed=None):
+    """Regenerate the full pipeline and write it into aimd_path (caller backs up
+    first): wave_gen first, then the specialty generator. Returns the counts."""
+    wg, trg = generate_everything(rules_path, aimd_path, wave_cfg,
+                                  specialty_keys, options=options, seed=seed)
+    wg.write_all(aimd_path)
+    if trg is not None:
+        trg.write_all(aimd_path)
+    return everything_counts(wg, trg)
