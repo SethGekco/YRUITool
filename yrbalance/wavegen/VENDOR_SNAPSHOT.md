@@ -48,3 +48,18 @@ faction/phase/role/diff, composition) + section text, tick what to keep, **Inser
 into aimd.ini** (backup kept, reloads the tab). Tested (`test_wavegen_taskforce` +
 UI). The composer's role-grading is the known-imperfect part to polish next; team /
 script / trigger / wave generators follow the same headless-API + preview pattern.
+
+## Milestone 3 — full wave chain (SHIPPED)
+`generate.py`: `wave_vocab`, `generate_waves(rules, aimd, cfg, seed)` (drives
+WaveGenerator — builds the registries + side_map + Phobos AIExt scan, mutes the
+progress prints, produces the complete chain: TaskForces + ScriptTypes + TeamTypes
++ AITriggerTypes), `waves_preview_text` (generated chain alone, via write_all to an
+empty base — write_all isn't safe to call twice on one generator, so insert
+regenerates), `insert_waves`, `wave_counts`.
+UI: AI (aimd) tab → **Generate Waves…** — wave counts / difficulties / scale /
+options (diversify, gunner IFVs, debug AIExt) / seed, Generate → counts summary +
+chain preview, Insert into aimd.ini (backup kept, reloads). Unlike TaskForces alone,
+this writes a chain that actually RUNS in-game (every team's TaskForce/Script and
+every trigger's team resolve — lint adds 0 new unresolved refs). Tested
+(`test_wavegen_wave` + UI). The role-grading/script-formation quality is the polish
+track from here.

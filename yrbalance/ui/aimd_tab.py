@@ -52,10 +52,13 @@ class AimdTab(QWidget):
         lib_b.clicked.connect(self._open_library)
         gen_tf_b = QPushButton("Generate TaskForces…")
         gen_tf_b.clicked.connect(self._generate_taskforces)
+        gen_wave_b = QPushButton("Generate Waves…")
+        gen_wave_b.clicked.connect(self._generate_waves)
         bar.addWidget(reload_b)
         bar.addWidget(lint_b)
         bar.addWidget(lib_b)
         bar.addWidget(gen_tf_b)
+        bar.addWidget(gen_wave_b)
         bar.addWidget(QLabel("Search:"))
         self.search = QLineEdit()
         self.search.setClearButtonEnabled(True)
@@ -311,3 +314,16 @@ class AimdTab(QWidget):
         from .wavegen_taskforce_dialog import TaskforceGenDialog
         TaskforceGenDialog(self, rules, aimd_path,
                            on_inserted=self._reload).exec()
+
+    def _generate_waves(self):
+        rules = getattr(self.mw, "source_path", None)
+        aimd_path = getattr(self, "aimd_path", None)
+        if not rules:
+            QMessageBox.information(self, "Generate", "Load a rules file first.")
+            return
+        if not aimd_path:
+            QMessageBox.information(self, "Generate", "This mod has no aimd.ini to "
+                                    "write waves into.")
+            return
+        from .wavegen_wave_dialog import WaveGenDialog
+        WaveGenDialog(self, rules, aimd_path, on_inserted=self._reload).exec()
