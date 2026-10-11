@@ -179,6 +179,36 @@ def delete_collection(name, path=None):
     return cols
 
 
+def rename_collection(old, new, path=None):
+    """Rename a user collection (auto per-mod folders are renamed via
+    rename_source). No-op if `new` is empty or already taken."""
+    new = (new or "").strip()
+    sources, cols = load_catalog(path)
+    if not new or any(c.name == new for c in cols):
+        return cols
+    for c in cols:
+        if c.name == old and not c.auto_source:
+            c.name = new
+    save_catalog(sources, cols, path)
+    return cols
+
+
+def rename_source(source_id, new_label, path=None):
+    """Rename a source and keep its auto per-mod collection's name in sync."""
+    new_label = (new_label or "").strip()
+    sources, cols = load_catalog(path)
+    if not new_label:
+        return sources, cols
+    for s in sources:
+        if s.id == source_id:
+            s.label = new_label
+    for c in cols:
+        if c.auto_source == source_id:
+            c.name = new_label
+    save_catalog(sources, cols, path)
+    return sources, cols
+
+
 def _item_key(item):
     return [item.source_id, item.kind, item.name]
 

@@ -189,12 +189,29 @@ def main():
         remove_from_collection("my-favs", veh_item)
         _s, cols3 = load_catalog()
         col_rm_ok = not next(c for c in cols3 if c.name == "my-favs").items
-        delete_collection("my-favs")
+        # rename a user collection
+        from yrbalance.engine import rename_collection, rename_source
+        rename_collection("my-favs", "keepers")
+        _s, colsr = load_catalog()
+        col_ren_ok = (any(c.name == "keepers" for c in colsr)
+                      and not any(c.name == "my-favs" for c in colsr))
+        delete_collection("keepers")
         _s, cols4 = load_catalog()
-        col_del_ok = not any(c.name == "my-favs" for c in cols4)
-        print(f"collections add/remove/delete: "
-              f"{'OK' if col_add_ok and col_rm_ok and col_del_ok else 'FAIL'}")
-        ok = ok and col_add_ok and col_rm_ok and col_del_ok
+        col_del_ok = not any(c.name == "keepers" for c in cols4)
+        print(f"collections add/remove/rename/delete: "
+              f"{'OK' if col_add_ok and col_rm_ok and col_ren_ok and col_del_ok else 'FAIL'}")
+        ok = ok and col_add_ok and col_rm_ok and col_ren_ok and col_del_ok
+
+        # rename a source → source label + its auto collection stay in sync
+        rename_source(src.id, "Turkey Mod")
+        srcs2, cols6 = load_catalog()
+        s2 = next(x for x in srcs2 if x.id == src.id)
+        ren_src_ok = (s2.label == "Turkey Mod"
+                      and any(c.auto_source == src.id and c.name == "Turkey Mod"
+                              for c in cols6))
+        print(f"rename source + auto collection sync: "
+              f"{'OK' if ren_src_ok else 'FAIL'}")
+        ok = ok and ren_src_ok
 
         # snapshot mode copies rules + aimd into a private dir
         snap = add_source(rules, label="turkey-snap", mode="snapshot",

@@ -223,6 +223,25 @@ def main():
         ok = ok and tfilt_ok
         tab.tag_combo.setCurrentIndex(0)
 
+        # Source display shows the last two path components (disambiguates …/RA2)
+        sid0 = veh_i[0].source_id
+        disp = tab._source_display(sid0)
+        src_disp_ok = "/" in disp and "turkey-mod" in disp
+        print(f"source display shows path components: "
+              f"{'OK' if src_disp_ok else 'FAIL'}  '{disp}'")
+        ok = ok and src_disp_ok
+
+        # double-click rename of the mod folder → custom label shown
+        QInputDialog.getText = staticmethod(lambda *a, **k: ("Turkey Mod", True))
+        frow = next(i for i in range(tab.col_list.count())
+                    if "turkey" in tab.col_list.item(i).text().lower())
+        tab._rename_collection_row(tab.col_list.item(frow))
+        renamed_shown = any("Turkey Mod" in tab.col_list.item(i).text()
+                            for i in range(tab.col_list.count()))
+        ren_ok = renamed_shown and tab._source_display(sid0) == "Turkey Mod"
+        print(f"rename mod folder → custom label: {'OK' if ren_ok else 'FAIL'}")
+        ok = ok and ren_ok
+
         # real SHP render path (uses a game SHP if present on this machine)
         import glob
         import types

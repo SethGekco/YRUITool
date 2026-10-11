@@ -208,7 +208,8 @@ from .hva import parse_hva, Hva, HvaError
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
     add_source, remove_source, set_source_summary,
-    create_collection, delete_collection, add_to_collection,
+    create_collection, delete_collection, rename_collection, rename_source,
+    add_to_collection,
     remove_from_collection, collection_keys, scan_items, scan_source,
     balance_culture, describe_culture, conversion_factors, convert_unit_stats,
     convert_weapon_stats,
@@ -304,7 +305,8 @@ __all__ = [
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",
-    "create_collection", "delete_collection", "add_to_collection",
+    "create_collection", "delete_collection", "rename_collection",
+    "rename_source", "add_to_collection",
     "remove_from_collection", "collection_keys", "scan_items", "scan_source",
     "balance_culture", "describe_culture", "conversion_factors",
     "convert_unit_stats", "convert_weapon_stats",

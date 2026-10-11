@@ -29,7 +29,8 @@ from PySide6.QtWidgets import (
 
 from ..engine import (
     load_catalog, add_source, remove_source, set_source_summary,
-    create_collection, delete_collection, add_to_collection, scan_source,
+    create_collection, delete_collection, rename_collection, rename_source,
+    add_to_collection, scan_source,
     describe_culture, balance_culture, conversion_factors, convert_unit_stats,
     convert_weapon_stats, load_tags, set_unit_tags, all_tags,
     unit_report, extract_bundle, resolve_media, get_val,
@@ -112,6 +113,8 @@ class LibraryTab(QWidget):
         ll.addWidget(QLabel("<b>Collections</b>"))
         self.col_list = QListWidget()
         self.col_list.currentRowChanged.connect(self._on_collection)
+        self.col_list.itemDoubleClicked.connect(self._rename_collection_row)
+        self.col_list.setToolTip("Double-click a mod folder or collection to rename")
         ll.addWidget(self.col_list, 1)
         self.add_to_btn = QPushButton("Add selected → collection…")
         self.add_to_btn.clicked.connect(self._add_selected_to_collection)
@@ -729,6 +732,24 @@ class LibraryTab(QWidget):
         s = next((x for x in self.sources if x.id == sid), None)
         return s.label if s else sid
 
+    def _source_display(self, sid):
+        """Column text: a renamed source shows its custom label; otherwise the last
+        two folder components, so a shelf full of '…/RA2' mods stays
+        distinguishable by their parent folder."""
+        s = next((x for x in self.sources if x.id == sid), None)
+        if s is None:
+            return sid
+        folder = os.path.dirname(s.orig_path or s.rules_path)
+        base = os.path.basename(folder)
+        if s.label and s.label != base:        # user gave it a custom name
+            return s.label
+        parts = [p for p in folder.replace("\\", "/").split("/") if p]
+        return "/".join(parts[-2:]) if len(parts) >= 2 else (s.label or base)
+
+    def _source_folder(self, sid):
+        s = next((x for x in self.sources if x.id == sid), None)
+        return os.path.dirname(s.orig_path or s.rules_path) if s else ""
+
     def _rebuild_collections(self, keep_row=None):
         self.col_list.blockSignals(True)
         self.col_list.clear()
@@ -767,7 +788,9 @@ class LibraryTab(QWidget):
                 name = QTableWidgetItem(it.name)
                 name.setToolTip(it.name)
                 tbl.setItem(r, 0, name)
-                tbl.setItem(r, 1, QTableWidgetItem(self._source_label(it.source_id)))
+                srcit = QTableWidgetItem(self._source_display(it.source_id))
+                srcit.setToolTip(self._source_folder(it.source_id))
+                tbl.setItem(r, 1, srcit)
                 tbl.setItem(r, 2, QTableWidgetItem(it.detail or it.obtain))
             self._tables[kind] = (tbl, items)
 
@@ -812,7 +835,7 @@ class LibraryTab(QWidget):
                 vis = pred(it) and self._passes_checks(it) and (
                     not tag or tag in self._item_tags(it)) and (
                     not text or text in it.name.lower()
-                    or text in self._source_label(it.source_id).lower()
+                    or text in self._source_display(it.source_id).lower()
                     or text in (it.detail or it.obtain).lower())
                 tbl.setRowHidden(r, not vis)
                 shown += 1 if vis else 0
@@ -960,6 +983,29 @@ class LibraryTab(QWidget):
         _ConvertDialog(self, it, src.label,
                        os.path.basename(os.path.dirname(target_rules)),
                        src.balance, tgt_culture, sections, rmap).exec()
+
+    def _rename_collection_row(self, item):
+        row = self.col_list.row(item)
+        if not (0 <= row < len(self._col_desc)):
+            return
+        mode, key = self._col_desc[row]
+        if mode == "all":
+            return
+        if mode == "auto":
+            s = next((x for x in self.sources if x.id == key), None)
+            if s is None:
+                return
+            new, ok = QInputDialog.getText(self, "Rename mod folder",
+                                           "Display name:", text=s.label)
+            if ok and new.strip():
+                rename_source(key, new.strip())
+                self._reload(keep_row=row)
+        else:
+            new, ok = QInputDialog.getText(self, "Rename collection",
+                                           "Name:", text=key)
+            if ok and new.strip() and new.strip() != key:
+                rename_collection(key, new.strip())
+                self._reload(keep_row=row)
 
     def _remove_selected(self):
         row = self.col_list.currentRow()
