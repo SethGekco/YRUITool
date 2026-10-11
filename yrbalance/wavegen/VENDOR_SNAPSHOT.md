@@ -63,3 +63,19 @@ this writes a chain that actually RUNS in-game (every team's TaskForce/Script an
 every trigger's team resolve — lint adds 0 new unresolved refs). Tested
 (`test_wavegen_wave` + UI). The role-grading/script-formation quality is the polish
 track from here.
+
+## Milestone 4 — role-grading + script-formation polish
+- **Role grading**: `role_unit_filter` fell through to `return True` for ANTI_INF /
+  ANTI_VEHICLE / ANTI_BUILDING, so those roles didn't differentiate — ANTI_INF and
+  ANTI_VEHICLE produced identical compositions, and snipers/tanks landed in the
+  wrong waves. Now each requires the matching WeaponAnalyzer tag (AG-Anti_Infantry
+  / AG-Anti_Vehicle / AG-Anti_Building), so specialists route to their role while
+  genuine multi-role units stay eligible for both. Verified: sniper → anti-inf
+  only, Grizzly → anti-vehicle not anti-inf, and the eligible pools now differ.
+- **Script formation**: the dynamic transport-script path validated but never
+  repaired. `_get_or_create_script` now runs `script_validator.repair` (fixes the
+  assembly-before-unload class → MoveToEnemyBldg so units unload at the target) and
+  logs it, then surfaces any remaining ERRORs. The main wave scripts come from a
+  curated, already-valid template library and are left untouched.
+- Full-chain generation stays consistent after both changes (0 new unresolved refs
+  on a 252-trigger batch). Tested (`test_wavegen_roles`).
