@@ -101,6 +101,36 @@ def main():
     print(f"live search hides non-matches: {'OK' if hidden else 'FAIL'}")
     ok = ok and hidden
 
+    # edit mode: change a trigger's owner + save → persisted to the file
+    tab.reg_tabs.setCurrentIndex(tidx)
+    tab._lists["AITriggerTypes"].setCurrentRow(0)
+    tab.edit_chk.setChecked(True)                 # editable raw def shown
+    tab.detail.setPlainText(
+        "Guard Base,TM1,Russians,9,0,GATECH,0100,70.0,10.0,70.0,1,0,1,0,TM1,0,1,1")
+    tab._save_entry()
+    from yrbalance.engine import (parse_ini_lines as _pil,
+                                  build_section_map as _bsm, trigger_fields as _tf)
+    saved = _bsm(_pil(os.path.join(mod, "aimd.ini")))[0]
+    trig_edit_ok = _tf(saved, "TR1")[2] == "Russians"
+    print(f"edit trigger owner + save persists: "
+          f"{'OK' if trig_edit_ok else 'FAIL'}")
+    ok = ok and trig_edit_ok
+
+    # edit mode: change a teamtype section + save
+    tab.reg_tabs.setCurrentIndex(tmidx)
+    tab._lists["TeamTypes"].setCurrentRow(0)
+    tab.edit_chk.setChecked(True)
+    tab.detail.setPlainText("[TM1]\nName=guard team\nTaskForce=TF1\nScript=SC1\n"
+                            "House=Russians\nMax=9")
+    tab._save_entry()
+    from yrbalance.engine import get_val as _gv
+    saved2 = _bsm(_pil(os.path.join(mod, "aimd.ini")))[0]
+    sec_edit_ok = (_gv(saved2, "TM1", "House") == "Russians"
+                   and _gv(saved2, "TM1", "Max") == "9")
+    print(f"edit teamtype section + save persists: "
+          f"{'OK' if sec_edit_ok else 'FAIL'}")
+    ok = ok and sec_edit_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

@@ -88,6 +88,25 @@ def main():
               f"{'OK' if refs_ok else 'FAIL'}  tm={ref_tm}")
         ok = ok and refs_ok
 
+        # edit: replace a trigger field + a section, re-parse, confirm persisted
+        from yrbalance.engine import replace_trigger, replace_section, get_val
+        replace_trigger(lines, m, "TR1",
+                        "Guard Base,TM1,Russians,9,0,GATECH,0100,80,10,80,"
+                        "1,0,1,0,0,0,1,1")
+        replace_section(lines, m, "TM1",
+                        "[TM1]\nName=guard team\nTaskForce=TF1\nScript=SC1\n"
+                        "House=Russians\nMax=4")
+        m2 = build_section_map(lines)[0]
+        tf2 = trigger_fields(m2, "TR1")
+        edit_ok = (tf2[2] == "Russians" and tf2[3] == "9"
+                   and get_val(m2, "TM1", "House") == "Russians"
+                   and get_val(m2, "TM1", "Max") == "4"
+                   and get_val(m2, "TF1", "Name") == "guard force"  # intact
+                   and "taskforces" in m2 and "aitriggertypes" in m2)
+        print(f"replace_trigger + replace_section (persist, intact): "
+              f"{'OK' if edit_ok else 'FAIL'}")
+        ok = ok and edit_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
