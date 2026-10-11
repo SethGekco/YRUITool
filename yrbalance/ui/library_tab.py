@@ -32,6 +32,7 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
+    house_remap_palette, HOUSE_COLORS,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes,
 )
@@ -205,6 +206,19 @@ class LibraryTab(QWidget):
         self.file_table.setTextElideMode(Qt.ElideNone)
         self.file_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         rl.addWidget(self.file_table, 1)
+        hrow = QHBoxLayout()
+        hrow.addWidget(QLabel("House colour:"))
+        self.house_combo = QComboBox()
+        self.house_combo.addItem("None", None)
+        for name in HOUSE_COLORS:
+            self.house_combo.addItem(name, name)
+        self.house_combo.setCurrentText("Red")
+        self.house_combo.currentIndexChanged.connect(
+            lambda _i: self._show_detail())
+        hrow.addWidget(self.house_combo)
+        hrow.addStretch(1)
+        rl.addLayout(hrow)
+
         self.art_img = QLabel()
         self.art_img.setAlignment(Qt.AlignCenter)
         self.art_img.setMinimumHeight(140)
@@ -300,7 +314,7 @@ class LibraryTab(QWidget):
                     self.art_img.setText("(SHP not found in sources)")
                     return
                 img = parse_shp(data)
-                pal = self._preview_palette(sid, scan)
+                pal = self._house_palette(self._preview_palette(sid, scan))
                 w, h, rgba = frame_to_rgba(
                     img, img.frames[best_frame_index(img)], pal)
                 self._set_art_pixmap(w, h, rgba)
@@ -335,7 +349,7 @@ class LibraryTab(QWidget):
                 if not parts:
                     self.art_img.setText("(VXL not found / empty)")
                     return
-                pal = self._preview_palette(sid, scan)
+                pal = self._house_palette(self._preview_palette(sid, scan))
                 w, h, rgba = render_parts(parts, palette=pal,
                                           vpl=self._preview_vpl(sid))
                 self._set_art_pixmap(w, h, rgba)
@@ -395,6 +409,14 @@ class LibraryTab(QWidget):
             pal = grayscale_palette()
         self._pal_cache[sid] = pal
         return pal
+
+    def _house_palette(self, base):
+        """Apply the selected house colour to the remap range (16-31); returns the
+        palette unchanged if 'None' is selected."""
+        name = self.house_combo.currentData()
+        if not name or name not in HOUSE_COLORS:
+            return base
+        return house_remap_palette(base, HOUSE_COLORS[name])
 
     def _preview_vpl(self, sid):
         """A parsed voxels.vpl for game-accurate voxel lighting, or None (→

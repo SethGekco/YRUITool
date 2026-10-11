@@ -194,7 +194,7 @@ from .ailib import (
 )
 from .images import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
-    ShpImage, ShpFrame, ImageError,
+    house_remap_palette, HOUSE_COLORS, ShpImage, ShpFrame, ImageError,
 )
 from .audio import (
     decode_ima_adpcm, to_wav, decode_bag_sample, bag_sample_to_wav, AudioSample,
@@ -288,7 +288,8 @@ __all__ = [
     "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
     # images (SHP / palette)
     "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
-    "best_frame_index", "ShpImage", "ShpFrame", "ImageError",
+    "best_frame_index", "house_remap_palette", "HOUSE_COLORS",
+    "ShpImage", "ShpFrame", "ImageError",
     # audio (bag IMA-ADPCM → WAV)
     "decode_ima_adpcm", "to_wav", "decode_bag_sample", "bag_sample_to_wav",
     "AudioSample",

@@ -163,8 +163,16 @@ aimd) so detail is instant. Remaining:
   ported from ccmaps-net (`UnitDrawable` sets `TurretVoxelOffset`, `VxlRenderer`
   applies `translate(0.18·offset,0,0)` to turret/barrel only). Verified: a +X
   offset of 10 shifts a part's projected ix by exactly 10; visually the turret
-  copy repositions forward. Remaining voxel work: selectable view angle, applying
-  a house colour to the remap range.
+  copy repositions forward.
+- **House-colour tinting — SHIPPED.** `images.house_remap_palette(palette, hsv)`
+  rebuilds the remap range (indices 16-31, per the VPL header) into a house
+  colour's 16 shades using gamemd's exact builder (hue kept, saturation up a sine,
+  value down a cosine, via RA2's integer HSV→RGB) — ported from ccmaps-net
+  `Palette.Remap`. `HOUSE_COLORS` presets (Red/Blue/Green/…). The Library detail
+  pane has a House-colour combo (default Red, None to disable) applied to BOTH SHP
+  and VXL previews, so the player-colour parts render tinted instead of raw
+  magenta. Verified visually (usaguntur dome → red/blue) + tested. Remaining voxel
+  work: selectable view angle.
 - "Convert selected into THIS mod's culture" action wired to the porter using
   `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
   porter from a row.

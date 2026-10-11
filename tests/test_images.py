@@ -14,7 +14,7 @@ import struct
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from yrbalance.engine import (
-    parse_shp, load_palette, frame_to_rgba, best_frame_index,
+    parse_shp, load_palette, frame_to_rgba, best_frame_index, grayscale_palette,
 )
 
 
@@ -108,6 +108,23 @@ def main():
     bfi_ok = best_frame_index(bimg) == 1
     print(f"best_frame_index skips empty frame: {'OK' if bfi_ok else 'FAIL'}")
     ok = ok and bfi_ok
+
+    # ── house-colour remap (indices 16-31) ───────────────────────────────────
+    from yrbalance.engine import house_remap_palette, HOUSE_COLORS
+    base = grayscale_palette()
+    red = house_remap_palette(base, HOUSE_COLORS["Red"])
+    blue = house_remap_palette(base, HOUSE_COLORS["Blue"])
+    # only 16-31 change; shade 0 bright, shade 15 black; hue-dominant
+    r16, r31 = red[16], red[31]
+    b16 = blue[16]
+    house_ok = (red[0] == base[0] and red[40] == base[40]      # non-remap intact
+                and r16 != base[16]                            # remap changed
+                and r31 == (0, 0, 0)                           # darkest ≈ black
+                and r16[0] > r16[1] and r16[0] > r16[2]        # red dominant
+                and b16[2] > b16[0] and b16[2] > b16[1])       # blue dominant
+    print(f"house remap (16-31 tinted, 0/40 intact, hue-dominant): "
+          f"{'OK' if house_ok else 'FAIL'}  red16={r16} blue16={b16}")
+    ok = ok and house_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

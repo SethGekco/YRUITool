@@ -121,6 +121,53 @@ def grayscale_palette():
     return [(i, i, i) for i in range(256)]
 
 
+# RA2 player colours as (hue, saturation, value), each 0-255 (hue split on 255).
+HOUSE_COLORS = {
+    "Red": (0, 255, 255),
+    "Orange": (20, 255, 255),
+    "Yellow": (40, 255, 255),
+    "Green": (85, 255, 230),
+    "Teal": (120, 255, 230),
+    "Blue": (160, 255, 255),
+    "Purple": (190, 255, 240),
+    "Pink": (220, 210, 255),
+    "Grey": (0, 0, 180),
+}
+
+
+def _engine_hsv_to_rgb(h, s, v):
+    """RA2's own integer HSV→RGB (0x00517440): hue split on 255, truncating."""
+    sector = (h * 6) // 255
+    frac = (h * 6) % 255
+    p = (255 - s) * v // 255
+    q = (255 - frac * s // 255) * v // 255
+    t = (255 - (255 - frac) * s // 255) * v // 255
+    return {1: (q, v, p), 2: (p, v, t), 3: (p, q, v),
+            4: (t, p, v), 5: (v, p, q)}.get(sector, (v, t, p))
+
+
+def house_remap_palette(palette, hsv, first=16, last=31):
+    """Return a copy of `palette` with the remap range [first, last] replaced by a
+    house colour's 16 shades, matching gamemd's builder (0x0068C3B0): the hue is
+    kept while saturation sweeps up a sine and value down a cosine, so a shade
+    grows more saturated as it darkens (shade 15 ≈ black). `hsv` is (hue, sat, val)
+    each 0-255 (see HOUSE_COLORS)."""
+    import math
+    hue, sat, val = hsv
+    pal = list(palette)
+    for i in range(last - first + 1):
+        value = 0.19634954084936207 if i == 0 \
+            else i * 0.08144869842640204 + 0.3490658503988659
+        saturation = i * 0.046542113386515455 + 0.8726646259971648
+        r, g, b = _engine_hsv_to_rgb(hue, int(math.sin(saturation) * sat),
+                                     int(math.cos(value) * val))
+        # game stores 6-bit then displays expanded; match that round-trip
+        r6, g6, b6 = r * 63 // 255, g * 63 // 255, b * 63 // 255
+        pal[first + i] = ((r6 << 2) | (r6 >> 4), (g6 << 2) | (g6 >> 4),
+                          (b6 << 2) | (b6 >> 4))
+    return pal
+
+
 def frame_to_rgba(img, frame, palette, transparent_index=0):
     """Render one frame onto the full canvas as RGBA bytes. Index 0 (or
     `transparent_index`) is fully transparent. Returns (width, height, rgba)."""
