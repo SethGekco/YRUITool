@@ -54,11 +54,14 @@ class AimdTab(QWidget):
         gen_tf_b.clicked.connect(self._generate_taskforces)
         gen_wave_b = QPushButton("Generate Waves…")
         gen_wave_b.clicked.connect(self._generate_waves)
+        gen_spec_b = QPushButton("Specialty Waves…")
+        gen_spec_b.clicked.connect(self._generate_specialty)
         bar.addWidget(reload_b)
         bar.addWidget(lint_b)
         bar.addWidget(lib_b)
         bar.addWidget(gen_tf_b)
         bar.addWidget(gen_wave_b)
+        bar.addWidget(gen_spec_b)
         bar.addWidget(QLabel("Search:"))
         self.search = QLineEdit()
         self.search.setClearButtonEnabled(True)
@@ -327,3 +330,17 @@ class AimdTab(QWidget):
             return
         from .wavegen_wave_dialog import WaveGenDialog
         WaveGenDialog(self, rules, aimd_path, on_inserted=self._reload).exec()
+
+    def _generate_specialty(self):
+        rules = getattr(self.mw, "source_path", None)
+        aimd_path = getattr(self, "aimd_path", None)
+        if not rules:
+            QMessageBox.information(self, "Generate", "Load a rules file first.")
+            return
+        if not aimd_path:
+            QMessageBox.information(self, "Generate", "This mod has no aimd.ini to "
+                                    "write waves into.")
+            return
+        from .wavegen_specialty_dialog import SpecialtyWaveDialog
+        SpecialtyWaveDialog(self, rules, aimd_path,
+                            on_inserted=self._reload).exec()

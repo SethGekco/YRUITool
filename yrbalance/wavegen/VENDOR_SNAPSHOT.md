@@ -79,3 +79,15 @@ track from here.
   curated, already-valid template library and are left untouched.
 - Full-chain generation stays consistent after both changes (0 new unresolved refs
   on a 252-trigger batch). Tested (`test_wavegen_roles`).
+
+## Milestone 5 — specialty wave types (SHIPPED)
+`generate.py`: `specialty_wave_types()` (20 thematic compositions) +
+`generate_specialty_waves` / `specialty_preview_text` / `insert_specialty_waves`.
+Drives the vendored TransportCompositionGenerator's per-type methods (attack-dog
+harass, Terror Drone / parasite, BFRT & naval transports, mind control, engineer
+rush, deploy-to-fire, hero combos, magnetron, electric assault, demo truck, IFV/
+open-topped combos, squid naval, …), muting progress prints; a type whose units
+aren't in the mod is skipped. Shares the id registries so ids stay collision-free
+vs the on-disk aimd. UI: AI (aimd) tab → **Specialty Waves…** — tick the types +
+difficulties/scale/seed, Generate → preview + counts, Insert (backup kept, reloads).
+Validated on vanilla (0 new unresolved refs). Tested (`test_wavegen_specialty` + UI).
