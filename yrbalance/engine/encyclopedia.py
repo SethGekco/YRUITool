@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass, field
 
 from .ini_model import get_val, parse_ini_lines, build_section_map
+from .includes import load_with_includes
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
@@ -105,19 +106,32 @@ def _asset_location(catalog, name, vanilla_ids, is_sound=False):
     return AssetRef(name, "— not found", "missing")
 
 
+def _load_map(path, resolve_includes=True):
+    """Section map for one INI, with Ares [#include] / Phobos [$include] resolved
+    into one effective map when present (so units/art/sound defined in included
+    files are indexed, not missed)."""
+    if not path:
+        return {}
+    if resolve_includes:
+        return load_with_includes(path)[1]
+    return build_section_map(parse_ini_lines(path))[0]
+
+
 def build_mod_index(rules_path, label=None, config=None, vanilla_ids=None,
-                    progress=None):
+                    progress=None, resolve_includes=True):
     """Index one mod. `vanilla_ids` (from vanilla_asset_ids) lets a missing asset
-    be marked vanilla-provided vs truly missing."""
+    be marked vanilla-provided vs truly missing. `resolve_includes` expands Ares
+    [#include] / Phobos [$include] in rules/art/sound into one effective map so
+    sections split across included files are indexed too."""
     config = config or ModConfig.default()
     folder = os.path.dirname(rules_path)
     label = label or os.path.basename(folder) or os.path.basename(rules_path)
 
-    rules_map = build_section_map(parse_ini_lines(rules_path))[0]
+    rules_map = _load_map(rules_path, resolve_includes)
     art_p = _sibling(folder, "artmd.ini", "art.ini")
     snd_p = _sibling(folder, "soundmd.ini", "sound.ini")
-    art_map = build_section_map(parse_ini_lines(art_p))[0] if art_p else {}
-    sound_map = build_section_map(parse_ini_lines(snd_p))[0] if snd_p else {}
+    art_map = _load_map(art_p, resolve_includes)
+    sound_map = _load_map(snd_p, resolve_includes)
     if progress:
         progress("cataloguing assets…")
     catalog = build_media_catalog([folder])

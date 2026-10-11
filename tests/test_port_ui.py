@@ -68,7 +68,7 @@ def main():
     plan = build_port_plan(sm, mw.section_map,
                            build_section_map(parse_ini_lines(van))[0],
                            config=mw.config, src_art_map=am, src_sound_map=snm)
-    dlg._plan_ready((plan, True, True))
+    dlg._plan_ready((plan, True, True, [], []))
 
     ui_ok = dlg.factor_table.rowCount() >= 3 and dlg.tree.topLevelItemCount() >= 3
     print(f"populated: factors={dlg.factor_table.rowCount()} "

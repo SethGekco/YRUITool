@@ -24,6 +24,7 @@ from ..engine import (
     build_media_catalog, resolve_media, pack_media_mixes,
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
+    load_with_includes, include_graph, flatten_graph,
 )
 
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
@@ -97,9 +98,20 @@ class PortDialog(QDialog):
         tgt = self.mw.source_path or "(none — load a rules file first)"
         root.addWidget(QLabel(f"Importing INTO (loaded): <b>{tgt}</b>"))
 
+        arow = QHBoxLayout()
         self.analyze_btn = QPushButton("Analyze")
         self.analyze_btn.clicked.connect(self._analyze)
-        root.addWidget(self.analyze_btn)
+        arow.addWidget(self.analyze_btn)
+        self.inc_chk = QCheckBox("Resolve source [#include] / [$include] files")
+        self.inc_chk.setChecked(True)
+        self.inc_chk.setToolTip(
+            "Expand the old mod's Ares [#include] / Phobos [$include] graph so "
+            "objects defined in included files (country / SW / split rules) are "
+            "available to port, not just those in the main rulesmd.ini. Resolves "
+            "loose files relative to the source rules; missing ones are reported.")
+        arow.addWidget(self.inc_chk)
+        arow.addStretch(1)
+        root.addLayout(arow)
 
         self.status = QLabel("Pick the old mod and press Analyze.")
         self.status.setStyleSheet("color: gray;")
@@ -223,21 +235,36 @@ class PortDialog(QDialog):
             return
         van = self.van_edit.text().strip()
         folder = os.path.dirname(src)
+        resolve_inc = self.inc_chk.isChecked()
         self._busy(True)
         self.status.setText("Analyzing… (parsing mods, computing balance)")
 
+        def _map(path):
+            """Source map with includes resolved (when the toggle is on)."""
+            if not path:
+                return None, []
+            if resolve_inc:
+                missing = []
+                _l, smap, _o, _s = load_with_includes(path, missing=missing)
+                return smap, missing
+            return build_section_map(parse_ini_lines(path))[0], []
+
         def work():
-            sm = build_section_map(parse_ini_lines(src))[0]
+            sm, src_missing = _map(src)
             vm = (build_section_map(parse_ini_lines(van))[0]
                   if van and os.path.isfile(van) else None)
             art_p = _sibling(folder, "artmd.ini", "art.ini")
             snd_p = _sibling(folder, "soundmd.ini", "sound.ini")
-            am = build_section_map(parse_ini_lines(art_p))[0] if art_p else None
-            sn = build_section_map(parse_ini_lines(snd_p))[0] if snd_p else None
+            am, _ = _map(art_p) if art_p else (None, [])
+            sn, _ = _map(snd_p) if snd_p else (None, [])
+            inc_files = []
+            if resolve_inc:
+                inc_files = [os.path.basename(f) for f in
+                             flatten_graph(include_graph(src))][1:]
             plan = build_port_plan(sm, self.mw.section_map, vm,
                                    config=self.mw.config,
                                    src_art_map=am, src_sound_map=sn)
-            return plan, bool(art_p), bool(snd_p)
+            return plan, bool(art_p), bool(snd_p), inc_files, src_missing
 
         self._worker = _Worker(work)
         self._worker.done.connect(self._plan_ready)
@@ -249,7 +276,7 @@ class PortDialog(QDialog):
         self.status.setText(f"Analysis failed: {msg}")
 
     def _plan_ready(self, result):
-        self.plan, had_art, had_snd = result
+        self.plan, had_art, had_snd, inc_files, src_missing = result
         self._busy(False)
         self._fill_factors()
         self._fill_tree()
@@ -259,6 +286,10 @@ class PortDialog(QDialog):
             extra.append("artmd found")
         if had_snd:
             extra.append("soundmd found")
+        if inc_files:
+            extra.append(f"{len(inc_files)} include(s) resolved")
+        if src_missing:
+            extra.append(f"{len(src_missing)} include(s) missing")
         self.status.setText(
             f"{n} importable object(s). Tick what you want, tune ratios, Run. "
             + (" / ".join(extra) if extra else "no art/sound files beside source"))
