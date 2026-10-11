@@ -425,3 +425,86 @@ def insert_everything(rules_path, aimd_path, wave_cfg, specialty_keys,
     if trg is not None:
         trg.write_all(aimd_path)
     return everything_counts(wg, trg)
+
+
+# ── strategic triggers (tactical, condition-reactive AI behaviour) ──────────
+# The scenarios StrategicTriggerGenerator.generate() emits, with friendly text.
+# These are all-or-nothing inside generate(); listed here for the dialog blurb.
+STRATEGIC_SCENARIOS = [
+    ("Enemy has no base defenses", "rush the undefended enemy"),
+    ("Enemy has no anti-air", "send aerial / air-heavy attacks"),
+    ("Enemy fields heavy anti-air", "switch to massed aerial pressure"),
+    ("Aerial transport drop", "paradrop / transport infantry behind the line"),
+    ("Own base undefended", "pull forces back to defend"),
+    ("Own base lacks anti-air", "build / retask anti-air defense"),
+    ("MCV lost", "rebuild from a captured or spare MCV"),
+    ("Enemy has no Construction Yard", "press the kill on a crippled enemy"),
+    ("Enemy has no power", "strike while the enemy is shut down"),
+    ("Naval: no enemy shipyard", "contest / dominate the water"),
+    ("Naval: fight for dominance", "commit the fleet for sea control"),
+    ("Naval: dominance pressure", "exploit naval superiority"),
+]
+
+
+def strategic_scenarios():
+    """[(label, effect)] of the tactical strategic-trigger scenarios emitted."""
+    return list(STRATEGIC_SCENARIOS)
+
+
+def generate_strategic_triggers(rules_path, aimd_path, factions=None,
+                                difficulties=None, phobos=None, seed=None):
+    """Build condition-reactive 'strategic' triggers (aimd-only) with shared id
+    registries: the AI reacts to enemy/own base state (no defenses, no AA, MCV
+    lost, naval dominance, …) by launching the matching attack chain. Returns the
+    StrategicTriggerGenerator (written by the preview/insert helpers)."""
+    import io
+    import contextlib
+    from .strategic_trigger_generator import StrategicTriggerGenerator
+    parser = parse_rules(rules_path)
+    reg = _wavegen_registries(rules_path, aimd_path)
+    if factions is None:
+        factions = sorted(parser.sides.faction_countries.keys())
+    if difficulties is None:
+        difficulties = ["Easy", "Medium", "Hard"]
+    if phobos is None:
+        phobos = reg["phobos"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        sg = StrategicTriggerGenerator(
+            parser, reg["global"], reg["tf"], reg["sc"], reg["team"],
+            reg["trig"], reg["side_map"], dummy_gen=None, defense_gen=None,
+            seed=seed, ares=False)
+        sg.generate(factions=list(factions),
+                    difficulties=list(difficulties), phobos=phobos)
+    return sg
+
+
+def strategic_preview_text(rules_path, aimd_path, factions=None,
+                           difficulties=None, phobos=None, seed=None):
+    """(gen, preview_text): the generated strategic chain alone (written against
+    an empty base)."""
+    import tempfile
+    import os
+    sg = generate_strategic_triggers(rules_path, aimd_path, factions,
+                                     difficulties, phobos, seed)
+    t = tempfile.NamedTemporaryFile("w", suffix=".ini", delete=False)
+    t.close()
+    try:
+        sg.write_all(t.name + ".base", t.name)
+        with open(t.name, encoding="latin-1", errors="replace") as fh:
+            text = fh.read()
+    finally:
+        try:
+            os.unlink(t.name)
+        except OSError:
+            pass
+    return sg, text
+
+
+def insert_strategic_triggers(rules_path, aimd_path, factions=None,
+                              difficulties=None, phobos=None, seed=None):
+    """Regenerate the strategic chain and write it into aimd_path (caller backs
+    up first). Returns the counts."""
+    sg = generate_strategic_triggers(rules_path, aimd_path, factions,
+                                     difficulties, phobos, seed)
+    sg.write_all(aimd_path)
+    return wave_counts(sg)
