@@ -127,6 +127,46 @@ def main():
         print(f"has_includes: {'OK' if hi_ok else 'FAIL'}")
         ok = ok and hi_ok
 
+    # --- mix fallback: an include that isn't loose is pulled from a .mix ---
+    from yrbalance.engine.mixlib import write_mix
+    with tempfile.TemporaryDirectory() as d:
+        _w(os.path.join(d, "rulesmd.ini"),
+           "[#include]\r\n1=packed.ini\r\n2=loose.ini\r\n\r\n"
+           "[MAIN]\r\nA=1\r\n")
+        _w(os.path.join(d, "loose.ini"), "[LOOSE]\r\nB=2\r\n")
+        # packed.ini only exists inside a .mix, and itself #includes deep.ini
+        # (also packed) to prove recursion works through the mix.
+        write_mix(os.path.join(d, "ecache99.mix"), {
+            "packed.ini": b"[#include]\r\n1=deep.ini\r\n\r\n[PACKED]\r\nC=3\r\n",
+            "deep.ini": b"[DEEPMIX]\r\nD=4\r\n",
+        })
+
+        missing = []
+        _l, smap, _o, src = load_with_includes(os.path.join(d, "rulesmd.ini"),
+                                               missing=missing)
+        mix_ok = (get_val(smap, "PACKED", "C") == "3"
+                  and get_val(smap, "DEEPMIX", "D") == "4"
+                  and get_val(smap, "LOOSE", "B") == "2"
+                  and not missing)
+        print(f"include pulled from .mix (+ recursion): "
+              f"{'OK' if mix_ok else 'FAIL'}")
+        ok = ok and mix_ok
+
+        src_ok = str(src.get("packed", "")).startswith("mix:")
+        print(f"mix provenance label: {'OK' if src_ok else 'FAIL'} "
+              f"({src.get('packed')})")
+        ok = ok and src_ok
+
+        # disabling the mix fallback (mix_folders=[]) → packed.ini now missing
+        miss2 = []
+        _l2, smap2, _o2, _s2 = load_with_includes(
+            os.path.join(d, "rulesmd.ini"), missing=miss2, mix_folders=[])
+        off_ok = ("packed" not in smap2
+                  and any(fn == "packed.ini" for _f, fn in miss2)
+                  and get_val(smap2, "LOOSE", "B") == "2")
+        print(f"mix fallback is disablable: {'OK' if off_ok else 'FAIL'}")
+        ok = ok and off_ok
+
     # --- encyclopedia integration: a unit defined in an included file is indexed ---
     from yrbalance.engine.encyclopedia import build_mod_index
     with tempfile.TemporaryDirectory() as d:
