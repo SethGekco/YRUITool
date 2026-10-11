@@ -98,6 +98,44 @@ def entry_text(aimd_map, entry_id):
     return "\n".join(lines)
 
 
+def _ending(lines):
+    return "\r\n" if lines and lines[-1].endswith("\r\n") else "\n"
+
+
+def replace_trigger(lines, aimd_map, trigger_id, new_def):
+    """Replace an AITrigger's inline definition (the comma string AFTER `ID=`) in
+    place. Mutates `lines`. Returns True if the trigger existed."""
+    trig = aimd_map.get("aitriggertypes")
+    row = trig["keys"].get(trigger_id.lower()) if trig else None
+    if not row:
+        return False
+    li, kr, _vr = row
+    ending = "\r\n" if lines[li].endswith("\r\n") else "\n"
+    lines[li] = f"{kr}={new_def.strip()}{ending}"
+    return True
+
+
+def replace_section(lines, aimd_map, name, new_text):
+    """Replace a registry section's lines ([id] + key=value) with `new_text`.
+    Spans from the section header to just before the next section (trailing blanks
+    included), then appends one blank separator. Mutates `lines`; the caller should
+    re-parse afterwards (line indices shift). Returns True if the section existed."""
+    sec = aimd_map.get(name.lower())
+    if not sec:
+        return False
+    start = sec["start"]
+    starts = sorted(s["start"] for s in aimd_map.values())
+    after = [s for s in starts if s > start]
+    end = min(after) if after else len(lines)
+    ending = _ending(lines)
+    body = [ln.rstrip("\r\n") for ln in new_text.replace("\r\n", "\n").split("\n")]
+    while body and body[-1].strip() == "":
+        body.pop()
+    new = [ln + ending for ln in body] + [ending]   # + blank separator
+    lines[start:end] = new
+    return True
+
+
 def references_to(aimd_map, entry_id):
     """What references `entry_id`: [(kind, id)] — teamtypes using a TaskForce or
     Script; triggers whose primary/secondary team is a TeamType."""

@@ -13,13 +13,18 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTabWidget, QListWidget, QListWidgetItem, QSplitter, QPlainTextEdit,
-    QDialog, QMessageBox,
+    QDialog, QMessageBox, QCheckBox,
 )
 
 from ..engine import (
     build_section_map, load_aimd, ai_registry, decode_trigger, trigger_fields,
     entry_text, references_to, lint_ai, format_findings, has_ai_sections,
+    replace_trigger, replace_section, sibling_aimd, make_backup,
 )
+
+_TRIG_ORDER = ("Name, PrimaryTeam, Owner, TechLevel, CondType, CondObject, "
+               "Comparator, StartWeight, MinWeight, MaxWeight, Skirmish, "
+               "(unused), Side, BaseDefense, SecondaryTeam, Easy, Medium, Hard")
 
 # (registry key, tab title)
 _REG_TABS = [("TaskForces", "TaskForces"), ("ScriptTypes", "Scripts"),
@@ -70,7 +75,17 @@ class AimdTab(QWidget):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        rl.addWidget(QLabel("<b>Definition</b>"))
+        drow = QHBoxLayout()
+        drow.addWidget(QLabel("<b>Definition</b>"))
+        drow.addStretch(1)
+        self.edit_chk = QCheckBox("Edit")
+        self.edit_chk.toggled.connect(self._toggle_edit)
+        self.save_btn = QPushButton("Save to aimd.ini")
+        self.save_btn.setEnabled(False)
+        self.save_btn.clicked.connect(self._save_entry)
+        drow.addWidget(self.edit_chk)
+        drow.addWidget(self.save_btn)
+        rl.addLayout(drow)
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
         self.detail.setFont(QFont("monospace"))
@@ -99,6 +114,9 @@ class AimdTab(QWidget):
         rules = getattr(self.mw, "source_path", None)
         self._loaded_path = rules
         self.aimd_map = None
+        self.aimd_lines = None
+        self.aimd_path = None
+        self.edit_chk.setChecked(False)
         for reg in self._lists:
             self._lists[reg].clear()
             self._ids[reg] = []
@@ -108,7 +126,7 @@ class AimdTab(QWidget):
             self.path_label.setText("Load a rules file — its aimd.ini appears here.")
             return
         try:
-            _lines, amap = load_aimd(rules)
+            lines, amap = load_aimd(rules)
         except Exception as e:
             self.path_label.setText(f"aimd load failed: {type(e).__name__}: {e}")
             return
@@ -117,31 +135,14 @@ class AimdTab(QWidget):
                                     "loaded rules.")
             return
         self.aimd_map = amap
-        from ..engine import sibling_aimd
-        self.path_label.setText(os.path.basename(sibling_aimd(rules) or "aimd.ini"))
-        reg = ai_registry(amap)
-        for key, _title in _REG_TABS:
-            lst = self._lists[key]
-            ids = []
-            if key == "AITriggerTypes":
-                for tid, name in reg["AITriggerTypes"]:
-                    it = QListWidgetItem(f"{name}  [{tid}]")
-                    it.setData(Qt.UserRole, tid)
-                    lst.addItem(it)
-                    ids.append(tid)
-            else:
-                for eid in reg[key]:
-                    it = QListWidgetItem(eid)
-                    it.setData(Qt.UserRole, eid)
-                    lst.addItem(it)
-                    ids.append(eid)
-            self._ids[key] = ids
-        self._apply_filter()
-        counts = ", ".join(f"{len(reg[k])} {t.lower()}"
-                           if k != "AITriggerTypes"
-                           else f"{len(reg['AITriggerTypes'])} triggers"
-                           for k, t in _REG_TABS)
-        self.status.setText(counts)
+        self.aimd_lines = lines
+        self.aimd_path = sibling_aimd(rules)
+        self.path_label.setText(os.path.basename(self.aimd_path or "aimd.ini"))
+        self._refresh_lists()
+        counts = {k: len(v) for k, v in self._ids.items()}
+        self.status.setText(
+            f"{counts['TaskForces']} taskforces, {counts['ScriptTypes']} scripts, "
+            f"{counts['TeamTypes']} teamtypes, {counts['AITriggerTypes']} triggers")
 
     def _apply_filter(self):
         text = self.search.text().strip().lower()
@@ -165,10 +166,20 @@ class AimdTab(QWidget):
             return
         reg = self._current_reg()
         eid = self._selected_id()
+        editing = self.edit_chk.isChecked()
+        self.save_btn.setEnabled(editing and bool(eid))
         if not eid:
             self.detail.setPlainText("")
             return
-        if reg == "AITriggerTypes":
+        if editing:
+            # editable raw form: a trigger's comma def, or the section text
+            if reg == "AITriggerTypes":
+                self.detail.setPlainText(",".join(trigger_fields(self.aimd_map, eid)))
+                self.status.setText("Editing trigger fields → " + _TRIG_ORDER)
+            else:
+                self.detail.setPlainText(entry_text(self.aimd_map, eid))
+                self.status.setText(f"Editing [{eid}] — edit key=value lines, Save.")
+        elif reg == "AITriggerTypes":
             fields = trigger_fields(self.aimd_map, eid)
             lines = [f"[AITriggerTypes]  {eid}", ""]
             lines += [f"  {lbl:18} {v}" for lbl, v in decode_trigger(fields)]
@@ -180,6 +191,67 @@ class AimdTab(QWidget):
             item = QListWidgetItem(f"{kind}: {rid}")
             item.setData(Qt.UserRole, (kind, rid))
             self.refs.addItem(item)
+
+    def _toggle_edit(self, on):
+        self.detail.setReadOnly(not on)
+        self._show_entry()
+
+    def _save_entry(self):
+        if self.aimd_map is None or self.aimd_lines is None or not self.aimd_path:
+            return
+        reg = self._current_reg()
+        eid = self._selected_id()
+        if not eid:
+            return
+        text = self.detail.toPlainText()
+        try:
+            if reg == "AITriggerTypes":
+                ok = replace_trigger(self.aimd_lines, self.aimd_map, eid, text)
+            else:
+                ok = replace_section(self.aimd_lines, self.aimd_map, eid, text)
+            if not ok:
+                self.status.setText(f"{eid} not found — not saved.")
+                return
+            make_backup(self.aimd_path, None, keep=10)
+            with open(self.aimd_path, "w", encoding="latin-1",
+                      errors="replace", newline="") as fh:
+                fh.write("".join(self.aimd_lines))
+        except Exception as e:
+            QMessageBox.critical(self, "Save", f"{type(e).__name__}: {e}")
+            return
+        # re-parse + re-lint so the edit is validated immediately
+        self.aimd_map = build_section_map(self.aimd_lines)[0]
+        errs = sum(1 for f in lint_ai(self.aimd_map,
+                                      getattr(self.mw, "section_map", None))
+                   if f.severity == "error")
+        self.edit_chk.setChecked(False)
+        row = self.reg_tabs.currentWidget().currentRow()
+        self._refresh_lists()
+        self.reg_tabs.currentWidget().setCurrentRow(row)
+        self.status.setText(f"Saved {eid} to {os.path.basename(self.aimd_path)} "
+                            f"(backup kept). AI lint: {errs} error(s).")
+
+    def _refresh_lists(self):
+        """Rebuild the registry lists from the current aimd_map (after an edit)."""
+        reg = ai_registry(self.aimd_map)
+        for key, _title in _REG_TABS:
+            lst = self._lists[key]
+            lst.clear()
+            ids = []
+            if key == "AITriggerTypes":
+                for tid, name in reg["AITriggerTypes"]:
+                    it = QListWidgetItem(f"{name}  [{tid}]")
+                    it.setData(Qt.UserRole, tid)
+                    lst.addItem(it)
+                    ids.append(tid)
+            else:
+                for eid2 in reg[key]:
+                    it = QListWidgetItem(eid2)
+                    it.setData(Qt.UserRole, eid2)
+                    lst.addItem(it)
+                    ids.append(eid2)
+            self._ids[key] = ids
+        self._apply_filter()
 
     def _jump_ref(self, item):
         kind, rid = item.data(Qt.UserRole)

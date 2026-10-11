@@ -207,7 +207,7 @@ from .vpl import parse_vpl, vpl_pages, Vpl, VplError
 from .hva import parse_hva, Hva, HvaError
 from .aimd import (
     sibling_aimd, load_aimd, ai_registry, decode_trigger, trigger_fields,
-    entry_text, references_to,
+    entry_text, references_to, replace_trigger, replace_section,
 )
 from .library import (
     load_catalog, save_catalog, library_catalog_path,
@@ -308,7 +308,8 @@ __all__ = [
     "parse_hva", "Hva", "HvaError",
     # aimd (AI registry browsing)
     "sibling_aimd", "load_aimd", "ai_registry", "decode_trigger",
-    "trigger_fields", "entry_text", "references_to",
+    "trigger_fields", "entry_text", "references_to", "replace_trigger",
+    "replace_section",
     # library (asset/AI catalog)
     "load_catalog", "save_catalog", "library_catalog_path",
     "add_source", "remove_source", "set_source_summary",
