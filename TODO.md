@@ -177,9 +177,13 @@ aimd) so detail is instant. Remaining:
   and VXL previews, so the player-colour parts render tinted instead of raw
   magenta. Verified visually (usaguntur dome → red/blue) + tested. Remaining voxel
   work: selectable view angle.
-- "Convert selected into THIS mod's culture" action wired to the porter using
-  `conversion_factors`; cross-mod tags on library items; jump-to-encyclopedia/
-  porter from a row.
+- **"Convert → current mod culture" — SHIPPED.** `convert_unit_stats` rescales a
+  unit's Cost/Strength/Speed by `conversion_factors(sourceMod, currentMod)` (both
+  cultures vs vanilla). The Library has a "Convert selected → current mod culture…"
+  button → a dialog showing from/to culture summaries, a per-stat from→to→×factor
+  table, and the converted rules section (copy to clipboard). Tested. Remaining:
+  apply directly through the porter (currently copy-paste), weapon-stat conversion,
+  cross-mod tags on library items, jump-to-encyclopedia/porter from a row.
 - Background/incremental scan + caching keyed on rules mtime for very large mods.
 
 ## Version-aware vanilla baselines

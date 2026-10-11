@@ -325,6 +325,31 @@ def describe_culture(balance):
         "Too few shared units with vanilla to estimate."
 
 
+def convert_unit_stats(rules_map, unit_name, kind, conv):
+    """Rescale a unit's culture stats (Cost/Strength/Speed) by the per-kind
+    conversion factors `conv` (from conversion_factors). Returns a list of
+    (stat, old, new, factor) for the stats present on the unit; ints stay ints."""
+    from .ini_model import get_val
+    kconv = conv.get(kind, {})
+    out = []
+    for stat in _CULTURE_STATS:
+        raw = get_val(rules_map, unit_name, stat)
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            old = float(str(raw).strip())
+        except (ValueError, TypeError):
+            continue
+        f = kconv.get(stat)
+        if not f:
+            continue
+        new = old * f
+        is_int = old == int(old)
+        out.append((stat, int(old) if is_int else old,
+                    int(round(new)) if is_int else round(new, 2), f))
+    return out
+
+
 def conversion_factors(from_culture, to_culture):
     """Per-kind/stat multiplier to move a value tuned for `from` into `to`'s scale
     (to/from). Only where both sides have a factor. Serves 'convert mod A → B'."""

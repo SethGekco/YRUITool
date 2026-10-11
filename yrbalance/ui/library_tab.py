@@ -24,13 +24,14 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton, QComboBox,
+    QRadioButton, QComboBox, QApplication,
 )
 
 from ..engine import (
     load_catalog, add_source, remove_source, set_source_summary,
     create_collection, delete_collection, add_to_collection, scan_source,
-    describe_culture, unit_report, extract_bundle, resolve_media, get_val,
+    describe_culture, balance_culture, conversion_factors, convert_unit_stats,
+    unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
@@ -111,6 +112,12 @@ class LibraryTab(QWidget):
         self.remove_btn = QPushButton("Remove selected folder/collection")
         self.remove_btn.clicked.connect(self._remove_selected)
         ll.addWidget(self.remove_btn)
+        self.convert_btn = QPushButton("Convert selected → current mod culture…")
+        self.convert_btn.setToolTip(
+            "Rescale the selected unit's stats from its mod's balance culture into "
+            "the mod currently loaded in the main window.")
+        self.convert_btn.clicked.connect(self._convert_selected)
+        ll.addWidget(self.convert_btn)
 
         # ── center: kind tabs (top) + detail pane (bottom) ───────────────────
         center = QSplitter(Qt.Vertical)
@@ -839,6 +846,35 @@ class LibraryTab(QWidget):
             self._reload(keep_row=row)
             self.status.setText(f"Added {it.name} → {name}.")
 
+    def _convert_selected(self):
+        it = self._selected_item()
+        if it is None or it.kind not in ("infantry", "vehicle", "aircraft",
+                                         "building"):
+            self.status.setText("Select a TechnoType (infantry/vehicle/aircraft/"
+                                "building) to convert.")
+            return
+        target_rules = getattr(self.mw, "source_path", None)
+        if not target_rules:
+            QMessageBox.information(self, "Convert", "Load the target mod's rules "
+                                    "in the main window first (File → Load rules).")
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        scan = self._scan_by_source.get(it.source_id)
+        if src is None or scan is None or scan.index is None:
+            return
+        tgt_culture = balance_culture(target_rules)
+        conv = conversion_factors(src.balance, tgt_culture)
+        rows = convert_unit_stats(scan.index.rules_map, it.name, it.kind, conv)
+        if not rows:
+            self.status.setText("No shared-culture overlap for this kind — can't "
+                                "derive conversion factors (need vanilla + shared "
+                                "units in both mods).")
+            return
+        _ConvertDialog(self, it, src.label,
+                       os.path.basename(os.path.dirname(target_rules)),
+                       src.balance, tgt_culture, rows,
+                       scan.index.rules_map).exec()
+
     def _remove_selected(self):
         row = self.col_list.currentRow()
         if not (0 <= row < len(self._col_desc)):
@@ -900,6 +936,67 @@ class LibraryTab(QWidget):
                 s.balance_summary = text
         self._show_balance()
         self.status.setText("Eva summarized the balance culture.")
+
+
+class _ConvertDialog(QDialog):
+    """Preview a unit's stats rescaled from its mod's balance culture into the
+    current mod's, and copy the converted rules section."""
+
+    def __init__(self, parent, item, src_label, tgt_label, src_culture,
+                 tgt_culture, rows, rules_map):
+        super().__init__(parent)
+        self.item = item
+        self.rows = rows
+        self.rules_map = rules_map
+        self.setWindowTitle(f"Convert {item.name} → {tgt_label} culture")
+        self.resize(560, 440)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel(
+            f"<b>{item.name}</b> ({item.kind}):  {src_label} → {tgt_label}"))
+        lay.addWidget(QLabel(f"<i>from:</i> {describe_culture(src_culture)}"))
+        lay.addWidget(QLabel(f"<i>to:</i> {describe_culture(tgt_culture)}"))
+
+        tbl = QTableWidget(len(rows), 4)
+        tbl.setHorizontalHeaderLabels(["Stat", "From", "To", "×factor"])
+        tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        for r, (stat, old, new, f) in enumerate(rows):
+            tbl.setItem(r, 0, QTableWidgetItem(stat))
+            tbl.setItem(r, 1, QTableWidgetItem(str(old)))
+            tbl.setItem(r, 2, QTableWidgetItem(str(new)))
+            tbl.setItem(r, 3, QTableWidgetItem(f"{f:.3f}"))
+        lay.addWidget(tbl, 1)
+
+        self.preview = QPlainTextEdit()
+        self.preview.setReadOnly(True)
+        self.preview.setFont(QFont("monospace"))
+        self.preview.setPlainText(self._converted_section())
+        lay.addWidget(QLabel("<b>Converted section</b>"))
+        lay.addWidget(self.preview, 1)
+
+        bb = QDialogButtonBox()
+        copy = bb.addButton("Copy converted section", QDialogButtonBox.ActionRole)
+        bb.addButton(QDialogButtonBox.Close)
+        copy.clicked.connect(self._copy)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def _converted_section(self):
+        conv_map = {stat.lower(): new for (stat, _o, new, _f) in self.rows}
+        sec = self.rules_map.get(self.item.name.lower())
+        if not sec:
+            return ""
+        lines = [f"[{sec['name_raw']}]"]
+        for _klow, (li, kr, vr) in sorted(sec["keys"].items(),
+                                          key=lambda kv: kv[1][0]):
+            v = str(conv_map[kr.lower()]) if kr.lower() in conv_map else vr
+            lines.append(f"{kr}={v}")
+        return "\n".join(lines)
+
+    def _copy(self):
+        QApplication.clipboard().setText(self.preview.toPlainText())
 
 
 def _vpl_cache_path():

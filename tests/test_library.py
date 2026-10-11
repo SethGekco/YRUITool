@@ -151,6 +151,21 @@ def main():
               f"{conv}")
         ok = ok and conv_ok
 
+        # convert_unit_stats rescales a unit's stats by per-kind conversion factors
+        from yrbalance.engine import (convert_unit_stats, parse_ini_lines,
+                                       build_section_map)
+        rmap = build_section_map(parse_ini_lines(rules))[0]
+        conv = {"vehicle": {"Cost": 0.5, "Strength": 2.0, "Speed": 1.0}}
+        crows = {s: (o, n, f) for (s, o, n, f) in
+                 convert_unit_stats(rmap, "NEWTANK", "vehicle", conv)}
+        # NEWTANK Cost=2000→1000, Strength=900→1800, Speed=6→6
+        conv_unit_ok = (crows["Cost"][:2] == (2000, 1000)
+                        and crows["Strength"][:2] == (900, 1800)
+                        and crows["Speed"][:2] == (6, 6))
+        print(f"convert_unit_stats (cost ×0.5, str ×2): "
+              f"{'OK' if conv_unit_ok else 'FAIL'}  {crows}")
+        ok = ok and conv_unit_ok
+
         # collections: create, add item, remove item, delete
         create_collection("my-favs")
         veh_item = next(i for i in items if i.name.lower() == "newtank")
