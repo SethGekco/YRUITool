@@ -35,6 +35,13 @@ from .ini_model import (
     parse_last_ratio_from_line,
     get_current_field_value_from_line,
 )
+from .includes import (
+    resolve_includes,
+    load_with_includes,
+    include_graph,
+    flatten_graph,
+    has_includes,
+)
 from .report import (
     SUMMARY_SENTINEL,
     SUMMARY_END,
@@ -235,6 +242,9 @@ __all__ = [
     "scale_from_vanilla", "format_edited_value", "parse_vanilla_from_line",
     "parse_last_value_from_line", "parse_last_ratio_from_line",
     "get_current_field_value_from_line",
+    # includes
+    "resolve_includes", "load_with_includes", "include_graph", "flatten_graph",
+    "has_includes",
     # report
     "SUMMARY_SENTINEL", "SUMMARY_END", "detect_rerun", "write_summary_block",
     "ObservationReport", "smart_apply_tag",
