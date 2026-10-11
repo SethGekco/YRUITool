@@ -293,6 +293,18 @@ default workspace" pins the primary rules to reopen on startup (falls back to la
 file). Remaining: search across *all* bookmarked mods without loading each
 (lazy/background index), and a session-restore of open encyclopedia mods.
 
+## AI (aimd) tab — SHIPPED (v1, browse)
+`engine/aimd.py` + `ui/aimd_tab.py` (main-window "AI (aimd)" tab). Browses the
+loaded mod's aimd.ini: the four registries (TaskForces / ScriptTypes / TeamTypes /
+AITriggerTypes) in sub-tabs with live search; a human-readable decode of the
+cryptic inline AITrigger line (Name / Primary team / Owner / TechLevel / Condition
+/ weights / Secondary team / difficulty); each entry's raw definition; and
+cross-references ("Referenced by", double-click to jump — TaskForce/Script ← the
+TeamTypes using them, TeamType ← the triggers using it). Buttons: Reload, Lint AI
+(reuses lint_ai), AI library… Loads lazily on tab-show / rules change. Tested
+(engine + offscreen UI). Remaining: in-tab editing (today via AI library / porter),
+decode the Comparator/ConditionType semantics, filter by owner/referenced-unit.
+
 ## Universal helper: go beyond rules-only
 Right now the tool (and Eva's baseline reference) is centered on `rules.ini` /
 `rulesmd.ini`. The original plan was rules-only, but it would be more useful as a
