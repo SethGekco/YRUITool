@@ -406,6 +406,7 @@ class MainWindow(QMainWindow):
         tools = mb.addMenu("Tools")
         tools.addAction("Lint AI…", self.lint_ai)
         tools.addAction("AI library…", self.open_ai_library)
+        tools.addAction("AI coverage report…", self.open_ai_report)
         tools.addAction("Port mod content…", self.port_mod_content)
         tools.addAction("Encyclopedia…", self.open_encyclopedia)
         tools.addAction("MIX browser…", self.open_mix_browser)
@@ -434,6 +435,48 @@ class MainWindow(QMainWindow):
         """Open the AI library (store/pull AITrigger bundles & blocks)."""
         from .ai_library_dialog import AILibraryDialog
         AILibraryDialog(self).exec()
+
+    def open_ai_report(self):
+        """Mod AI overview/coverage report (vendored wave-generator analysis)."""
+        if not self.source_path:
+            QMessageBox.information(self, "AI report", "Load a rules file first.")
+            return
+        from ..wavegen.analysis import overview_report_text
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            text = overview_report_text(self.source_path)
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "AI report", f"{type(e).__name__}: {e}")
+            return
+        QApplication.restoreOverrideCursor()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("AI coverage / overview report")
+        dlg.resize(820, 600)
+        lay = QVBoxLayout(dlg)
+        box = QPlainTextEdit()
+        box.setReadOnly(True)
+        box.setFont(QFont("monospace"))
+        box.setLineWrapMode(QPlainTextEdit.NoWrap)
+        box.setPlainText(text)
+        lay.addWidget(box)
+        row = QHBoxLayout()
+        save = QPushButton("Save report…")
+
+        def _save():
+            p, _ = QFileDialog.getSaveFileName(dlg, "Save AI report",
+                                               "ai_overview.txt", "Text (*.txt)")
+            if p:
+                with open(p, "w", encoding="utf-8") as f:
+                    f.write(text)
+        save.clicked.connect(_save)
+        close = QPushButton("Close")
+        close.clicked.connect(dlg.accept)
+        row.addWidget(save)
+        row.addStretch(1)
+        row.addWidget(close)
+        lay.addLayout(row)
+        dlg.exec()
 
     def port_mod_content(self):
         """Open the mod-content porter dialog."""

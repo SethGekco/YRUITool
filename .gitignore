@@ -11,3 +11,4 @@ dist/
 # Local game data / test artifacts — don't commit copyrighted rules files
 *.ini
 !examples/*.ini
+wavegen/__pycache__/
