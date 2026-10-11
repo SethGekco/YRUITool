@@ -196,8 +196,10 @@ aimd) so detail is instant. Remaining:
   kept, rules only — full media via Tools → Port). **Jump-to-porter — SHIPPED:**
   an "Open selected in Porter…" button opens the Port dialog with this item's mod
   as source, kicks the Analyze scan, and filters the list to the unit (mirrors the
-  encyclopedia's send-to-porter bridge). Remaining: jump-to-encyclopedia from a
-  row; media transfer on the one-click culture apply.
+  encyclopedia's send-to-porter bridge). **Jump-to-encyclopedia — SHIPPED:** an
+  "Open selected in Encyclopedia…" button opens the unit encyclopedia, loads this
+  item's mod index, and once indexed sets the search + selects the unit (AI items
+  are guarded out). Remaining: media transfer on the one-click culture apply.
 - Background/incremental scan + caching keyed on rules mtime for very large mods.
 
 ## Version-aware vanilla baselines

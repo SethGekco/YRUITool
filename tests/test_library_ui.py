@@ -256,6 +256,50 @@ def main():
               f"{'OK' if porter_guard_ok else 'FAIL'}")
         ok = ok and porter_guard_ok
 
+        # open-in-encyclopedia: loads the item's mod; AI items are guarded
+        import yrbalance.ui.encyclopedia_dialog as _ed
+        from PySide6.QtWidgets import QLineEdit, QTableWidget
+        ency_cap = {}
+
+        class _StubEncy:
+            def __init__(self, mw):
+                self.search_edit = QLineEdit()
+                self.table = QTableWidget()
+                self._worker = None
+                self._results = []
+                self.indexes = []
+
+            def _load_index(self, p):
+                ency_cap["loaded"] = p
+
+            def _show_detail(self):
+                pass
+
+            def show(self):
+                pass
+        _ed.EncyclopediaDialog = _StubEncy
+
+        tab.ktabs.setCurrentIndex(0)
+        veh_te, _vie = tab._tables["vehicle"]
+        veh_te.setCurrentCell(0, 0)
+        tab._open_in_encyclopedia()
+        ency_ok = ency_cap.get("loaded", "").endswith("rulesmd.ini")
+        print(f"open-in-encyclopedia loads source: {'OK' if ency_ok else 'FAIL'}")
+        ok = ok and ency_ok
+
+        ai_i2 = [k for k, _ in __import__(
+            "yrbalance.ui.library_tab", fromlist=["_KIND_ORDER"]
+        )._KIND_ORDER].index("ai")
+        tab.ktabs.setCurrentIndex(ai_i2)
+        ai_te, _aie = tab._tables["ai"]
+        ai_te.setCurrentCell(0, 0)
+        ency_cap.clear()
+        tab.status.setText("")
+        tab._open_in_encyclopedia()
+        ai_guard_ok = "loaded" not in ency_cap and "AI triggers" in tab.status.text()
+        print(f"encyclopedia AI-item guard: {'OK' if ai_guard_ok else 'FAIL'}")
+        ok = ok and ai_guard_ok
+
         # real SHP render path (uses a game SHP if present on this machine)
         import glob
         import types

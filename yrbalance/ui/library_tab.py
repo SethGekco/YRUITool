@@ -134,6 +134,10 @@ class LibraryTab(QWidget):
                                    "mod as source, filtered to this unit.")
         self.porter_btn.clicked.connect(self._open_in_porter)
         ll.addWidget(self.porter_btn)
+        self.ency_btn = QPushButton("Open selected in Encyclopedia…")
+        self.ency_btn.setToolTip("Open the unit encyclopedia focused on this unit.")
+        self.ency_btn.clicked.connect(self._open_in_encyclopedia)
+        ll.addWidget(self.ency_btn)
 
         # ── center: kind tabs (top) + detail pane (bottom) ───────────────────
         center = QSplitter(Qt.Vertical)
@@ -975,6 +979,38 @@ class LibraryTab(QWidget):
         dlg.show()
         self.status.setText(f"Opened {it.name} in the porter "
                             f"(source: {src.label}).")
+
+    def _open_in_encyclopedia(self):
+        it = self._selected_item()
+        if it is None:
+            self.status.setText("Select a unit to open in the encyclopedia.")
+            return
+        if it.kind == "ai":
+            self.status.setText("AI triggers aren't in the unit encyclopedia — "
+                                "use Open in Porter or the AI library.")
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            return
+        from .encyclopedia_dialog import EncyclopediaDialog
+        dlg = EncyclopediaDialog(self.mw)
+        name = it.name
+
+        def focus(*_):
+            dlg.search_edit.setText(name)        # triggers the dialog's _refresh
+            for r, u in enumerate(getattr(dlg, "_results", [])):
+                if u.name.lower() == name.lower():
+                    dlg.table.selectRow(r)
+                    dlg._show_detail()
+                    break
+
+        dlg._load_index(src.rules_path)
+        if getattr(dlg, "_worker", None) is not None:
+            dlg._worker.done.connect(focus)
+        else:
+            focus()
+        dlg.show()
+        self.status.setText(f"Opened {name} in the encyclopedia.")
 
     def _convert_selected(self):
         it = self._selected_item()
