@@ -196,6 +196,52 @@ def frame_to_rgba(img, frame, palette, transparent_index=0):
     return W, H, bytes(buf)
 
 
+def parse_pcx(data):
+    """Decode an 8-bit RLE PCX (the format RA2/Ares cameos use) → (w, h, rgba).
+    Uses the trailing 256-colour palette (full 8-bit). Fully opaque."""
+    if len(data) < 128 or data[0] != 0x0A:
+        raise ImageError("not a PCX")
+    bpp, nplanes = data[3], data[65]
+    xmin, ymin, xmax, ymax = struct.unpack_from("<HHHH", data, 4)
+    w, h = xmax - xmin + 1, ymax - ymin + 1
+    bpl = struct.unpack_from("<H", data, 66)[0]
+    if bpp != 8 or nplanes != 1:
+        raise ImageError("unsupported PCX (need 8bpp, 1 plane)")
+    has_pal = len(data) >= 769 and data[-769] == 0x0C
+    if has_pal:
+        pb = data[-768:]
+        pal = [(pb[i * 3], pb[i * 3 + 1], pb[i * 3 + 2]) for i in range(256)]
+        end = len(data) - 769
+    else:
+        pal = [(i, i, i) for i in range(256)]
+        end = len(data)
+    total = bpl * h
+    idx = bytearray()
+    pos = 128
+    while len(idx) < total and pos < end:
+        b = data[pos]
+        pos += 1
+        if (b & 0xC0) == 0xC0:
+            cnt = b & 0x3F
+            val = data[pos] if pos < end else 0
+            pos += 1
+            idx.extend([val] * cnt)
+        else:
+            idx.append(b)
+    buf = bytearray(w * h * 4)
+    for y in range(h):
+        base = y * bpl
+        for x in range(w):
+            if base + x < len(idx):
+                r, g, b2 = pal[idx[base + x]]
+                o = (y * w + x) * 4
+                buf[o] = r
+                buf[o + 1] = g
+                buf[o + 2] = b2
+                buf[o + 3] = 255
+    return w, h, bytes(buf)
+
+
 def best_frame_index(img):
     """A sensible frame to preview: the first non-empty one."""
     for i, f in enumerate(img.frames):

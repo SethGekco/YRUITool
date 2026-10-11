@@ -32,7 +32,7 @@ from ..engine import (
     create_collection, delete_collection, add_to_collection, scan_source,
     describe_culture, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
-    house_remap_palette, HOUSE_COLORS,
+    house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes,
 )
@@ -219,12 +219,21 @@ class LibraryTab(QWidget):
         hrow.addStretch(1)
         rl.addLayout(hrow)
 
+        imgs = QHBoxLayout()
         self.art_img = QLabel()
         self.art_img.setAlignment(Qt.AlignCenter)
         self.art_img.setMinimumHeight(140)
         self.art_img.setStyleSheet(
             "border:1px solid palette(mid); background:palette(base);")
-        rl.addWidget(self.art_img)
+        imgs.addWidget(self.art_img, 1)
+        self.cameo_img = QLabel()
+        self.cameo_img.setAlignment(Qt.AlignCenter)
+        self.cameo_img.setFixedWidth(72)
+        self.cameo_img.setToolTip("Cameo")
+        self.cameo_img.setStyleSheet(
+            "border:1px solid palette(mid); background:palette(base);")
+        imgs.addWidget(self.cameo_img)
+        rl.addLayout(imgs)
         self.preview = QLabel("Art / audio preview: select an item.")
         self.preview.setWordWrap(True)
         self.preview.setStyleSheet("color:#888;")
@@ -263,6 +272,7 @@ class LibraryTab(QWidget):
             self.detail_text.setPlainText("")
             self.file_table.setRowCount(0)
             self.art_img.clear()
+            self.cameo_img.clear()
             self._clear_audio()
             self.preview.setText("Art / audio preview: select an item.")
             return
@@ -285,6 +295,7 @@ class LibraryTab(QWidget):
         self.detail_text.setPlainText(unit_report(entry))
         self._fill_files(entry.assets)
         self._render_art(entry, it.source_id, scan)
+        self._render_cameo(entry, it.source_id, scan)
         self._populate_audio(entry, scan)
         self.preview.setText("")
 
@@ -357,6 +368,44 @@ class LibraryTab(QWidget):
             self.art_img.setText("(no SHP/VXL art to preview)")
         except Exception as e:
             self.art_img.setText(f"(preview failed: {type(e).__name__})")
+
+    def _render_cameo(self, entry, sid, scan):
+        """Show the unit's cameo (PCX or SHP) from its art Cameo= field. Never
+        raises."""
+        self.cameo_img.clear()
+        art_map = getattr(getattr(scan, "index", None), "art_map", None)
+        cat = getattr(getattr(scan, "index", None), "catalog", None)
+        art_name = getattr(entry, "art_name", "") or getattr(entry, "name", "")
+        if not art_map or not cat or not art_name:
+            return
+        cameo = get_val(art_map, art_name, "Cameo")
+        cameo = str(cameo).strip() if cameo else ""
+        if not cameo or cameo.lower() == "none":
+            return
+
+        def _resolve(name):
+            found, _ = resolve_media(cat, [name])
+            return found.get(name) or next(
+                (v for k, v in found.items() if k.lower() == name.lower()), None)
+        try:
+            pdata = _resolve(cameo.upper() + ".PCX")
+            if pdata:
+                w, h, rgba = parse_pcx(pdata)
+            else:
+                sdata = _resolve(cameo.upper() + ".SHP")
+                if not sdata:
+                    return
+                img = parse_shp(sdata)
+                pal = self._house_palette(self._preview_palette(sid, scan))
+                w, h, rgba = frame_to_rgba(
+                    img, img.frames[best_frame_index(img)], pal)
+            qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
+            pm = QPixmap.fromImage(qimg)
+            if pm.width() > 68 or pm.height() > 68:
+                pm = pm.scaled(68, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.cameo_img.setPixmap(pm)
+        except Exception:
+            self.cameo_img.clear()
 
     def _set_art_pixmap(self, w, h, rgba):
         qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
@@ -491,6 +540,7 @@ class LibraryTab(QWidget):
     def _detail_ai(self, it, scan):
         self.file_table.setRowCount(0)
         self.art_img.clear()
+        self.cameo_img.clear()
         self._clear_audio()
         if scan is None or scan.aimd_map is None:
             self.detail_text.setPlainText(f"{it.name} — no aimd found for source.")

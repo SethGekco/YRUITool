@@ -126,6 +126,35 @@ def main():
           f"{'OK' if house_ok else 'FAIL'}  red16={r16} blue16={b16}")
     ok = ok and house_ok
 
+    # ── PCX decode (8-bit RLE + trailing palette) ─────────────────────────────
+    from yrbalance.engine import parse_pcx
+    # build a 3x2 PCX: row0 [1,2,3], row1 [0,0,0]; palette idx1=red,2=green,3=blue
+    hdr = bytearray(128)
+    hdr[0] = 0x0A           # manufacturer
+    hdr[1] = 5              # version
+    hdr[2] = 1              # RLE
+    hdr[3] = 8              # bpp
+    hdr[4:12] = struct.pack("<HHHH", 0, 0, 2, 1)   # xmin,ymin,xmax,ymax → 3x2
+    hdr[65] = 1             # planes
+    hdr[66:68] = struct.pack("<H", 3)              # bytes per line
+    # RLE body: literals (values < 0xC0 encode as single bytes)
+    body = bytes([1, 2, 3, 0, 0, 0])
+    pal = bytearray(768)
+    pal[1 * 3:1 * 3 + 3] = bytes([255, 0, 0])
+    pal[2 * 3:2 * 3 + 3] = bytes([0, 255, 0])
+    pal[3 * 3:3 * 3 + 3] = bytes([0, 0, 255])
+    pcx = bytes(hdr) + body + bytes([0x0C]) + bytes(pal)
+    pw, ph, prgba = parse_pcx(pcx)
+
+    def pat(x, y):
+        o = (y * pw + x) * 4
+        return tuple(prgba[o:o + 4])
+    pcx_ok = (pw == 3 and ph == 2 and pat(0, 0) == (255, 0, 0, 255)
+              and pat(1, 0) == (0, 255, 0, 255) and pat(2, 0) == (0, 0, 255, 255)
+              and pat(0, 1) == (0, 0, 0, 255))
+    print(f"PCX decode (8-bit RLE + palette): {'OK' if pcx_ok else 'FAIL'}")
+    ok = ok and pcx_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

@@ -120,8 +120,12 @@ aimd) so detail is instant. Remaining:
   Banshee's OS Voxel Viewer Delphi/OpenGL at svn.ppmsite.com, XCC), **HVA +
   per-section/turret placement** (currently all sections share voxel coords),
   selectable view angle, and a **bundled/standard `unittem.pal`** so colour is the
-  default without the user supplying one. **PCX** cameos and SHP animation also
-  remain.
+  default without the user supplying one. SHP animation also remains.
+- **PCX cameos — SHIPPED.** `images.parse_pcx` decodes 8-bit RLE PCX (the format
+  RA2/Ares cameos use) with its trailing 256-colour palette → RGBA (validated on
+  real cameo PCX + tested). The Library detail pane shows a **cameo thumbnail**
+  from the unit's art `Cameo=` field — tries `<cameo>.PCX` then `<cameo>.SHP`
+  (house-remap palette) — so PCX cameos the encyclopedia had marked missing render.
 - **VXL normal lighting — SHIPPED.** `engine/vxl_normals.py` carries the TS (36)
   and RA2 (245) surface-normal tables extracted verbatim from zzattack's
   ccmaps-net (`VxlFile.cs`; all unit vectors). `render_vxl` now diffuse-lights each
