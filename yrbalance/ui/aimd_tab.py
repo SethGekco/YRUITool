@@ -50,9 +50,12 @@ class AimdTab(QWidget):
         lint_b.clicked.connect(self._lint)
         lib_b = QPushButton("AI library…")
         lib_b.clicked.connect(self._open_library)
+        gen_tf_b = QPushButton("Generate TaskForces…")
+        gen_tf_b.clicked.connect(self._generate_taskforces)
         bar.addWidget(reload_b)
         bar.addWidget(lint_b)
         bar.addWidget(lib_b)
+        bar.addWidget(gen_tf_b)
         bar.addWidget(QLabel("Search:"))
         self.search = QLineEdit()
         self.search.setClearButtonEnabled(True)
@@ -294,3 +297,17 @@ class AimdTab(QWidget):
     def _open_library(self):
         from .ai_library_dialog import AILibraryDialog
         AILibraryDialog(self.mw).exec()
+
+    def _generate_taskforces(self):
+        rules = getattr(self.mw, "source_path", None)
+        if not rules:
+            QMessageBox.information(self, "Generate", "Load a rules file first.")
+            return
+        aimd_path = getattr(self, "aimd_path", None)
+        if not aimd_path:
+            QMessageBox.information(self, "Generate", "This mod has no aimd.ini to "
+                                    "write TaskForces into.")
+            return
+        from .wavegen_taskforce_dialog import TaskforceGenDialog
+        TaskforceGenDialog(self, rules, aimd_path,
+                           on_inserted=self._reload).exec()

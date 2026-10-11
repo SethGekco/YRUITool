@@ -35,3 +35,16 @@ per WAVEGEN_MERGE_PLAN.md — this is Phase 0 (version control).
   generation-only modules stay unbundled until referenced.
 - Next: library-ize the generators (headless, drop input()/file-move) one at a
   time behind a Tools → Generate AI… dialog, with golden tests.
+
+## Milestone 2 — TaskForce generation (SHIPPED)
+`generate.py` — headless API over the vendored composer: `taskforce_vocab`,
+`mod_factions`, `generate_taskforces(rules, aimd, specs, seed)` (drives
+TaskforceGenerator.generate_batch — the role-based composer: ANTI_INF / ANTI_VEHICLE
+/ ARTILLERY / AA / RUSH / … , difficulty auto-distributed, collision-free ids from
+the existing aimd), `entry_composition`, `entry_section_text`. No input().
+UI: AI (aimd) tab → **Generate TaskForces…** — multi-select factions × phases ×
+roles (+ count / min-grade / seed / suicide), Generate → preview table (name,
+faction/phase/role/diff, composition) + section text, tick what to keep, **Insert
+into aimd.ini** (backup kept, reloads the tab). Tested (`test_wavegen_taskforce` +
+UI). The composer's role-grading is the known-imperfect part to polish next; team /
+script / trigger / wave generators follow the same headless-API + preview pattern.

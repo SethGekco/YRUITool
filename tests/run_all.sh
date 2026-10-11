@@ -9,7 +9,7 @@ pass=0; fail=0
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
 no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia test_bookmarks_history test_tags test_portai test_ailib test_library test_images test_audio test_vxl test_vpl test_aimd)
 # test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
-need_rules+=(test_eva test_wavegen_analysis)
+need_rules+=(test_eva test_wavegen_analysis test_wavegen_taskforce)
 
 for f in "${need_rules[@]}"; do
     printf '%-18s ' "$f"
@@ -57,6 +57,11 @@ elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_library_ui.py" >/dev/null 
 printf '%-18s ' "test_aimd_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_aimd_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
+# TaskForce generator dialog smoke (needs rules path + PySide6 + offscreen).
+printf '%-18s ' "test_wavegen_tf_ui"
+if [ ! -x "$venv_py" ] || [ -z "$R" ]; then echo "SKIP";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_wavegen_taskforce_ui.py" "$R" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
 echo
 echo "passed=$pass failed=$fail"
