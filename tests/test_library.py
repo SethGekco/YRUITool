@@ -179,6 +179,22 @@ def main():
               f"{'OK' if wep_ok else 'FAIL'}  {wr}")
         ok = ok and wep_ok
 
+        # apply culture conversion THROUGH THE PORTER: port NEWTANK into vanilla
+        # (where it's new) with culture factors → written stats are converted
+        from yrbalance.engine import (culture_statfactors, build_port_plan,
+                                       apply_port_plan, get_val)
+        tl2 = parse_ini_lines(van)
+        tgt2 = build_section_map(tl2)[0]
+        cconv = {"vehicle": {"Cost": 0.5, "Strength": 2.0}}
+        plan = build_port_plan(rmap, tgt2, factors=culture_statfactors(cconv))
+        apply_port_plan(tl2, tgt2, plan, selected=["NEWTANK"])
+        om = build_section_map(tl2)[0]
+        porter_ok = (get_val(om, "NEWTANK", "Cost") == "1000"
+                     and get_val(om, "NEWTANK", "Strength") == "1800")
+        print(f"apply culture conversion via porter (cost→1000, str→1800): "
+              f"{'OK' if porter_ok else 'FAIL'}")
+        ok = ok and porter_ok
+
         # collections: create, add item, remove item, delete
         create_collection("my-favs")
         veh_item = next(i for i in items if i.name.lower() == "newtank")

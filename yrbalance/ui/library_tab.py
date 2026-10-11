@@ -32,8 +32,9 @@ from ..engine import (
     create_collection, delete_collection, rename_collection, rename_source,
     add_to_collection, scan_source,
     describe_culture, balance_culture, conversion_factors, convert_unit_stats,
-    convert_weapon_stats, load_tags, set_unit_tags, all_tags,
-    unit_report, extract_bundle, resolve_media, get_val,
+    convert_weapon_stats, culture_statfactors, load_tags, set_unit_tags, all_tags,
+    parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
+    make_backup, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
@@ -980,9 +981,39 @@ class LibraryTab(QWidget):
                                 "conversion factors (need vanilla + shared units/"
                                 "weapons in both mods).")
             return
+
+        def apply_fn():
+            """Port the unit + its weapon chain into the current mod's rules with
+            the culture factors (rules only; use the full Porter for media)."""
+            tlines = parse_ini_lines(target_rules)
+            tmap = build_section_map(tlines)[0]
+            plan = build_port_plan(rmap, tmap,
+                                   factors=culture_statfactors(conv))
+            names = {it.name.lower()}
+            for _slot, w, wh, pr in (getattr(entry, "weapons", []) or []):
+                for n in (w, wh, pr):
+                    if n:
+                        names.add(n.lower())
+            selected = [o.name for o in plan.objects
+                        if o.name.lower() in names]
+            if not selected:
+                return (f"'{it.name}' isn't new to the target (already present) "
+                        "— nothing ported.")
+            make_backup(target_rules, None, keep=10)
+            summ = apply_port_plan(tlines, tmap, plan, selected=selected)
+            with open(target_rules, "w", encoding="latin-1",
+                      errors="replace", newline="") as fh:
+                fh.write("".join(tlines))
+            if hasattr(self.mw, "_load_rules_path"):
+                self.mw._load_rules_path(target_rules)
+            return (f"Ported {summ['sections']} section(s) into "
+                    f"{os.path.basename(target_rules)} (backup kept): "
+                    f"{', '.join(selected)}.")
+
         _ConvertDialog(self, it, src.label,
                        os.path.basename(os.path.dirname(target_rules)),
-                       src.balance, tgt_culture, sections, rmap).exec()
+                       src.balance, tgt_culture, sections, rmap,
+                       apply_fn=apply_fn).exec()
 
     def _rename_collection_row(self, item):
         row = self.col_list.row(item)
@@ -1075,11 +1106,12 @@ class _ConvertDialog(QDialog):
     into the current mod's, and copy the converted rules sections."""
 
     def __init__(self, parent, item, src_label, tgt_label, src_culture,
-                 tgt_culture, sections, rules_map):
+                 tgt_culture, sections, rules_map, apply_fn=None):
         super().__init__(parent)
         self.item = item
         self.sections = sections          # [(section_name, [(stat,old,new,f)])]
         self.rules_map = rules_map
+        self._apply_fn = apply_fn
         self.setWindowTitle(f"Convert {item.name} → {tgt_label} culture")
         self.resize(580, 520)
 
@@ -1115,10 +1147,24 @@ class _ConvertDialog(QDialog):
         bb = QDialogButtonBox()
         copy = bb.addButton("Copy converted sections",
                             QDialogButtonBox.ActionRole)
-        bb.addButton(QDialogButtonBox.Close)
         copy.clicked.connect(self._copy)
+        if self._apply_fn is not None:
+            applyb = bb.addButton("Apply to current mod (porter)",
+                                  QDialogButtonBox.ApplyRole)
+            applyb.setToolTip("Port the unit + its weapons into the current mod's "
+                              "rules with these factors (rules only; use Tools → "
+                              "Port mod content for art/sound/media).")
+            applyb.clicked.connect(self._do_apply)
+        bb.addButton(QDialogButtonBox.Close)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
+
+    def _do_apply(self):
+        try:
+            msg = self._apply_fn()
+        except Exception as e:
+            msg = f"{type(e).__name__}: {e}"
+        QMessageBox.information(self, "Apply to current mod", msg)
 
     def _converted_section(self, sec_name, rows):
         conv_map = {stat.lower(): new for (stat, _o, new, _f) in rows}

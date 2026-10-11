@@ -212,7 +212,7 @@ from .library import (
     add_to_collection,
     remove_from_collection, collection_keys, scan_items, scan_source,
     balance_culture, describe_culture, conversion_factors, convert_unit_stats,
-    convert_weapon_stats,
+    convert_weapon_stats, culture_statfactors,
     LibrarySource, Collection, LibraryItem, SourceScan,
 )
 
@@ -309,7 +309,7 @@ __all__ = [
     "rename_source", "add_to_collection",
     "remove_from_collection", "collection_keys", "scan_items", "scan_source",
     "balance_culture", "describe_culture", "conversion_factors",
-    "convert_unit_stats", "convert_weapon_stats",
+    "convert_unit_stats", "convert_weapon_stats", "culture_statfactors",
     "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
     "classify_obtainability", "Obtainability",

@@ -188,9 +188,13 @@ aimd) so detail is instant. Remaining:
   table, and the converted rules section (copy to clipboard). Tested. Now also
   converts the unit's **weapons** (Damage/ROF/Range via the 'weapon' culture
   factor, which balance_culture already computes) — the dialog shows a Section
-  column and emits the unit + weapon sections together. Remaining: apply directly
-  through the porter (currently copy-paste), cross-mod tags on library items,
-  jump-to-encyclopedia/porter from a row.
+  column and emits the unit + weapon sections together. **Apply through the porter
+  — SHIPPED:** `build_port_plan(factors=…)` now accepts an override, and
+  `culture_statfactors` wraps the conversion multipliers as the porter's StatFactor
+  shape; the Convert dialog's "Apply to current mod (porter)" button ports the unit
+  + its weapon chain into the loaded mod's rules with the culture factors (backup
+  kept, rules only — full media via Tools → Port). Remaining: jump-to-encyclopedia/
+  porter from a row; media transfer on the one-click apply.
 - Background/incremental scan + caching keyed on rules mtime for very large mods.
 
 ## Version-aware vanilla baselines

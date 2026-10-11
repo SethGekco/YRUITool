@@ -393,6 +393,19 @@ def convert_weapon_stats(rules_map, weapon_name, conv):
     return _convert_stats(rules_map, weapon_name, "weapon", conv, _WEAPON_STATS)
 
 
+def culture_statfactors(conv):
+    """Wrap conversion_factors ({kind: {stat: multiplier}}) as the porter's
+    {factor_kind: {stat: StatFactor}} shape, so build_port_plan(factors=…) can
+    apply culture conversion instead of its own shared-unit analysis."""
+    from .portmod import StatFactor
+    out = {}
+    for kind, stats in conv.items():
+        out[kind] = {stat: StatFactor(stat, mult, "high", 2, 0.0,
+                                      "balance-culture conversion")
+                     for stat, mult in stats.items()}
+    return out
+
+
 def conversion_factors(from_culture, to_culture):
     """Per-kind/stat multiplier to move a value tuned for `from` into `to`'s scale
     (to/from). Only where both sides have a factor. Serves 'convert mod A → B'."""
