@@ -211,6 +211,7 @@ from .library import (
     create_collection, delete_collection, add_to_collection,
     remove_from_collection, collection_keys, scan_items, scan_source,
     balance_culture, describe_culture, conversion_factors, convert_unit_stats,
+    convert_weapon_stats,
     LibrarySource, Collection, LibraryItem, SourceScan,
 )
 
@@ -306,7 +307,7 @@ __all__ = [
     "create_collection", "delete_collection", "add_to_collection",
     "remove_from_collection", "collection_keys", "scan_items", "scan_source",
     "balance_culture", "describe_culture", "conversion_factors",
-    "convert_unit_stats",
+    "convert_unit_stats", "convert_weapon_stats",
     "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
     "classify_obtainability", "Obtainability",

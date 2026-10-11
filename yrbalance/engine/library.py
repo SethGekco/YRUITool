@@ -325,15 +325,15 @@ def describe_culture(balance):
         "Too few shared units with vanilla to estimate."
 
 
-def convert_unit_stats(rules_map, unit_name, kind, conv):
-    """Rescale a unit's culture stats (Cost/Strength/Speed) by the per-kind
-    conversion factors `conv` (from conversion_factors). Returns a list of
-    (stat, old, new, factor) for the stats present on the unit; ints stay ints."""
+_WEAPON_STATS = ("Damage", "ROF", "Range")
+
+
+def _convert_stats(rules_map, name, kind, conv, stats):
     from .ini_model import get_val
     kconv = conv.get(kind, {})
     out = []
-    for stat in _CULTURE_STATS:
-        raw = get_val(rules_map, unit_name, stat)
+    for stat in stats:
+        raw = get_val(rules_map, name, stat)
         if raw is None or str(raw).strip() == "":
             continue
         try:
@@ -348,6 +348,19 @@ def convert_unit_stats(rules_map, unit_name, kind, conv):
         out.append((stat, int(old) if is_int else old,
                     int(round(new)) if is_int else round(new, 2), f))
     return out
+
+
+def convert_unit_stats(rules_map, unit_name, kind, conv):
+    """Rescale a unit's culture stats (Cost/Strength/Speed) by the per-kind
+    conversion factors `conv` (from conversion_factors). Returns a list of
+    (stat, old, new, factor) for the stats present on the unit; ints stay ints."""
+    return _convert_stats(rules_map, unit_name, kind, conv, _CULTURE_STATS)
+
+
+def convert_weapon_stats(rules_map, weapon_name, conv):
+    """Rescale a weapon's culture stats (Damage/ROF/Range) by the 'weapon'
+    conversion factors. Same (stat, old, new, factor) shape."""
+    return _convert_stats(rules_map, weapon_name, "weapon", conv, _WEAPON_STATS)
 
 
 def conversion_factors(from_culture, to_culture):

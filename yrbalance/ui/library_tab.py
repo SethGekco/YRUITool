@@ -874,16 +874,28 @@ class LibraryTab(QWidget):
             return
         tgt_culture = balance_culture(target_rules)
         conv = conversion_factors(src.balance, tgt_culture)
-        rows = convert_unit_stats(scan.index.rules_map, it.name, it.kind, conv)
-        if not rows:
-            self.status.setText("No shared-culture overlap for this kind — can't "
-                                "derive conversion factors (need vanilla + shared "
-                                "units in both mods).")
+        rmap = scan.index.rules_map
+        # unit TechnoType stats + the unit's weapons' stats
+        sections = []
+        urows = convert_unit_stats(rmap, it.name, it.kind, conv)
+        if urows:
+            sections.append((it.name, urows))
+        entry = scan.index.units.get(it.name.lower())
+        seen = set()
+        for slot, wpn, _wh, _pr in (getattr(entry, "weapons", []) or []):
+            if wpn and wpn.lower() not in seen and wpn.lower() in rmap:
+                seen.add(wpn.lower())
+                wrows = convert_weapon_stats(rmap, wpn, conv)
+                if wrows:
+                    sections.append((wpn, wrows))
+        if not sections:
+            self.status.setText("No shared-culture overlap — can't derive "
+                                "conversion factors (need vanilla + shared units/"
+                                "weapons in both mods).")
             return
         _ConvertDialog(self, it, src.label,
                        os.path.basename(os.path.dirname(target_rules)),
-                       src.balance, tgt_culture, rows,
-                       scan.index.rules_map).exec()
+                       src.balance, tgt_culture, sections, rmap).exec()
 
     def _remove_selected(self):
         row = self.col_list.currentRow()
@@ -949,17 +961,17 @@ class LibraryTab(QWidget):
 
 
 class _ConvertDialog(QDialog):
-    """Preview a unit's stats rescaled from its mod's balance culture into the
-    current mod's, and copy the converted rules section."""
+    """Preview a unit (and its weapons) rescaled from its mod's balance culture
+    into the current mod's, and copy the converted rules sections."""
 
     def __init__(self, parent, item, src_label, tgt_label, src_culture,
-                 tgt_culture, rows, rules_map):
+                 tgt_culture, sections, rules_map):
         super().__init__(parent)
         self.item = item
-        self.rows = rows
+        self.sections = sections          # [(section_name, [(stat,old,new,f)])]
         self.rules_map = rules_map
         self.setWindowTitle(f"Convert {item.name} → {tgt_label} culture")
-        self.resize(560, 440)
+        self.resize(580, 520)
 
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel(
@@ -967,35 +979,40 @@ class _ConvertDialog(QDialog):
         lay.addWidget(QLabel(f"<i>from:</i> {describe_culture(src_culture)}"))
         lay.addWidget(QLabel(f"<i>to:</i> {describe_culture(tgt_culture)}"))
 
-        tbl = QTableWidget(len(rows), 4)
-        tbl.setHorizontalHeaderLabels(["Stat", "From", "To", "×factor"])
+        flat = [(sec, stat, old, new, f)
+                for sec, rows in sections for (stat, old, new, f) in rows]
+        tbl = QTableWidget(len(flat), 5)
+        tbl.setHorizontalHeaderLabels(["Section", "Stat", "From", "To", "×factor"])
         tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
         tbl.verticalHeader().setVisible(False)
         tbl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for r, (stat, old, new, f) in enumerate(rows):
-            tbl.setItem(r, 0, QTableWidgetItem(stat))
-            tbl.setItem(r, 1, QTableWidgetItem(str(old)))
-            tbl.setItem(r, 2, QTableWidgetItem(str(new)))
-            tbl.setItem(r, 3, QTableWidgetItem(f"{f:.3f}"))
+        for r, (sec, stat, old, new, f) in enumerate(flat):
+            tbl.setItem(r, 0, QTableWidgetItem(sec))
+            tbl.setItem(r, 1, QTableWidgetItem(stat))
+            tbl.setItem(r, 2, QTableWidgetItem(str(old)))
+            tbl.setItem(r, 3, QTableWidgetItem(str(new)))
+            tbl.setItem(r, 4, QTableWidgetItem(f"{f:.3f}"))
         lay.addWidget(tbl, 1)
 
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setFont(QFont("monospace"))
-        self.preview.setPlainText(self._converted_section())
-        lay.addWidget(QLabel("<b>Converted section</b>"))
+        self.preview.setPlainText(self._converted_text())
+        lay.addWidget(QLabel("<b>Converted sections</b> "
+                             "(unit + its weapons)"))
         lay.addWidget(self.preview, 1)
 
         bb = QDialogButtonBox()
-        copy = bb.addButton("Copy converted section", QDialogButtonBox.ActionRole)
+        copy = bb.addButton("Copy converted sections",
+                            QDialogButtonBox.ActionRole)
         bb.addButton(QDialogButtonBox.Close)
         copy.clicked.connect(self._copy)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
-    def _converted_section(self):
-        conv_map = {stat.lower(): new for (stat, _o, new, _f) in self.rows}
-        sec = self.rules_map.get(self.item.name.lower())
+    def _converted_section(self, sec_name, rows):
+        conv_map = {stat.lower(): new for (stat, _o, new, _f) in rows}
+        sec = self.rules_map.get(sec_name.lower())
         if not sec:
             return ""
         lines = [f"[{sec['name_raw']}]"]
@@ -1004,6 +1021,10 @@ class _ConvertDialog(QDialog):
             v = str(conv_map[kr.lower()]) if kr.lower() in conv_map else vr
             lines.append(f"{kr}={v}")
         return "\n".join(lines)
+
+    def _converted_text(self):
+        return "\n\n".join(self._converted_section(name, rows)
+                           for name, rows in self.sections)
 
     def _copy(self):
         QApplication.clipboard().setText(self.preview.toPlainText())

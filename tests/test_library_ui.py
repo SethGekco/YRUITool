@@ -192,8 +192,8 @@ def main():
         nt = next(i for i in veh_items2 if i.name.lower() == "newtank")
         rmap = tab._scan_by_source[nt.source_id].index.rules_map
         cd = _ConvertDialog(tab, nt, "turkey-mod", "target", {}, {},
-                            [("Cost", 2000, 1000, 0.5)], rmap)
-        sec = cd._converted_section()
+                            [("NEWTANK", [("Cost", 2000, 1000, 0.5)])], rmap)
+        sec = cd._converted_text()
         conv_dlg_ok = "[NEWTANK]" in sec and "Cost=1000" in sec
         print(f"convert dialog converted section: "
               f"{'OK' if conv_dlg_ok else 'FAIL'}")

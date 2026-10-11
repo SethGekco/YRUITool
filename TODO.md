@@ -185,9 +185,12 @@ aimd) so detail is instant. Remaining:
   unit's Cost/Strength/Speed by `conversion_factors(sourceMod, currentMod)` (both
   cultures vs vanilla). The Library has a "Convert selected → current mod culture…"
   button → a dialog showing from/to culture summaries, a per-stat from→to→×factor
-  table, and the converted rules section (copy to clipboard). Tested. Remaining:
-  apply directly through the porter (currently copy-paste), weapon-stat conversion,
-  cross-mod tags on library items, jump-to-encyclopedia/porter from a row.
+  table, and the converted rules section (copy to clipboard). Tested. Now also
+  converts the unit's **weapons** (Damage/ROF/Range via the 'weapon' culture
+  factor, which balance_culture already computes) — the dialog shows a Section
+  column and emits the unit + weapon sections together. Remaining: apply directly
+  through the porter (currently copy-paste), cross-mod tags on library items,
+  jump-to-encyclopedia/porter from a row.
 - Background/incremental scan + caching keyed on rules mtime for very large mods.
 
 ## Version-aware vanilla baselines

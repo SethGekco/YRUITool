@@ -166,6 +166,19 @@ def main():
               f"{'OK' if conv_unit_ok else 'FAIL'}  {crows}")
         ok = ok and conv_unit_ok
 
+        # convert_weapon_stats rescales Damage/ROF/Range by the 'weapon' factors
+        from yrbalance.engine import convert_weapon_stats
+        wmap = build_section_map(parse_ini_lines(
+            _w(home, "wep.ini", "[BIGGUN]\nDamage=100\nROF=20\nRange=5\n")))[0]
+        wconv = {"weapon": {"Damage": 2.0, "ROF": 0.5, "Range": 1.0}}
+        wr = {s: (o, n) for (s, o, n, f) in
+              convert_weapon_stats(wmap, "BIGGUN", wconv)}
+        wep_ok = (wr["Damage"] == (100, 200) and wr["ROF"] == (20, 10)
+                  and wr["Range"] == (5, 5))
+        print(f"convert_weapon_stats (dmg ×2, rof ×0.5): "
+              f"{'OK' if wep_ok else 'FAIL'}  {wr}")
+        ok = ok and wep_ok
+
         # collections: create, add item, remove item, delete
         create_collection("my-favs")
         veh_item = next(i for i in items if i.name.lower() == "newtank")
