@@ -33,6 +33,11 @@ printf '%-18s ' "test_port_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_port_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
+# Porter per-file include opt-in smoke (PySide6 + offscreen Qt).
+printf '%-18s ' "test_port_inc_ui"
+if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_port_include_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
 # MIX browser smoke (PySide6 + offscreen Qt).
 printf '%-18s ' "test_mix_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
