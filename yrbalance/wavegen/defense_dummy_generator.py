@@ -54,7 +54,7 @@ AA variants use the same structure with DMPRNODEFAA prefix.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from rulesmd_parser import IniParser
+from .rulesmd_parser import IniParser
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +630,7 @@ class DefenseDummyGenerator:
                                include_filename: str | None = None):
         """Add defense dummy IDs to [BuildingTypes], [SuperWeaponTypes],
         and optionally [#include] in rulesmd.ini."""
-        from dummy_prereq_generator import _list_insert_point, _find_highest_key
+        from .dummy_prereq_generator import _list_insert_point, _find_highest_key
         path = Path(rulesmd_path)
         with path.open(encoding='latin-1') as f:
             file_lines = f.readlines()

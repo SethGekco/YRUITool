@@ -44,14 +44,14 @@ TODO: Make phase distribution user-configurable.
 from dataclasses import dataclass, field
 from itertools import cycle
 
-from rulesmd_parser import RulesMdParser
-from taskforce_generator import (
+from .rulesmd_parser import RulesMdParser
+from .taskforce_generator import (
     TaskforceGenerator, IDRegistry, TaskforceSpec,
     GeneratorConfig, TaskforceEntry,
 )
-from script_generator import ScriptGenerator, ScriptRegistry, ScriptEntry
-from team_generator import TeamGenerator, TeamRegistry, TeamEntry
-from trigger_generator import (
+from .script_generator import ScriptGenerator, ScriptRegistry, ScriptEntry
+from .team_generator import TeamGenerator, TeamRegistry, TeamEntry
+from .trigger_generator import (
     TriggerGenerator, TriggerRegistry, TriggerEntry,
     COND_ENEMY_CREDITS, ALWAYS_TRUE, OWN_AT_LEAST_1,
     make_comparator, OP_GTE,
@@ -242,7 +242,7 @@ class WaveGenerator:
 
         # AIExt writer — collects conditions during generation,
         # writes all .AIExt sections in one pass at write_all() time
-        from aiext_generator import AIExtWriter
+        from .aiext_generator import AIExtWriter
         self.aiext_writer = AIExtWriter()
         self._aiext_builder = None   # created lazily when config is known
 
@@ -276,7 +276,7 @@ class WaveGenerator:
 
         # Initialise AIExt condition builder if scan results are available
         if self.scan_result is not None and config.aiext_config is not None:
-            from aiext_generator import AIExtConditionBuilder
+            from .aiext_generator import AIExtConditionBuilder
             self._aiext_builder = AIExtConditionBuilder(
                 self.scan_result, config.aiext_config,
                 sides=getattr(self.parser, 'sides', None))
@@ -326,7 +326,7 @@ class WaveGenerator:
         # .append without calling self.aiext_writer.collect. When debug
         # messages are enabled, those triggers otherwise emit no .AIExt
         # sidecar and can't be debugged. This backfill catches them.
-        from aiext_generator import AIExtConditions
+        from .aiext_generator import AIExtConditions
         already_registered = {tid for tid, _ in self.aiext_writer._entries}
         for trg in self.triggers:
             if trg.trigger_id in already_registered:
@@ -360,7 +360,7 @@ class WaveGenerator:
                                   config: WaveGeneratorConfig):
         """Generate N general attack waves for one faction/difficulty."""
         import sys
-        from taskforce_generator import validate_cost_ratio
+        from .taskforce_generator import validate_cost_ratio
         n           = config.general_waves_per_difficulty
         role_cycle  = cycle(config.role_pool)
         phase_cycle = cycle(config.phase_pool)
@@ -541,7 +541,7 @@ class WaveGenerator:
             self.tf_reg.register_composition(new_id, scaled_units)
         tf = dataclasses.replace(tf, tf_id=new_id, units=scaled_units)
         try:
-            from taskforce_generator import make_vanilla_name
+            from .taskforce_generator import make_vanilla_name
             tf = dataclasses.replace(
                 tf, name=make_vanilla_name(scaled_units, self.parser,
                                             self.tf_reg))
@@ -860,7 +860,7 @@ class WaveGenerator:
         tf = dataclasses.replace(tf, tf_id=new_id, units=new_units,
                                   label_comment=label)
         try:
-            from taskforce_generator import make_vanilla_name
+            from .taskforce_generator import make_vanilla_name
             tf = dataclasses.replace(
                 tf, name=make_vanilla_name(new_units, self.parser, self.tf_reg))
         except Exception:
@@ -893,7 +893,7 @@ class WaveGenerator:
         # Complement: same faction, mobility-compatible, different category
         # (Infantry↔Vehicle), combat-capable, best grade.
         try:
-            from taskforce_generator import _filter_compatible_mobility
+            from .taskforce_generator import _filter_compatible_mobility
         except ImportError:
             return tf
         want_cat = 'Vehicle' if base.category == 'Infantry' else 'Infantry'
@@ -937,7 +937,7 @@ class WaveGenerator:
         tf = dataclasses.replace(tf, tf_id=new_id, units=new_units,
                                   label_comment=label)
         try:
-            from taskforce_generator import make_vanilla_name
+            from .taskforce_generator import make_vanilla_name
             tf = dataclasses.replace(
                 tf, name=make_vanilla_name(new_units, self.parser, self.tf_reg))
         except Exception:
@@ -1033,7 +1033,7 @@ class WaveGenerator:
 
         Returns (COND_AI_OWNS=1, meta_section_id) or (COND_ENEMY_CREDITS=4, '<none>').
         """
-        from trigger_generator import COND_AI_OWNS, COND_ENEMY_CREDITS
+        from .trigger_generator import COND_AI_OWNS, COND_ENEMY_CREDITS
         for _, uid in units:
             if uid in self.meta_map:
                 meta = self.meta_map[uid]
@@ -1173,7 +1173,7 @@ class WaveGenerator:
                       difficulty: str,
                       country: str | None = None) -> TeamEntry:
         """Create a TeamType binding taskforce + script."""
-        from team_generator import build_team_flags, FIXED_FLAGS
+        from .team_generator import build_team_flags, FIXED_FLAGS
         import random
 
         flags = dict(FIXED_FLAGS)
@@ -1200,7 +1200,7 @@ class WaveGenerator:
                    f"[{difficulty.upper()}]"
                    f"{f'[{country.upper()}]' if country else ''}")
 
-        from team_generator import TeamEntry as TE
+        from .team_generator import TeamEntry as TE
         return TE(
             team_id       = team_id,
             name          = name,
@@ -1371,10 +1371,10 @@ class TransportCompositionGenerator:
         self.ini             = parser.ini
         self.taskforce_scale = taskforce_scale
 
-        from taskforce_generator import TaskforceGenerator
-        from script_generator   import ScriptGenerator
-        from team_generator     import TeamGenerator
-        from trigger_generator  import TriggerGenerator
+        from .taskforce_generator import TaskforceGenerator
+        from .script_generator   import ScriptGenerator
+        from .team_generator     import TeamGenerator
+        from .trigger_generator  import TriggerGenerator
 
         self.tf_gen   = TaskforceGenerator(parser, tf_reg, seed=seed)
         self.sc_gen   = ScriptGenerator(sc_reg, phobos=phobos, seed=seed)
@@ -1390,7 +1390,7 @@ class TransportCompositionGenerator:
         # transports don't attach AIExt conditions, but the attributes must
         # exist so the None-check paths run cleanly.
         self._aiext_builder = None
-        from aiext_generator import AIExtWriter
+        from .aiext_generator import AIExtWriter
         self.aiext_writer = AIExtWriter()
 
     # ------------------------------------------------------------------
@@ -1581,7 +1581,7 @@ class TransportCompositionGenerator:
         else:
             tf_id = self.tf_reg.generate()
             self.tf_reg.register_composition(tf_id, units)
-            from taskforce_generator import TaskforceEntry
+            from .taskforce_generator import TaskforceEntry
             tf_entry = TaskforceEntry(
                 tf_id         = tf_id,
                 name          = f"1 Battle Fortress {ai_count} {best_ai.name} {av_count} {best_av.name}",
@@ -1681,7 +1681,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"{n_htk} Flak Track {n_htk*n_terror_per} Terrorist",
@@ -1804,7 +1804,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"1 {transport.name} {passengers} {best.name}",
@@ -1896,7 +1896,7 @@ class TransportCompositionGenerator:
         conditions, so the trigger only fires when that enemy building exists.
         This is what makes a CY-targeting transport script safe: the script's
         47/46 target is guaranteed to have an instance when the trigger fires."""
-        from aiext_generator import AIExtConditions
+        from .aiext_generator import AIExtConditions
         cond = getattr(trigger, 'aiext_conditions', None)
         if not isinstance(cond, AIExtConditions):
             cond = AIExtConditions()
@@ -1912,7 +1912,7 @@ class TransportCompositionGenerator:
         # sequences (e.g. unloading while gathered OUTSIDE the enemy base) are
         # surfaced at generation time rather than discovered in-game.
         try:
-            import script_validator
+            from . import script_validator
             for f in script_validator.validate(list(actions)):
                 if f.severity == "ERROR":
                     print(f"  [script-validate] ERROR in '{name}' ({key}) "
@@ -1925,7 +1925,7 @@ class TransportCompositionGenerator:
         script_id = self.sc_gen.registry.generate_id()
         sc_name   = self.sc_gen.registry.unique_name(name)
         self.sc_gen.registry.register(script_id, list(actions), sc_name)
-        from script_generator import ScriptEntry
+        from .script_generator import ScriptEntry
         entry = ScriptEntry(
             script_id     = script_id,
             name          = sc_name,
@@ -2036,7 +2036,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"{pairs} {gunner.name[:12]}, {pairs} {inf.name[:12]}",
@@ -2095,7 +2095,7 @@ class TransportCompositionGenerator:
                       difficulty: str, overrides: dict | None = None,
                       country: str | None = None,
                       tf_units: list | None = None):
-        from team_generator import build_team_flags, FIXED_FLAGS, TeamEntry
+        from .team_generator import build_team_flags, FIXED_FLAGS, TeamEntry
         import random
         flags = dict(FIXED_FLAGS)
         flags.update(build_team_flags(role, random.Random()))
@@ -2142,7 +2142,7 @@ class TransportCompositionGenerator:
     def _create_always_trigger(self, team, faction: str,
                                 difficulty: str, name: str,
                                 owner: str = '<all>'):
-        from trigger_generator import (
+        from .trigger_generator import (
             TriggerEntry, COND_ENEMY_CREDITS, ALWAYS_TRUE,
         )
         # Compute owner from taskforce units if not explicitly provided
@@ -2310,7 +2310,7 @@ class TransportCompositionGenerator:
                     if not existing:
                         tf_id = self.tf_reg.generate()
                         self.tf_reg.register_composition(tf_id, units)
-                        from taskforce_generator import TaskforceEntry
+                        from .taskforce_generator import TaskforceEntry
                         count = units[1][0]
                         tf_entry = TaskforceEntry(
                             tf_id         = tf_id,
@@ -2389,7 +2389,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"{count} Demolitions Truck",
@@ -2451,7 +2451,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"1 Armored Transport {count} Demolitions Truck",
@@ -2528,8 +2528,8 @@ class TransportCompositionGenerator:
 
         All waves use RUSH phase and Early difficulty framing.
         """
-        from rulesmd_parser import IniParser
-        from taskforce_generator import TaskforceEntry
+        from .rulesmd_parser import IniParser
+        from .taskforce_generator import TaskforceEntry
         import random
         ini = IniParser(self.parser.ini.path)
 
@@ -2866,7 +2866,7 @@ class TransportCompositionGenerator:
                 continue
 
             # Check that secondary is stronger for building damage
-            from rulesmd_parser import WeaponAnalyzer
+            from .rulesmd_parser import WeaponAnalyzer
             wa      = WeaponAnalyzer(self.ini)
             pri_wpn = wa.analyze_weapon(pri_id) if pri_id else {}
             sec_wpn = wa.analyze_weapon(sec_id)
@@ -2908,7 +2908,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"3 {r.name}",
@@ -3028,7 +3028,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     label = (f"; [{faction.upper()}][EARLY][PARASITE_HARASS]"
                              f"\n; Only effective if enemy has no service depot"
                              f" ({', '.join(countermeasure_buildings[:3])})")
@@ -3124,7 +3124,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     tf_entry = TaskforceEntry(
                         tf_id         = tf_id,
                         name          = f"{count} {r.name}",
@@ -3205,7 +3205,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     tf_entry = TaskforceEntry(
                         tf_id         = tf_id,
                         name          = f"{count} {r.name}",
@@ -3288,7 +3288,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     tf_entry = TaskforceEntry(
                         tf_id         = tf_id,
                         name          = f"{count} {r.name}",
@@ -3371,7 +3371,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     tf_entry = TaskforceEntry(
                         tf_id         = tf_id,
                         name          = f"{count} {r.name}",
@@ -3504,7 +3504,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     tf_entry = TaskforceEntry(
                         tf_id         = tf_id,
                         name          = f"{count} {r.name}",
@@ -3609,7 +3609,7 @@ class TransportCompositionGenerator:
                 r_mob = getattr(r, 'mobility', 'Land')
                 if r_mob != hero_mobility:
                     # Only allow if both are in a mixable group
-                    from taskforce_generator import (LAND_MIX_GROUP,
+                    from .taskforce_generator import (LAND_MIX_GROUP,
                                                       NAVAL_MIX_GROUP)
                     if not (hero_mobility in LAND_MIX_GROUP
                             and r_mob in LAND_MIX_GROUP):
@@ -3656,7 +3656,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 comp_names = '+'.join(c.name for c in companions[:2])
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
@@ -3746,7 +3746,7 @@ class TransportCompositionGenerator:
                 if not existing:
                     tf_id = self.tf_reg.generate()
                     self.tf_reg.register_composition(tf_id, units)
-                    from taskforce_generator import TaskforceEntry
+                    from .taskforce_generator import TaskforceEntry
                     label = (f"; [{faction.upper()}][DEFENSIVE_PATROL]"
                              f"[MAGNETRON]{'[GRINDER]' if has_grinder else ''}")
                     tf_entry = TaskforceEntry(
@@ -3837,7 +3837,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 bld_names = '+'.join(faction_overpowerable)
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
@@ -3943,7 +3943,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"3 {ifv.name} + 3 {best_passenger.name}",
@@ -4068,7 +4068,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,
                     name          = f"1 {r.name}+{ai_slots} {best_ai.name}",
@@ -4212,7 +4212,7 @@ class TransportCompositionGenerator:
                         # Mobility compatibility (ground hero cannot escort with aircraft)
                         r_mob = getattr(r, 'mobility', 'Land')
                         if r_mob != hero_mobility:
-                            from taskforce_generator import (LAND_MIX_GROUP,
+                            from .taskforce_generator import (LAND_MIX_GROUP,
                                                               NAVAL_MIX_GROUP)
                             if not (hero_mobility in LAND_MIX_GROUP
                                     and r_mob in LAND_MIX_GROUP):
@@ -4247,7 +4247,7 @@ class TransportCompositionGenerator:
                     if not existing:
                         tf_id = self.tf_reg.generate()
                         self.tf_reg.register_composition(tf_id, units)
-                        from taskforce_generator import TaskforceEntry
+                        from .taskforce_generator import TaskforceEntry
                         comp_str = '+'.join(c.name for c in companions[:2])
                         tf_entry = TaskforceEntry(
                             tf_id         = tf_id,
@@ -4479,7 +4479,7 @@ class TransportCompositionGenerator:
             if not existing:
                 tf_id = self.tf_reg.generate()
                 self.tf_reg.register_composition(tf_id, units)
-                from taskforce_generator import TaskforceEntry
+                from .taskforce_generator import TaskforceEntry
                 n_t, n_e = units[0][0], units[1][0]
                 tf_entry = TaskforceEntry(
                     tf_id         = tf_id,

@@ -44,7 +44,7 @@ Sections written to rulesmd.ini:
 
 from itertools import combinations
 from pathlib import Path
-from rulesmd_parser import IniParser
+from .rulesmd_parser import IniParser
 
 
 # ---------------------------------------------------------------------------

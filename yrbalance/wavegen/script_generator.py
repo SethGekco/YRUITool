@@ -1049,7 +1049,7 @@ class ScriptRegistry:
     def __init__(self, global_registry,
                  existing_scripts: dict | None = None,
                  existing_names: set[str] | None = None):
-        from id_registry import GlobalIDRegistry
+        from .id_registry import GlobalIDRegistry
         self._global  = global_registry
         self._scripts: dict[str, list[tuple[int, int]]] = existing_scripts or {}
         self._names: set[str] = set(existing_names or [])
@@ -1058,7 +1058,7 @@ class ScriptRegistry:
     def from_aimd(cls, aimd_path: str | Path,
                   global_registry=None) -> "ScriptRegistry":
         """Load existing scripts and names from aimd.ini."""
-        from id_registry import GlobalIDRegistry as GIR
+        from .id_registry import GlobalIDRegistry as GIR
         if global_registry is None:
             global_registry = GIR.from_aimd(aimd_path)
 

@@ -81,7 +81,7 @@ from pathlib import Path
 from typing import Optional
 import re
 
-from team_generator import TeamEntry
+from .team_generator import TeamEntry
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def build_side_map(rulesmd_path: str | Path) -> dict[str, int]:
     Side numbers are 1-based (index in Sides list + 1).
     Side 0 = any side.
     """
-    from rulesmd_parser import IniParser
+    from .rulesmd_parser import IniParser
     ini    = IniParser(str(rulesmd_path))
     result = {}
 
@@ -277,13 +277,13 @@ class TriggerRegistry:
     _ID_PATTERN = re.compile(r"^([0-9A-Fa-f]{8}-G)=")
 
     def __init__(self, global_registry, existing_names: set[str] | None = None):
-        from id_registry import GlobalIDRegistry
+        from .id_registry import GlobalIDRegistry
         self._global = global_registry
         self._names: set[str] = set(existing_names or [])
 
     @classmethod
     def from_aimd(cls, aimd_path: str | Path, global_registry=None) -> "TriggerRegistry":
-        from id_registry import GlobalIDRegistry as GIR
+        from .id_registry import GlobalIDRegistry as GIR
         if global_registry is None:
             global_registry = GIR.from_aimd(aimd_path)
 

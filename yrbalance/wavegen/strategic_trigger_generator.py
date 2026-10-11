@@ -54,14 +54,14 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rulesmd_parser import RulesMdParser, UnitRecord
-from taskforce_generator import (
+from .rulesmd_parser import RulesMdParser, UnitRecord
+from .taskforce_generator import (
     TaskforceGenerator, IDRegistry, TaskforceSpec,
     GeneratorConfig, TaskforceEntry, make_vanilla_name,
 )
-from script_generator import ScriptGenerator, ScriptRegistry, ScriptEntry
-from team_generator import TeamGenerator, TeamRegistry, TeamEntry, POOL_FLAGS
-from trigger_generator import (
+from .script_generator import ScriptGenerator, ScriptRegistry, ScriptEntry
+from .team_generator import TeamGenerator, TeamRegistry, TeamEntry, POOL_FLAGS
+from .trigger_generator import (
     TriggerGenerator, TriggerRegistry, TriggerEntry,
     COND_ENEMY_OWNS, COND_AI_OWNS, COND_ENEMY_CREDITS,
     ALWAYS_TRUE, OWN_AT_LEAST_1, make_comparator, OP_GTE,
@@ -465,7 +465,7 @@ class StrategicTriggerGenerator:
         if not self._dummy_exists(cond_obj):
             return
 
-        from taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
+        from .taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
         AERIAL_MOBILITIES = {MOBILITY_AERIAL, MOBILITY_AIRCRAFT,
                              'Jumpjet', 'Aircraft', 'Helicopter'}
 
@@ -674,7 +674,7 @@ class StrategicTriggerGenerator:
             return
 
         # Check if vanilla MCV team exists; if so reuse it
-        from rulesmd_parser import IniParser
+        from .rulesmd_parser import IniParser
         aimd_ini   = IniParser(str(Path(self.parser.ini.path)))
         vanilla_id = VANILLA_MCV_TEAMS.get(faction)
         team_id    = vanilla_id  # reuse vanilla if it exists
@@ -741,7 +741,7 @@ class StrategicTriggerGenerator:
         if not cond_obj:
             return
 
-        from taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
+        from .taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
         AERIAL_MOBS = {MOBILITY_AERIAL, MOBILITY_AIRCRAFT,
                        'Jumpjet', 'Aircraft', 'Helicopter'}
         aerial_units = [
@@ -816,7 +816,7 @@ class StrategicTriggerGenerator:
         # Boarding-capable mobility types
         BOARDING_OK = {'Land', 'Amphibious', 'Tunnel', 'Hover'}
 
-        from taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
+        from .taskforce_generator import MOBILITY_AERIAL, MOBILITY_AIRCRAFT
         AERIAL_MOBS = {MOBILITY_AERIAL, MOBILITY_AIRCRAFT,
                        'Jumpjet', 'Aircraft', 'Helicopter'}
 
@@ -899,7 +899,7 @@ class StrategicTriggerGenerator:
                 fac_idx = -1
         if fac_idx < 0:
             return
-        from procedural_scripts import BWP_NEAREST
+        from .procedural_scripts import BWP_NEAREST
         anchor_arg = BWP_NEAREST + fac_idx
 
         phobos     = getattr(self, '_phobos', True)
@@ -952,7 +952,7 @@ class StrategicTriggerGenerator:
                              faction: str,
                              phase: str) -> 'TaskforceEntry | None':
         """Create a taskforce with specific units (count, unit_id) pairs."""
-        from taskforce_generator import TaskforceEntry as TFE, make_vanilla_name
+        from .taskforce_generator import TaskforceEntry as TFE, make_vanilla_name
         existing = self.tf_reg.find_duplicate(units)
         if existing:
             return TFE(tf_id=existing,
@@ -1122,7 +1122,7 @@ class StrategicTriggerGenerator:
         cache_key = f'_cat_abs_{category}'
         if hasattr(self, cache_key):
             return getattr(self, cache_key)
-        from building_categorizer import BuildingCategorizer
+        from .building_categorizer import BuildingCategorizer
         bc = BuildingCategorizer(str(self.parser.ini.path))
         buildings = bc.scan()
         cat_bids = [b.bid for b in buildings if b.category == category]
@@ -1145,7 +1145,7 @@ class StrategicTriggerGenerator:
         cache_key = f'_cat_pres_{category}'
         if hasattr(self, cache_key):
             return getattr(self, cache_key)
-        from building_categorizer import BuildingCategorizer
+        from .building_categorizer import BuildingCategorizer
         bc = BuildingCategorizer(str(self.parser.ini.path))
         buildings = bc.scan()
         cat_bids = [b.bid for b in buildings if b.category == category]
@@ -1238,7 +1238,7 @@ class StrategicTriggerGenerator:
         existing   = self.tf_reg.find_duplicate(units_list)
         if existing:
             # Return a stub entry referencing existing TF
-            from taskforce_generator import TaskforceEntry as TFE
+            from .taskforce_generator import TaskforceEntry as TFE
             return TFE(tf_id=existing, name=unit_id,
                        label_comment='', units=units_list,
                        faction=faction, phase='Late',
@@ -1246,7 +1246,7 @@ class StrategicTriggerGenerator:
         tf_id = self.tf_reg.generate()
         self.tf_reg.register_composition(tf_id, units_list)
         name  = make_vanilla_name(units_list, self.parser, self.tf_reg)
-        from taskforce_generator import TaskforceEntry as TFE
+        from .taskforce_generator import TaskforceEntry as TFE
         entry = TFE(tf_id=tf_id, name=name,
                     label_comment=f"; [{faction.upper()}][LATE][MCV]",
                     units=units_list, faction=faction,
@@ -1292,7 +1292,7 @@ class StrategicTriggerGenerator:
                       difficulty: str,
                       overrides: dict | None = None) -> TeamEntry:
         """Create a TeamType entry."""
-        from team_generator import build_team_flags, FIXED_FLAGS
+        from .team_generator import build_team_flags, FIXED_FLAGS
         flags = dict(FIXED_FLAGS)
         flags.update(build_team_flags(role, self.rng))
         if overrides:

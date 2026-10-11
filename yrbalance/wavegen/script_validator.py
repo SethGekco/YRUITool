@@ -161,7 +161,7 @@ def repair(actions: list[tuple[int, int]]) -> tuple[list[tuple[int, int]], list[
 
 # ── standalone: scan the generator's own template library ────────────────────
 def _scan_library() -> int:
-    import script_generator as sg
+    from . import script_generator as sg
     total_err = 0
     for phobos in (False, True):
         lib = sg._build_library(phobos)

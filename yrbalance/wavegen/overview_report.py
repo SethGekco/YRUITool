@@ -428,7 +428,7 @@ def build_overview(parser, scan_result=None,
 
     # Neutral tech
     try:
-        from procedural_scripts import find_capturable_tech_buildings
+        from .procedural_scripts import find_capturable_tech_buildings
         tech = find_capturable_tech_buildings(ini, limit=20)
     except Exception:
         tech = []

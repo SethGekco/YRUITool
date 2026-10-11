@@ -220,7 +220,7 @@ def detect_extensions(rules_path: Path, aimd_path: Path) -> tuple[bool, bool]:
     Phobos: script actions >= 10000 in aimd.ini OR LimboDelivery in rulesmd.ini
     The dummy prereq system requires BOTH Ares AND Phobos.
     """
-    from dummy_prereq_generator import detect_ares, detect_phobos
+    from .dummy_prereq_generator import detect_ares, detect_phobos
     return detect_ares(rules_path), detect_phobos(aimd_path, rules_path)
 
 
@@ -386,7 +386,7 @@ def prompt_mixed_scope(args, cat) -> tuple[str, list[str]]:
         if raw == 'B': return 'auto', []
         if raw == 'C':
             by_cat = cat.by_category()
-            from building_categorizer import DUMMY_BUILDING
+            from .building_categorizer import DUMMY_BUILDING
             by_cat = {k:v for k,v in by_cat.items() if k != DUMMY_BUILDING}
             print("\nBuildings (enter IDs separated by commas):")
             all_ids = []
@@ -887,7 +887,7 @@ def main():
     # Step 2: Parse rulesmd.ini
     # ------------------------------------------------------------------
     print("\n[2/10] Parsing rulesmd.ini...")
-    from rulesmd_parser import RulesMdParser
+    from .rulesmd_parser import RulesMdParser
     parser = RulesMdParser(str(rules_path)).parse()
     factions = list(parser.sides.faction_countries.keys())
     print(f"  Factions: {factions}")
@@ -898,7 +898,7 @@ def main():
     # Step 3: Categorize buildings
     # ------------------------------------------------------------------
     print("\n[3/10] Categorizing buildings...")
-    from building_categorizer import BuildingCategorizer
+    from .building_categorizer import BuildingCategorizer
     cat = BuildingCategorizer(str(rules_path))
     cat.scan()
     eligible = cat.exclude_dummies()
@@ -910,9 +910,9 @@ def main():
     # Step 3b: AI-only unit scan
     # ------------------------------------------------------------------
     print("\n[3b] Scanning for AI-only units...")
-    from ai_unit_scanner import (scan_candidates, prompt_user, _bypass_build_limit,
+    from .ai_unit_scanner import (scan_candidates, prompt_user, _bypass_build_limit,
                                   _analyze_type_list_groups, _prompt_type_list_groups)
-    from rulesmd_parser import IniParser as _IniScan
+    from .rulesmd_parser import IniParser as _IniScan
     _ini_scan    = _IniScan(str(rules_path))
     bypass       = _bypass_build_limit(_ini_scan)
 
@@ -1203,11 +1203,11 @@ def main():
             print(f"        vanilla detection.")
             vanilla_fp = {}
         else:
-            from entry_manager import _fingerprint
+            from .entry_manager import _fingerprint
             vanilla_fp = _fingerprint(str(vanilla_aimd_path))
             print(f"  Vanilla baseline: {len(vanilla_fp)} entries fingerprinted")
 
-        from entry_manager import (parse_entries, resolve_orphans, apply_deletions)
+        from .entry_manager import (parse_entries, resolve_orphans, apply_deletions)
         entries = parse_entries(str(out_aimd), vanilla_fp)
 
         v = sum(1 for e in entries if e.category.name == 'VANILLA')
@@ -1235,11 +1235,11 @@ def main():
     # Step 6: Initialize registries
     # ------------------------------------------------------------------
     print("\n[6/10] Initializing registries...")
-    from id_registry import GlobalIDRegistry
-    from taskforce_generator import IDRegistry
-    from script_generator import ScriptRegistry
-    from team_generator import TeamRegistry
-    from trigger_generator import TriggerRegistry, build_side_map
+    from .id_registry import GlobalIDRegistry
+    from .taskforce_generator import IDRegistry
+    from .script_generator import ScriptRegistry
+    from .team_generator import TeamRegistry
+    from .trigger_generator import TriggerRegistry, build_side_map
 
     global_reg = GlobalIDRegistry.from_aimd(str(out_aimd))
     tf_reg     = IDRegistry.from_aimd(str(out_aimd), global_reg)
@@ -1259,8 +1259,8 @@ def main():
     # Strategic building dummies — skipped if user declined dummy system
     # or passed --no-dummy / --no-strategic.
     if legacy_active and not args.no_strategic and not user_declined_dummy and not args.no_dummy:
-        from dummy_prereq_generator import FullDummyPrereqGenerator
-        from building_categorizer import BuildingCategorizer
+        from .dummy_prereq_generator import FullDummyPrereqGenerator
+        from .building_categorizer import BuildingCategorizer
 
         _bc       = BuildingCategorizer(str(rules_path))
         _bldgs    = _bc.scan()
@@ -1285,7 +1285,7 @@ def main():
             _next_idx += 1
 
         if _strat_blds:
-            from dummy_prereq_generator import DummyPrereqGenerator
+            from .dummy_prereq_generator import DummyPrereqGenerator
             strat_dummy = FullDummyPrereqGenerator(
                 str(rules_path),
                 max_combo_size   = args.strat_max_combo_size,
@@ -1322,7 +1322,7 @@ def main():
 
     if dummy_mode > 0 and not args.no_dummy and legacy_active:
         print("\n[7/10] Generating dummy prerequisites...")
-        from dummy_prereq_generator import FullDummyPrereqGenerator
+        from .dummy_prereq_generator import FullDummyPrereqGenerator
         dummy_gen = FullDummyPrereqGenerator(
             str(rules_path),
             max_combo_size   = args.max_combo_size,
@@ -1334,7 +1334,7 @@ def main():
         dummy_gen.target_blds = sorted(
             (b.idx, b.bid) for b in eligible)
 
-        from defense_dummy_generator import DefenseDummyGenerator
+        from .defense_dummy_generator import DefenseDummyGenerator
         def_gen = DefenseDummyGenerator(
             str(rules_path),
             require_isbasedefense = args.require_isbasedefense)
@@ -1359,7 +1359,7 @@ def main():
     # Runs after dummy_gen is finalized (needs bld_to_dmpr mapping)
     meta_gen = None
     if dummy_gen and ares and phobos:
-        from meta_prereq_generator import MetaPrereqGenerator
+        from .meta_prereq_generator import MetaPrereqGenerator
         meta_gen = MetaPrereqGenerator(
             str(rules_path), parser, dummy_gen, global_reg)
         meta_count = meta_gen.generate(opt_in=not args.yes)
@@ -1369,7 +1369,7 @@ def main():
 
     strat_gen = None
     if legacy_active and not args.no_strategic and not user_declined_dummy and not args.no_dummy:
-        from strategic_trigger_generator import (
+        from .strategic_trigger_generator import (
             StrategicTriggerGenerator)
         strat_gen = StrategicTriggerGenerator(
             parser, global_reg, tf_reg, sc_reg, team_reg, trig_reg,
@@ -1429,7 +1429,7 @@ def main():
 
         # Run mod scanners for AIExt condition generation
         print("  Scanning mod for AIExt conditions (AA, infrastructure, spies)...")
-        from aiext_generator import scan_mod, AIExtConfig
+        from .aiext_generator import scan_mod, AIExtConfig
         scan_result = scan_mod(args.rules, parser=parser,
                                sides_registry=parser.sides)
         print(f"    AA structures detected:  {len(scan_result.aa.aa_structure_ids)}")
@@ -1439,14 +1439,14 @@ def main():
 
         aiext_cfg = AIExtConfig()   # use defaults; TODO: expose to CLI args
 
-        from wave_generator import WaveGenerator, WaveGeneratorConfig
+        from .wave_generator import WaveGenerator, WaveGeneratorConfig
         wave_gen = WaveGenerator(
             parser, global_reg, tf_reg, sc_reg, team_reg, trig_reg,
             side_map, phobos=phobos, seed=args.seed,
             meta_map=meta_gen.unit_to_meta if meta_gen else {},
             scan_result=scan_result)
         # Parse role pool / role counts / phase pool
-        from wave_generator import DEFAULT_ROLE_POOL, DEFAULT_PHASE_POOL
+        from .wave_generator import DEFAULT_ROLE_POOL, DEFAULT_PHASE_POOL
         role_pool  = args.role_pool  if args.role_pool  else list(DEFAULT_ROLE_POOL)
         phase_pool = args.phase_pool if args.phase_pool else list(DEFAULT_PHASE_POOL)
         role_counts = {}
@@ -1493,7 +1493,7 @@ def main():
             print(f"  AIExt conditions attached: {aiext_count} triggers")
 
         # Transport compositions (BFRT, HTK+TERROR, naval)
-        from wave_generator import TransportCompositionGenerator
+        from .wave_generator import TransportCompositionGenerator
         transport_gen = TransportCompositionGenerator(
             parser, tf_reg, sc_reg, team_reg, trig_reg,
             side_map, phobos=phobos, seed=args.seed,
@@ -1537,7 +1537,7 @@ def main():
         # slows down how quickly taskforces form. Per DeeZire: pool teams
         # use Guard (11,5) not Area Guard, so members stay recruitable.
         print("  Generating pool teams (base defense / recruitment reserve)...")
-        from taskforce_generator import TaskforceEntry
+        from .taskforce_generator import TaskforceEntry
         team_gen = wave_gen.team_gen   # reuse the instance WaveGenerator already created
         active_factions = sorted(parser.sides.faction_countries.keys())
         pool_teams = team_gen.generate_pool_teams(
@@ -1563,7 +1563,7 @@ def main():
         # Procedural extras: base patrols + neutral tech capture + destroy-tech
         if (not args.no_patrols or not args.no_capture
                 or not args.no_destroy_tech):
-            from procedural_scripts import generate_procedural_extras
+            from .procedural_scripts import generate_procedural_extras
             extra = generate_procedural_extras(
                 wave_gen, parser,
                 patrols=not args.no_patrols,
@@ -1583,7 +1583,7 @@ def main():
         #    taskforce (low-priority "coverage filler" waves)
         if not args.no_coverage:
             try:
-                from coverage_tracker import apply_coverage
+                from .coverage_tracker import apply_coverage
                 cov = apply_coverage(wave_gen, parser)
                 if cov['silent_dedup'] or cov['coverage_fillers']:
                     print(f"  Coverage: dropped {cov['silent_dedup']} redundant "
@@ -1648,7 +1648,7 @@ def main():
 
     # Cleanup: remove orphaned [XYZ.AIExt] sections whose base trigger XYZ
     # no longer exists in the file (leftover from previous tool runs).
-    from entry_manager import cleanup_orphan_sidecars
+    from .entry_manager import cleanup_orphan_sidecars
     n_orphans = cleanup_orphan_sidecars(str(out_aimd))
     if n_orphans > 0:
         print(f"  Cleaned up {n_orphans} orphaned .AIExt sidecar section(s)")
@@ -1678,7 +1678,7 @@ def main():
     # the way they did, and where each shows up in the generated waves.
     if not args.no_overview:
         try:
-            from overview_report import write_overview, collect_trigger_counts
+            from .overview_report import write_overview, collect_trigger_counts
             overview_path = out_aimd.parent / "overview.txt"
             tc = collect_trigger_counts(wave_gen)
             write_overview(overview_path, parser,

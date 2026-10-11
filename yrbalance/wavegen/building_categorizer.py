@@ -86,7 +86,7 @@ class BuildingCategorizer:
     """
 
     def __init__(self, rulesmd_path: str | Path):
-        from rulesmd_parser import IniParser
+        from .rulesmd_parser import IniParser
         self.path    = Path(rulesmd_path)
         self.ini     = IniParser(str(rulesmd_path))
         self.buildings: list[BuildingInfo] = []

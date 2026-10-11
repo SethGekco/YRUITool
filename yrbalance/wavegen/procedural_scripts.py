@@ -461,9 +461,9 @@ def generate_procedural_extras(wave_gen, parser,
 
     Returns counts.
     """
-    from taskforce_generator import TaskforceEntry
-    from script_generator import ScriptEntry
-    from team_generator import TeamEntry, FIXED_FLAGS
+    from .taskforce_generator import TaskforceEntry
+    from .script_generator import ScriptEntry
+    from .team_generator import TeamEntry, FIXED_FLAGS
 
     bwp = BwPResolver(parser.ini)
     factions = sorted(getattr(parser.sides, 'faction_countries', {}).keys())
@@ -600,7 +600,7 @@ def generate_procedural_extras(wave_gen, parser,
                     # AIExt gate: fire only while the NEUTRAL house still
                     # owns at least one of this tech structure.
                     try:
-                        from aiext_generator import AIExtConditions
+                        from .aiext_generator import AIExtConditions
                         cond = AIExtConditions()
                         cond.neutral_buildings     = [bld]
                         cond.neutral_buildings_min = [1]
@@ -684,7 +684,7 @@ def generate_procedural_extras(wave_gen, parser,
                     # passes the threshold. If the tech building doesn't
                     # exist at fire-time the script does nothing harmful.
                     try:
-                        from aiext_generator import AIExtConditions
+                        from .aiext_generator import AIExtConditions
                         cond = AIExtConditions()
                         cond.elapsed_seconds_min = destroy_tech_delay_seconds
                         aiext_pairs.append((len(new_teams) - 1, cond))

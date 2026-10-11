@@ -21,9 +21,8 @@ Usage:
 import sys
 from collections import defaultdict
 
-from rulesmd_parser import RulesMdParser
-import taskforce_generator as tg
-
+from .rulesmd_parser import RulesMdParser
+from . import taskforce_generator as tg
 PHASES = ("Rush", "Early", "Mid", "Late", "EndGame")
 # Roles worth probing — the DEFAULT_ROLE_POOL set plus the specialty roles.
 ROLES = ("RUSH", "GENERAL_ATTACK", "ANTI_DEFENSES", "MINER_KILLER",

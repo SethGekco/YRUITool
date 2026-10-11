@@ -945,7 +945,7 @@ def scan_mod(rulesmd_path: str | Path, parser=None, sides_registry=None) -> ModS
     if parser is not None:
         ini = parser.ini
     else:
-        from rulesmd_parser import IniParser
+        from .rulesmd_parser import IniParser
         ini = IniParser(str(rulesmd_path))
 
     aa      = scan_aa_threat(ini)

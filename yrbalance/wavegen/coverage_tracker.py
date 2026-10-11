@@ -71,9 +71,9 @@ def generate_coverage_fillers(wave_gen, parser) -> int:
     them, keeping the roster feeling complete rather than showcasing only
     the top-graded units.
     """
-    from taskforce_generator import TaskforceEntry
-    from script_generator  import ScriptEntry
-    from team_generator    import TeamEntry, FIXED_FLAGS
+    from .taskforce_generator import TaskforceEntry
+    from .script_generator  import ScriptEntry
+    from .team_generator    import TeamEntry, FIXED_FLAGS
 
     used   = collect_used_unit_ids(wave_gen)
     unused = find_unused_units(parser, used)
@@ -87,7 +87,7 @@ def generate_coverage_fillers(wave_gen, parser) -> int:
     # Grab (or generate) a very-simple attack script — same one whether
     # the unit is infantry or vehicle. Standard: gather at enemy, attack,
     # loop. Priority 3 so it loses to specific-role scripts.
-    from script_generator import generate_script_for_taskforce  # noqa: F401
+    from .script_generator import generate_script_for_taskforce  # noqa: F401
     # We use the existing script generator by faking a taskforce label
     # containing GENERAL_ATTACK — it picks the right script for us.
 

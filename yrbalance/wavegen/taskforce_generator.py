@@ -83,7 +83,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from rulesmd_parser import (
+from .rulesmd_parser import (
     RulesMdParser, UnitRecord,
     TIER_DEPTH_CEILING,
     LAND_MIX_GROUP, NAVAL_MIX_GROUP, AIRCRAFT_GROUP, SPECIAL_EXCLUDED,
@@ -200,7 +200,7 @@ class IDRegistry:
     def __init__(self, global_registry,
                  existing_names: set[str] | None = None,
                  existing_compositions: dict | None = None):
-        from id_registry import GlobalIDRegistry
+        from .id_registry import GlobalIDRegistry
         self._global        = global_registry
         self._names:        set[str] = set(existing_names        or [])
         # fingerprint -> existing tf_id
@@ -271,7 +271,7 @@ class IDRegistry:
         Load existing taskforce names and compositions from aimd.ini.
         Requires a GlobalIDRegistry that has already scanned the file for IDs.
         """
-        from id_registry import GlobalIDRegistry as GIR
+        from .id_registry import GlobalIDRegistry as GIR
         if global_registry is None:
             global_registry = GIR.from_aimd(aimd_path)
 

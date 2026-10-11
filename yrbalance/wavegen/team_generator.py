@@ -81,8 +81,8 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rulesmd_parser import RulesMdParser, UnitRecord
-from taskforce_generator import (
+from .rulesmd_parser import RulesMdParser, UnitRecord
+from .taskforce_generator import (
     TaskforceEntry, IDRegistry, make_vanilla_name,
     _eligible_units, DEFAULT_MIN_GRADE,
     vehicle_capacity, unit_slots, needs_direct_attack,
@@ -564,7 +564,7 @@ def _select_pool_units(parser: RulesMdParser,
     Picks the best-graded unit at exactly that tier (not cumulative).
     Filters out naval and aerial units from vehicle pools.
     """
-    from taskforce_generator import MOBILITY_NAVAL, MOBILITY_AMPHIBIOUS, MOBILITY_AIRCRAFT
+    from .taskforce_generator import MOBILITY_NAVAL, MOBILITY_AMPHIBIOUS, MOBILITY_AIRCRAFT
 
     tier_map = {
         "Early":   (0, 3),
@@ -619,7 +619,7 @@ def _select_pool_units(parser: RulesMdParser,
 
 def _select_pool_units_fallback(parser, faction, tier, unit_category):
     """Fallback for tiers with no qualifying units."""
-    from taskforce_generator import MOBILITY_NAVAL, MOBILITY_AIRCRAFT
+    from .taskforce_generator import MOBILITY_NAVAL, MOBILITY_AIRCRAFT
     candidates = [
         rec for rec in parser.buildable
         if rec.faction == faction
@@ -652,7 +652,7 @@ def _select_pool_units_elite(parser: RulesMdParser,
     Result may be identical to _select_pool_units if there are no higher-
     prereq alternatives at that tier — the caller compares and skips if so.
     """
-    from taskforce_generator import MOBILITY_NAVAL, MOBILITY_AIRCRAFT
+    from .taskforce_generator import MOBILITY_NAVAL, MOBILITY_AIRCRAFT
 
     depth_ceiling = {"Mid": 4, "Late": 5, "EndGame": 99}.get(tier, 3)
 
@@ -713,14 +713,14 @@ class TeamRegistry:
 
     def __init__(self, global_registry,
                  existing_names: set[str] | None = None):
-        from id_registry import GlobalIDRegistry
+        from .id_registry import GlobalIDRegistry
         self._global = global_registry
         self._names: set[str] = set(existing_names or [])
 
     @classmethod
     def from_aimd(cls, aimd_path: str | Path,
                   global_registry=None) -> "TeamRegistry":
-        from id_registry import GlobalIDRegistry as GIR
+        from .id_registry import GlobalIDRegistry as GIR
         if global_registry is None:
             global_registry = GIR.from_aimd(aimd_path)
 
@@ -862,7 +862,7 @@ class TeamGenerator:
           - GDI/NOD/Thirdside × Early/Mid/Late × Infantry/Vehicle = 18 teams
           - Plus AA pool if faction has AA units
         """
-        from script_generator import ScriptRegistry, ScriptEntry
+        from .script_generator import ScriptRegistry, ScriptEntry
 
         # Get or create the pool Guard script
         pool_actions = list(POOL_SCRIPT_ACTIONS)

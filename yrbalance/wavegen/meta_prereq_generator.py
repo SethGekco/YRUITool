@@ -50,8 +50,8 @@ TODO: Country restriction on meta-dummy SWs (SW.RequiredHouses).
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
-from rulesmd_parser import IniParser
-from ai_unit_scanner import (
+from .rulesmd_parser import IniParser
+from .ai_unit_scanner import (
     _fully_expand_token, _generic_prereqs,
     _is_building_impossible, _playable_countries,
     _player_deliverable_buildings,

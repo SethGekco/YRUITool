@@ -21,3 +21,17 @@ per WAVEGEN_MERGE_PLAN.md — this is Phase 0 (version control).
 - Phase 2: headless-ify — thread the 50 `input()`s into a config/decision object,
   drop the file-move, take explicit in/out paths. The key enabler for the GUI.
 - Phase 3: a `Tools → Generate AI…` dialog + auto `lint_ai` on the output.
+
+## Milestone 1 — analysis layer (SHIPPED)
+- Moved into `yrbalance/wavegen/` as a proper package; intra-module imports
+  rewritten to package-relative so it bundles in the frozen build (no sys.path
+  shim). All 23 submodules import.
+- `analysis.py` — headless, read-only API: `parse_rules`, `overview_report_text`
+  (the generator's MOD OVERVIEW: units, roles, GLOBAL/ROLE grades, factions,
+  aerial/role buckets), `mod_summary`. No input().
+- UI: **Tools → AI coverage report…** runs it on the loaded rules (0.04s on
+  vanilla → 215-line report), with Save. Tested (`test_wavegen_analysis`, 40/40);
+  frozen build bundles the analysis chain (rulesmd_parser/overview_report + deps);
+  generation-only modules stay unbundled until referenced.
+- Next: library-ize the generators (headless, drop input()/file-move) one at a
+  time behind a Tools → Generate AI… dialog, with golden tests.

@@ -1451,7 +1451,7 @@ class RulesMdParser:
         # Compute adaptive tier depth ceilings from actual mod structure.
         # Updates the global TIER_DEPTH_CEILING so all downstream code
         # (taskforce generator, script generator, etc.) uses mod-correct values.
-        import rulesmd_parser as _self_module
+        from . import rulesmd_parser as _self_module
         computed = compute_tier_ceilings(self.ini, self.sides)
         _self_module.TIER_DEPTH_CEILING.update(computed)
         self.tier_ceilings = dict(computed)

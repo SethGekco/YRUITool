@@ -41,7 +41,7 @@ TODO: Support Ares Prerequisite extensions:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from rulesmd_parser import PREREQ_ALIAS_KEYS
+from .rulesmd_parser import PREREQ_ALIAS_KEYS
 
 # Units that are never usable in skirmish regardless of TL or prereqs.
 # These are hardcoded vanilla IDs that have no useful combat role.
@@ -203,7 +203,7 @@ def _is_token_impossible(token: str, ini, gp: dict,
     if prereq_alts is None:
         prereq_alts = _prereq_alternates(ini)
     if upper in prereq_alts:
-        from sw_chain_walker import SWChainWalker, Reachability
+        from .sw_chain_walker import SWChainWalker, Reachability
         _walker = SWChainWalker(ini, playable)
         for alt_uid in prereq_alts[upper]:
             if alt_uid in player_delivered:
@@ -726,7 +726,7 @@ def scan_candidates(rules_path: str, parser,
     Scan all type lists for units not already in parser.buildable.
     Returns a list of ScannedUnit with bucket flags set.
     """
-    from rulesmd_parser import IniParser
+    from .rulesmd_parser import IniParser
     ini = IniParser(rules_path)
 
     buildable_ids    = {r.unit_id for r in parser.buildable}
@@ -738,7 +738,7 @@ def scan_candidates(rules_path: str, parser,
     buildable_id_set = frozenset(r.unit_id for r in parser.buildable)
 
     # Build SW chain walker for resolving impossible-building prereqs
-    from sw_chain_walker import SWChainWalker, Reachability
+    from .sw_chain_walker import SWChainWalker, Reachability
     walker = SWChainWalker(ini, playable)
 
     # Pre-compute which impossible buildings are SW-deliverable
@@ -773,7 +773,7 @@ def scan_candidates(rules_path: str, parser,
         # Standard check says impossible — try SW chain walker
         # Need to find the concrete building IDs this token resolves to
         upper = token.upper()
-        from rulesmd_parser import PREREQ_ALIAS_KEYS
+        from .rulesmd_parser import PREREQ_ALIAS_KEYS
         if upper in PREREQ_ALIAS_KEYS:
             gen_key = PREREQ_ALIAS_KEYS[upper].lower()
             gen_val = (ini.section('General') or {}).get(gen_key, '')
