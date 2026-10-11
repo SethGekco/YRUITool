@@ -9,7 +9,7 @@ pass=0; fail=0
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
 no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_mix test_encyclopedia test_bookmarks_history test_tags test_portai test_ailib test_library test_images test_audio test_vxl test_vpl test_aimd)
 # test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
-need_rules+=(test_eva test_wavegen_analysis test_wavegen_taskforce test_wavegen_wave test_wavegen_roles test_wavegen_specialty test_wavegen_everything)
+need_rules+=(test_eva test_wavegen_analysis test_wavegen_taskforce test_wavegen_wave test_wavegen_roles test_wavegen_specialty test_wavegen_strategic test_wavegen_strategic_full test_wavegen_everything)
 
 for f in "${need_rules[@]}"; do
     printf '%-18s ' "$f"
@@ -72,6 +72,11 @@ elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_wavegen_wave_ui.py" "$R" >
 printf '%-18s ' "test_wavegen_sp_ui"
 if [ ! -x "$venv_py" ] || [ -z "$R" ]; then echo "SKIP";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_wavegen_specialty_ui.py" "$R" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
+# Strategic-trigger dialog smoke (needs rules path + PySide6 + offscreen).
+printf '%-18s ' "test_wavegen_st_ui"
+if [ ! -x "$venv_py" ] || [ -z "$R" ]; then echo "SKIP";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_wavegen_strategic_ui.py" "$R" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
 # Generate-everything dialog smoke (needs rules path + PySide6 + offscreen).
 printf '%-18s ' "test_wavegen_all_ui"
