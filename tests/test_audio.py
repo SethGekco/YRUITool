@@ -76,6 +76,19 @@ def main():
     else:
         print("real-sample check: SKIP (no game audio.bag on this machine)")
 
+    # mono output regardless of the stereo flag: our decoder emits one mono
+    # stream, so a stereo-flagged sample must NOT be written as 2 channels
+    # (which would play ~2x fast / half length).
+    from yrbalance.engine.audio import decode_bag_sample
+    import struct as _st
+    s = decode_bag_sample(b"\x00" * 64, 22050, 0x0D, 512)   # 0x0D has stereo bit
+    wav = to_wav(s.pcm, s.sample_rate, s.channels, s.bits)
+    hdr_channels = _st.unpack_from("<H", wav, 22)[0]         # WAVE fmt channels
+    mono_ok = s.channels == 1 and hdr_channels == 1
+    print(f"stereo-flag sample stays mono: {'OK' if mono_ok else 'FAIL'} "
+          f"(ch={s.channels}, hdr={hdr_channels})")
+    ok = ok and mono_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

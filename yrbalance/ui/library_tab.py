@@ -17,23 +17,23 @@ import subprocess
 import tempfile
 import datetime
 
-from PySide6.QtCore import Qt, QSettings, QDir
+from PySide6.QtCore import Qt, QSettings, QDir, QTimer
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton, QComboBox, QApplication,
+    QRadioButton, QComboBox, QApplication, QMenu,
 )
 
 from ..engine import (
-    load_catalog, add_source, remove_source, set_source_summary,
+    load_catalog, save_catalog, add_source, remove_source, set_source_summary,
     create_collection, delete_collection, rename_collection, rename_source,
     add_to_collection, scan_source,
     describe_culture, balance_culture, conversion_factors, convert_unit_stats,
     convert_weapon_stats, culture_statfactors, load_tags, set_unit_tags, all_tags,
-    parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
+    parse_ini_lines, build_section_map, parse_type_list, build_port_plan, apply_port_plan,
     make_backup, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
@@ -106,8 +106,12 @@ class LibraryTab(QWidget):
         self.hide_dummy = QCheckBox("dummy")
         self.hide_civilian = QCheckBox("civilian")
         self.hide_noart = QCheckBox("no art files")
+        self.hide_vanilla = QCheckBox("vanilla")
+        self.hide_vanilla.setToolTip(
+            "Hide TechnoTypes that exist in vanilla YR (by name), so only the "
+            "mod's own/added objects show.")
         for cb in (self.hide_nonbuild, self.hide_dummy, self.hide_civilian,
-                   self.hide_noart):
+                   self.hide_noart, self.hide_vanilla):
             cb.toggled.connect(self._apply_filter)
             frow.addWidget(cb)
         frow.addStretch(1)
@@ -123,7 +127,15 @@ class LibraryTab(QWidget):
         self.col_list = QListWidget()
         self.col_list.currentRowChanged.connect(self._on_collection)
         self.col_list.itemDoubleClicked.connect(self._rename_collection_row)
-        self.col_list.setToolTip("Double-click a mod folder or collection to rename")
+        self.col_list.setToolTip(
+            "Double-click to rename · right-click for Rename/Remove · "
+            "drag mod folders to reorder")
+        # Right-click menu (rename/remove) + drag-to-reorder mod folders.
+        self.col_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.col_list.customContextMenuRequested.connect(self._col_context_menu)
+        self.col_list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.col_list.setDefaultDropAction(Qt.MoveAction)
+        self.col_list.model().rowsMoved.connect(self._on_sources_reordered)
         ll.addWidget(self.col_list, 1)
         self.add_to_btn = QPushButton("Add selected → collection…")
         self.add_to_btn.clicked.connect(self._add_selected_to_collection)
@@ -207,18 +219,16 @@ class LibraryTab(QWidget):
 
     # ── detail pane ───────────────────────────────────────────────────────────
     def _build_detail(self):
-        w = QWidget()
-        lay = QHBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
+        tabs = QTabWidget()
+        self.detail_tabs = tabs
 
-        left = QWidget()
-        ll = QVBoxLayout(left)
-        ll.setContentsMargins(0, 0, 0, 0)
-        ll.addWidget(QLabel("<b>Detail</b> — rules preview"))
+        # 1) Preview — the rules-preview summary + cross-mod tags.
+        prev = QWidget()
+        pl = QVBoxLayout(prev)
         self.detail_text = QPlainTextEdit()
         self.detail_text.setReadOnly(True)
         self.detail_text.setFont(QFont("monospace"))
-        ll.addWidget(self.detail_text, 1)
+        pl.addWidget(self.detail_text, 1)
         trow = QHBoxLayout()
         trow.addWidget(QLabel("Tags:"))
         self.tags_edit = QLineEdit()
@@ -228,13 +238,23 @@ class LibraryTab(QWidget):
         set_tags = QPushButton("Set")
         set_tags.clicked.connect(self._set_item_tags)
         trow.addWidget(set_tags)
-        ll.addLayout(trow)
-        lay.addWidget(left, 3)
+        pl.addLayout(trow)
+        tabs.addTab(prev, "Preview")
 
-        right = QWidget()
-        rl = QVBoxLayout(right)
-        rl.setContentsMargins(0, 0, 0, 0)
-        rl.addWidget(QLabel("<b>Files</b>"))
+        # 2) INI — the raw rulesmd / artmd / soundmd sections for this item.
+        ini = QWidget()
+        il = QVBoxLayout(ini)
+        self.ini_text = QPlainTextEdit()
+        self.ini_text.setReadOnly(True)
+        self.ini_text.setFont(QFont("monospace"))
+        self.ini_text.setLineWrapMode(QPlainTextEdit.NoWrap)
+        il.addWidget(self.ini_text, 1)
+        tabs.addTab(ini, "INI")
+
+        # 3) Assets — files, cameo, voxel/SHP preview, audio.
+        assets = QWidget()
+        al = QVBoxLayout(assets)
+        al.addWidget(QLabel("<b>Files</b>"))
         self.file_table = QTableWidget(0, 3)
         self.file_table.setHorizontalHeaderLabels(["File", "Location", ""])
         self.file_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -250,7 +270,7 @@ class LibraryTab(QWidget):
         self.file_table.setWordWrap(False)
         self.file_table.setTextElideMode(Qt.ElideNone)
         self.file_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        rl.addWidget(self.file_table, 1)
+        al.addWidget(self.file_table, 1)
         hrow = QHBoxLayout()
         hrow.addWidget(QLabel("House colour:"))
         self.house_combo = QComboBox()
@@ -270,7 +290,7 @@ class LibraryTab(QWidget):
             lambda _i: self._show_detail())
         hrow.addWidget(self.view_combo)
         hrow.addStretch(1)
-        rl.addLayout(hrow)
+        al.addLayout(hrow)
 
         imgs = QHBoxLayout()
         self.art_img = QLabel()
@@ -286,11 +306,11 @@ class LibraryTab(QWidget):
         self.cameo_img.setStyleSheet(
             "border:1px solid palette(mid); background:palette(base);")
         imgs.addWidget(self.cameo_img)
-        rl.addLayout(imgs)
-        self.preview = QLabel("Art / audio preview: select an item.")
+        al.addLayout(imgs)
+        self.preview = QLabel("Select an item to preview its art / audio.")
         self.preview.setWordWrap(True)
         self.preview.setStyleSheet("color:#888;")
-        rl.addWidget(self.preview)
+        al.addWidget(self.preview)
 
         arow = QHBoxLayout()
         arow.addWidget(QLabel("Audio:"))
@@ -303,14 +323,37 @@ class LibraryTab(QWidget):
         self.export_btn.clicked.connect(self._export_audio)
         arow.addWidget(self.play_btn)
         arow.addWidget(self.export_btn)
-        rl.addLayout(arow)
+        al.addLayout(arow)
         self._player = _find_audio_player()
         self._tmp_wavs = []
         if not self._player:
             self.play_btn.setToolTip(
                 "No system audio player found (paplay/aplay/afplay). Use Export.")
-        lay.addWidget(right, 2)
-        return w
+        tabs.addTab(assets, "Assets")
+
+        # 4) Balance Culture — how this item's source mod is tuned vs vanilla, and
+        #    a preview of converting its stats into another mod's scale.
+        bc = QWidget()
+        bl = QVBoxLayout(bc)
+        self.bc_text = QPlainTextEdit()
+        self.bc_text.setReadOnly(True)
+        bl.addWidget(self.bc_text, 1)
+        crow = QHBoxLayout()
+        crow.addWidget(QLabel("Convert to:"))
+        self.bc_target = QComboBox()
+        self.bc_target.setMinimumWidth(160)
+        crow.addWidget(self.bc_target, 1)
+        self.bc_btn = QPushButton("Show conversion")
+        self.bc_btn.clicked.connect(self._bc_convert)
+        crow.addWidget(self.bc_btn)
+        bl.addLayout(crow)
+        self.bc_convert_text = QPlainTextEdit()
+        self.bc_convert_text.setReadOnly(True)
+        self.bc_convert_text.setFont(QFont("monospace"))
+        bl.addWidget(self.bc_convert_text, 1)
+        tabs.addTab(bc, "Balance Culture")
+
+        return tabs
 
     def _on_tab_changed(self, _i):
         self._apply_filter()
@@ -323,13 +366,17 @@ class LibraryTab(QWidget):
         it = self._selected_item()
         if it is None:
             self.detail_text.setPlainText("")
+            self.ini_text.setPlainText("")
             self.file_table.setRowCount(0)
             self.art_img.clear()
             self.cameo_img.clear()
             self.tags_edit.clear()
             self.tags_edit.setEnabled(False)
             self._clear_audio()
-            self.preview.setText("Art / audio preview: select an item.")
+            self.preview.setText("Select an item to preview its art / audio.")
+            self.bc_text.setPlainText("")
+            self.bc_convert_text.setPlainText("")
+            self.bc_target.clear()
             return
         self.tags_edit.setEnabled(True)
         self.tags_edit.setText(", ".join(self._item_tags(it)))
@@ -346,15 +393,113 @@ class LibraryTab(QWidget):
         if entry is None:
             self.detail_text.setPlainText(f"[{it.name}] — no detail available "
                                           "(source not scanned).")
+            self.ini_text.setPlainText("")
             self.file_table.setRowCount(0)
             self.preview.setText("")
+            self.bc_text.setPlainText("")
+            self.bc_convert_text.setPlainText("")
+            self.bc_target.clear()
             return
         self.detail_text.setPlainText(unit_report(entry))
+        self.ini_text.setPlainText(self._ini_text(entry, scan))
         self._fill_files(entry.assets)
         self._render_art(entry, it.source_id, scan)
         self._render_cameo(entry, it.source_id, scan)
         self._populate_audio(entry, scan)
         self.preview.setText("")
+        self._fill_balance_culture(it, scan)
+
+    def _ini_text(self, entry, scan):
+        """Raw rulesmd → artmd → soundmd sections for this item, verbatim."""
+        idx = scan.index if (scan and scan.index) else None
+        if idx is None:
+            return "(source not scanned)"
+
+        def block(smap, name):
+            s = smap.get(name.lower()) if smap else None
+            if not s:
+                return []
+            out = [f"[{s['name_raw']}]"]
+            out += [f"{kr}={vr.rstrip()}" for (_li, kr, vr) in s["keys"].values()]
+            out.append("")
+            return out
+
+        L = ["; ===== rulesmd.ini ====="]
+        L += block(idx.rules_map, entry.name)
+        seen = set()
+        for _slot, w, wh, pr in (getattr(entry, "weapons", []) or []):
+            for sec in (w, wh, pr):
+                if sec and sec.lower() not in seen:
+                    seen.add(sec.lower())
+                    L += block(idx.rules_map, sec)
+        if getattr(entry, "art_name", ""):
+            L += ["; ===== artmd.ini ====="] + block(idx.art_map, entry.art_name)
+        sounds = getattr(entry, "sound_names", []) or []
+        if sounds:
+            L += ["; ===== soundmd.ini ====="]
+            for sn in sounds:
+                L += block(idx.sound_map, sn)
+        return "\n".join(L).rstrip() + "\n"
+
+    def _fill_balance_culture(self, it, scan):
+        """Describe the item's source-mod balance culture + set up target picker."""
+        self.bc_convert_text.setPlainText("")
+        self.bc_target.clear()
+        self._bc_src = self._bc_item = self._bc_scan = None
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            self.bc_text.setPlainText("(unknown source)")
+            return
+        bal = getattr(src, "balance", None)
+        if not bal:
+            self.bc_text.setPlainText(
+                f"No balance culture for “{src.label}” — needs a vanilla baseline "
+                "to compare against (add one when the source was added).")
+        else:
+            lines = [f"Source mod: {src.label}", "",
+                     getattr(src, "balance_summary", "") or describe_culture(bal),
+                     "", "Per-kind factors vs vanilla (mod / vanilla):"]
+            for kind, stats in bal.items():
+                bits = ", ".join(
+                    f"{st} {d['factor']:.2f}×" for st, d in stats.items()
+                    if isinstance(d, dict) and d.get("samples"))
+                if bits:
+                    lines.append(f"  {kind}: {bits}")
+            lines += ["", "Pick a target mod below and Show conversion to see how "
+                      "this item's Cost/Strength/Speed would rescale into its scale."]
+            self.bc_text.setPlainText("\n".join(lines))
+        self._bc_src, self._bc_item, self._bc_scan = src, it, scan
+        for s in self.sources:
+            if s.id != src.id and getattr(s, "balance", None):
+                self.bc_target.addItem(s.label, s.id)
+        self.bc_btn.setEnabled(self.bc_target.count() > 0
+                               and it.kind in ("infantry", "vehicle",
+                                               "aircraft", "building"))
+
+    def _bc_convert(self):
+        src, it, scan = (getattr(self, "_bc_src", None),
+                         getattr(self, "_bc_item", None),
+                         getattr(self, "_bc_scan", None))
+        tid = self.bc_target.currentData()
+        if not (src and it and scan and scan.index and tid):
+            return
+        tgt = next((s for s in self.sources if s.id == tid), None)
+        if tgt is None or not getattr(tgt, "balance", None):
+            self.bc_convert_text.setPlainText("Target has no balance culture.")
+            return
+        conv = conversion_factors(src.balance, tgt.balance)
+        rows = convert_unit_stats(scan.index.rules_map, it.name, it.kind, conv)
+        if not rows:
+            self.bc_convert_text.setPlainText(
+                "No shared-culture overlap between these mods — can't derive "
+                "conversion factors (need vanilla + comparable stats on both).")
+            return
+        out = [f"{it.name}:  {src.label}  →  {tgt.label}", ""]
+        for stat, old, new, factor in rows:
+            out.append(f"  {stat:<10} {old:>9} → {str(new):<9} (×{factor:.2f})")
+        out += ["", "To actually apply this (with media), use Tools → Port mod "
+                "content or the Convert action."]
+        self.bc_convert_text.setPlainText("\n".join(out))
 
     def _render_art(self, entry, sid, scan):
         """Best-effort SHP/VXL still preview into art_img. Never raises."""
@@ -596,14 +741,20 @@ class LibraryTab(QWidget):
         self.art_img.clear()
         self.cameo_img.clear()
         self._clear_audio()
+        self.bc_text.setPlainText("AI entries don't carry balance-culture stats.")
+        self.bc_convert_text.setPlainText("")
+        self.bc_target.clear()
+        self.bc_btn.setEnabled(False)
         if scan is None or scan.aimd_map is None:
             self.detail_text.setPlainText(f"{it.name} — no aimd found for source.")
+            self.ini_text.setPlainText("")
             self.preview.setText("")
             return
         try:
             ent = extract_bundle(scan.aimd_map, it.name)
         except Exception as e:
             self.detail_text.setPlainText(f"{it.name}: {type(e).__name__}: {e}")
+            self.ini_text.setPlainText("")
             self.preview.setText("")
             return
         L = [f"[AITriggerTypes] {ent.trigger_id}", f"  {ent.trigger_def}", ""]
@@ -613,7 +764,9 @@ class LibraryTab(QWidget):
             L.append("")
         if ent.units:
             L.append("units fielded: " + ", ".join(ent.units))
-        self.detail_text.setPlainText("\n".join(L))
+        text = "\n".join(L)
+        self.detail_text.setPlainText(text)
+        self.ini_text.setPlainText(text)            # the AI bundle IS its INI
         self.preview.setText("AI entry — no media; units above carry the art.")
 
     def _fill_files(self, assets):
@@ -762,17 +915,26 @@ class LibraryTab(QWidget):
         self.col_list.clear()
         self._col_desc = []
         total = sum(len(v) for v in self._items_by_source.values())
-        self.col_list.addItem(QListWidgetItem(f"All sources  ({total})"))
-        self._col_desc.append(("all", None))
+
+        def _add(text, desc):
+            it = QListWidgetItem(text)
+            it.setData(Qt.UserRole, desc)        # (mode, key) for drag/menu mapping
+            # Only mod folders are drag-reorderable; All/collections are pinned.
+            flags = it.flags() & ~Qt.ItemIsDropEnabled
+            if desc[0] != "auto":
+                flags &= ~Qt.ItemIsDragEnabled
+            it.setFlags(flags)
+            self.col_list.addItem(it)
+            self._col_desc.append(desc)
+
+        _add(f"All sources  ({total})", ("all", None))
         for s in self.sources:
             n = len(self._items_by_source.get(s.id, []))
-            self.col_list.addItem(QListWidgetItem(f"📁 {s.label}  ({n})"))
-            self._col_desc.append(("auto", s.id))
+            _add(f"📁 {s.label}  ({n})", ("auto", s.id))
         for c in self.collections:
             if c.auto_source:
                 continue
-            self.col_list.addItem(QListWidgetItem(f"★ {c.name}  ({len(c.items)})"))
-            self._col_desc.append(("col", c.name))
+            _add(f"★ {c.name}  ({len(c.items)})", ("col", c.name))
         self.col_list.blockSignals(False)
         self.col_list.setCurrentRow(
             keep_row if keep_row is not None and keep_row < self.col_list.count()
@@ -829,7 +991,25 @@ class LibraryTab(QWidget):
         if self.hide_noart.isChecked() and \
                 not self._has_art.get((it.source_id, it.name.lower()), False):
             return False
+        if self.hide_vanilla.isChecked() and it.name.lower() in self._vanilla_names():
+            return False
         return True
+
+    def _vanilla_names(self):
+        """Lowercased set of vanilla-YR TechnoType names (cached), read from the
+        bundled vanilla rules, so the 'vanilla' hide filter can drop stock units."""
+        if getattr(self, "_vanilla_name_cache", None) is not None:
+            return self._vanilla_name_cache
+        names = set()
+        try:
+            smap = build_section_map(parse_ini_lines(_DEFAULT_VANILLA))[0]
+            for sec in ("InfantryTypes", "VehicleTypes", "AircraftTypes",
+                        "BuildingTypes"):
+                names.update(n.lower() for n in parse_type_list(smap, sec))
+        except Exception:
+            pass
+        self._vanilla_name_cache = names
+        return names
 
     def _apply_filter(self):
         pred = self._current_predicate()
@@ -1124,6 +1304,41 @@ class LibraryTab(QWidget):
                                     f"Delete collection '{key}'?") == QMessageBox.Yes:
                 delete_collection(key)
                 self._reload()
+
+    def _col_context_menu(self, pos):
+        """Right-click a mod folder / collection → Rename / Remove."""
+        item = self.col_list.itemAt(pos)
+        if item is None:
+            return
+        desc = item.data(Qt.UserRole)
+        if not desc or desc[0] == "all":
+            return                       # "All sources" can't be renamed/removed
+        self.col_list.setCurrentRow(self.col_list.row(item))
+        menu = QMenu(self)
+        menu.addAction("Rename…", lambda: self._rename_collection_row(item))
+        menu.addAction("Remove", self._remove_selected)
+        menu.exec(self.col_list.mapToGlobal(pos))
+
+    def _on_sources_reordered(self, *_args):
+        # A drag reordered the mod-folder rows — persist the new source order.
+        # Deferred so we don't mutate the list from inside its own move signal.
+        QTimer.singleShot(0, self._persist_source_order)
+
+    def _persist_source_order(self):
+        order = [self.col_list.item(i).data(Qt.UserRole)[1]
+                 for i in range(self.col_list.count())
+                 if (self.col_list.item(i).data(Qt.UserRole) or ("", ""))[0]
+                 == "auto"]
+        by_id = {s.id: s for s in self.sources}
+        new = [by_id[sid] for sid in order if sid in by_id]
+        if len(new) != len(self.sources):
+            self._rebuild_collections()          # unexpected — restore canonical
+            return
+        if [s.id for s in new] == [s.id for s in self.sources]:
+            return                               # no actual change
+        self.sources = new
+        save_catalog(self.sources, self.collections)
+        self._rebuild_collections()              # re-lay canonically, new order
 
     # ── Eva summary ──────────────────────────────────────────────────────────
     def _eva_summarize(self):
