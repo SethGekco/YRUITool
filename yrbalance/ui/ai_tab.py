@@ -419,20 +419,30 @@ class AiLibraryPanel(QWidget):
                                    "Select a library entry first.")
             return
         from .ai_library_dialog import _PullDialog, _sibling_aimd
-        tgt_aimd = _sibling_aimd(getattr(self.mw, "source_path", None))
-        if not tgt_aimd:
-            QMessageBox.information(
-                self, "Send to Builder",
-                "Load a mod with an aimd.ini first — the entry is pulled into the "
-                "loaded mod's aimd (with dedup / merge and a backup).")
-            return
-        _PullDialog(self, e, tgt_aimd).exec()
-        # refresh the Builder so the pulled entry shows up
+        from ..engine import working_path
         container = self.parent()
         while container is not None and not isinstance(container, AiTab):
             container = container.parent()
-        if isinstance(container, AiTab):
-            container.builder._reload()
+        builder = container.builder if isinstance(container, AiTab) else None
+
+        # If the Builder has an active working file, pull into THAT (checking units
+        # against the loaded mod's rules); otherwise pull into the loaded mod's aimd.
+        if builder is not None and getattr(builder, "_working", False):
+            rules_map = getattr(self.mw, "section_map", None)
+            _PullDialog(self, e, working_path(), rules_map=rules_map).exec()
+        else:
+            tgt_aimd = _sibling_aimd(getattr(self.mw, "source_path", None))
+            if not tgt_aimd:
+                QMessageBox.information(
+                    self, "Send to Builder",
+                    "Load a mod with an aimd.ini, or open a working file in the AI "
+                    "Builder first — the entry is pulled into that aimd (with "
+                    "dedup / merge and a backup).")
+                return
+            _PullDialog(self, e, tgt_aimd).exec()
+
+        if builder is not None:
+            builder._reload()
             container.show_builder()
 
 

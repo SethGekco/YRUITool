@@ -210,6 +210,10 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, AiCollection, PullPlan, PullItem,
 )
+from .aiwork import (
+    working_path, working_exists, resolve_vanilla_aimd, knowledge_vanilla_aimd,
+    new_blank, new_from_vanilla, new_from_file, load_working, export_working,
+)
 from .images import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx, ShpImage, ShpFrame, ImageError,
@@ -320,6 +324,10 @@ __all__ = [
     "ai_remove_from_collection",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "AiCollection", "PullPlan", "PullItem",
+    # aiwork (AI Builder working file)
+    "working_path", "working_exists", "resolve_vanilla_aimd",
+    "knowledge_vanilla_aimd", "new_blank", "new_from_vanilla", "new_from_file",
+    "load_working", "export_working",
     # images (SHP / palette)
     "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
     "best_frame_index", "house_remap_palette", "HOUSE_COLORS", "parse_pcx",

@@ -215,6 +215,60 @@ def main():
     print(f"AI library search narrows: {'OK' if search_ok else 'FAIL'}  {searched}")
     ok = ok and search_ok
 
+    # ── AI Builder working file (P3) ───────────────────────────────────────────
+    # (HOME is already isolated above for the AI library sidecar.)
+    builder = AiBuilderTab(mw)
+    builder.show()
+    app.processEvents()
+
+    # New blank → working mode on, empty registries, edit buttons enabled
+    builder._work_new_blank()
+    app.processEvents()
+    blank_ok = (builder._working
+                and builder._lists["AITriggerTypes"].count() == 0
+                and builder.work_close_b.isEnabled())
+    print(f"Builder new-blank working file: {'OK' if blank_ok else 'FAIL'}")
+    ok = ok and blank_ok
+
+    # Pull a library entry into the working file via the engine (the _PullDialog
+    # apply is covered in test_aiwork; here we just verify the Builder reflects the
+    # working file's new content after a pull). alpha = TF1 saved earlier.
+    from yrbalance.engine import (
+        load_library, working_path, parse_ini_lines, build_section_map,
+        build_pull_plan, apply_pull,
+    )
+    entry = next(e for e in load_library() if e.name == "alpha")
+    wl = parse_ini_lines(working_path())
+    wmap = build_section_map(wl)[0]
+    plan = build_pull_plan(entry, wmap, target_countries=["Americans"])
+    apply_pull(wl, wmap, entry, plan)
+    with open(working_path(), "w", encoding="latin-1", newline="") as fh:
+        fh.write("".join(wl))
+    builder._reload()
+    app.processEvents()
+    pulled_ok = builder._lists["TaskForces"].count() >= 1
+    print(f"Builder reflects working-file pull: "
+          f"{'OK' if pulled_ok else 'FAIL'}  "
+          f"TF={builder._lists['TaskForces'].count()}")
+    ok = ok and pulled_ok
+
+    # Export writes a byte copy and does NOT touch the original mod aimd
+    import tempfile as _tf2
+    dest = os.path.join(_tf2.mkdtemp(), "exported_aimd.ini")
+    from yrbalance.engine import export_working
+    export_working(dest)
+    exp_ok = (os.path.isfile(dest)
+              and open(dest, encoding="latin-1").read()
+              == open(working_path(), encoding="latin-1").read())
+    print(f"Builder export working file: {'OK' if exp_ok else 'FAIL'}")
+    ok = ok and exp_ok
+
+    # Close working file → back to mod mode
+    builder._work_close()
+    close_ok = (not builder._working and not builder.work_close_b.isEnabled())
+    print(f"Builder close working file: {'OK' if close_ok else 'FAIL'}")
+    ok = ok and close_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

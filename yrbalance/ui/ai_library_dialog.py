@@ -294,7 +294,7 @@ class _ExtractDialog(QDialog):
 class _PullDialog(QDialog):
     """Preview + configure a pull into the target aimd, then apply with backup."""
 
-    def __init__(self, parent, entry, tgt_aimd):
+    def __init__(self, parent, entry, tgt_aimd, rules_map=None, countries=None):
         super().__init__(parent)
         self.entry = entry
         self.tgt_aimd = tgt_aimd
@@ -303,12 +303,16 @@ class _PullDialog(QDialog):
 
         self.tl = parse_ini_lines(tgt_aimd)
         self.tgt = build_section_map(self.tl)[0]
-        # target countries from the sibling rules, if present
-        self.countries = self._target_countries()
+        # Countries + unit lists for conflict/missing-unit checks. When an explicit
+        # rules_map is given (e.g. the working file has no sibling rules of its own),
+        # units/countries are read from THOSE loaded rules instead of the target aimd.
+        self.countries = (countries if countries is not None
+                          else self._target_countries())
+        unit_src = rules_map if rules_map is not None else self.tgt
         self.tgt_units = set()
         for reg in ("InfantryTypes", "VehicleTypes", "AircraftTypes",
                     "BuildingTypes"):
-            self.tgt_units.update(u.lower() for u in parse_type_list(self.tgt, reg))
+            self.tgt_units.update(u.lower() for u in parse_type_list(unit_src, reg))
 
         lay = QVBoxLayout(self)
         opt = QHBoxLayout()
