@@ -60,15 +60,15 @@ class _AddSourceDialog(QDialog):
         start = self.edit.text().strip() or QDir.homePath()
         if os.path.isfile(start):
             start = os.path.dirname(start)
-        dlg = QFileDialog(self, "Choose a mod's rules(md).ini", start)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)   # Qt dialog = paste + hidden
-        dlg.setFileMode(QFileDialog.ExistingFile)
-        dlg.setNameFilters(["Rules INI (rules*.ini)", "All files (*)"])
-        dlg.setFilter(dlg.filter() | QDir.Hidden)              # show .wine etc.
-        if dlg.exec() == QFileDialog.Accepted:
-            files = dlg.selectedFiles()
-            if files:
-                self.edit.setText(files[0])
+        # Native OS dialog — has the user's Places / removable devices / recent
+        # (the previous Qt-only dialog had none). Hidden-folder/.wine paths can
+        # still be reached by pasting into the field above (and the native dialog
+        # toggles hidden files with Ctrl+H).
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose a mod's rules(md).ini", start,
+            "Rules INI (rules*.ini);;All files (*)")
+        if path:
+            self.edit.setText(path)
 
     def _resolve(self, text):
         p = os.path.expanduser(text.strip().strip('"').strip("'"))

@@ -207,7 +207,8 @@ from .images import (
     house_remap_palette, HOUSE_COLORS, parse_pcx, ShpImage, ShpFrame, ImageError,
 )
 from .audio import (
-    decode_ima_adpcm, to_wav, decode_bag_sample, bag_sample_to_wav, AudioSample,
+    decode_ima_adpcm, decode_ima_adpcm_blocks, to_wav, decode_bag_sample,
+    bag_sample_to_wav, AudioSample,
 )
 from .vxl import (
     parse_vxl, render_vxl, render_parts, voxel_count,
@@ -312,7 +313,8 @@ __all__ = [
     "best_frame_index", "house_remap_palette", "HOUSE_COLORS", "parse_pcx",
     "ShpImage", "ShpFrame", "ImageError",
     # audio (bag IMA-ADPCM → WAV)
-    "decode_ima_adpcm", "to_wav", "decode_bag_sample", "bag_sample_to_wav",
+    "decode_ima_adpcm", "decode_ima_adpcm_blocks", "to_wav", "decode_bag_sample",
+    "bag_sample_to_wav",
     "AudioSample",
     # vxl (voxel parse + isometric render)
     "parse_vxl", "render_vxl", "render_parts", "voxel_count",

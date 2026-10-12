@@ -110,9 +110,18 @@ class LibraryTab(QWidget):
         self.hide_vanilla.setToolTip(
             "Hide TechnoTypes that exist in vanilla YR (by name), so only the "
             "mod's own/added objects show.")
-        for cb in (self.hide_nonbuild, self.hide_dummy, self.hide_civilian,
-                   self.hide_noart, self.hide_vanilla):
-            cb.toggled.connect(self._apply_filter)
+        # Persist the hide toggles across launches (sticky until unticked).
+        st = QSettings("YRBalanceTool", "YRBalanceTool")
+        self._hide_boxes = {
+            "lib_hide_nonbuild": self.hide_nonbuild,
+            "lib_hide_dummy": self.hide_dummy,
+            "lib_hide_civilian": self.hide_civilian,
+            "lib_hide_noart": self.hide_noart,
+            "lib_hide_vanilla": self.hide_vanilla,
+        }
+        for key, cb in self._hide_boxes.items():
+            cb.setChecked(st.value(key, False, type=bool))   # before connect
+            cb.toggled.connect(lambda on, k=key: self._on_hide_toggled(k, on))
             frow.addWidget(cb)
         frow.addStretch(1)
         root.addLayout(frow)
@@ -1108,6 +1117,10 @@ class LibraryTab(QWidget):
             pass
         self._vanilla_name_cache = names
         return names
+
+    def _on_hide_toggled(self, key, on):
+        QSettings("YRBalanceTool", "YRBalanceTool").setValue(key, on)
+        self._apply_filter()
 
     def _apply_filter(self):
         pred = self._current_predicate()
