@@ -279,6 +279,9 @@ class LibraryTab(QWidget):
         self.file_table.setWordWrap(False)
         self.file_table.setTextElideMode(Qt.ElideNone)
         self.file_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.file_table.itemSelectionChanged.connect(self._on_file_selected)
+        self.file_table.setToolTip(
+            "Click a .vxl / .shp here to preview that specific asset.")
         al.addWidget(self.file_table, 1)
         hrow = QHBoxLayout()
         hrow.addWidget(QLabel("House colour:"))
@@ -316,13 +319,23 @@ class LibraryTab(QWidget):
         self.art_img.setStyleSheet(
             "border:1px solid palette(mid); background:palette(base);")
         imgs.addWidget(self.art_img, 1)
+        # Cameo column: Cameo on top, AltCameo below, pushed to the top so both fit.
+        camcol = QVBoxLayout()
+        _cam_css = "border:1px solid palette(mid); background:palette(base);"
         self.cameo_img = QLabel()
         self.cameo_img.setAlignment(Qt.AlignCenter)
         self.cameo_img.setFixedWidth(72)
         self.cameo_img.setToolTip("Cameo")
-        self.cameo_img.setStyleSheet(
-            "border:1px solid palette(mid); background:palette(base);")
-        imgs.addWidget(self.cameo_img)
+        self.cameo_img.setStyleSheet(_cam_css)
+        self.altcameo_img = QLabel()
+        self.altcameo_img.setAlignment(Qt.AlignCenter)
+        self.altcameo_img.setFixedWidth(72)
+        self.altcameo_img.setToolTip("AltCameo (upgraded)")
+        self.altcameo_img.setStyleSheet(_cam_css)
+        camcol.addWidget(self.cameo_img)
+        camcol.addWidget(self.altcameo_img)
+        camcol.addStretch(1)
+        imgs.addLayout(camcol)
         al.addLayout(imgs)
         self.preview = QLabel("Select an item to preview its art / audio.")
         self.preview.setWordWrap(True)
@@ -407,6 +420,11 @@ class LibraryTab(QWidget):
         entry = None
         if scan is not None and scan.index is not None:
             entry = scan.index.units.get(it.name.lower())
+        # Remember the current item so clicking a .vxl/.shp in the Files table can
+        # re-render that specific asset (_on_file_selected).
+        self._detail_entry = entry
+        self._detail_sid = getattr(it, "source_id", None)
+        self._detail_scan = scan
         if entry is None:
             self.detail_text.setPlainText(f"[{it.name}] — no detail available "
                                           "(source not scanned).")
@@ -518,21 +536,17 @@ class LibraryTab(QWidget):
                 "content or the Convert action."]
         self.bc_convert_text.setPlainText("\n".join(out))
 
-    def _render_art(self, entry, sid, scan):
+    def _render_art(self, entry, sid, scan, override=None):
         """Body art preview (VXL preferred, else the unit's SHP) into art_img. The
         cameo is shown separately and is never used as body art here. Uses the
-        palette picked in pal_combo. Never raises."""
+        palette picked in pal_combo. When `override` is a specific .vxl/.shp asset
+        name (from clicking the Files table) that asset is previewed instead of the
+        auto-picked body art. Never raises."""
         self.art_img.clear()
         if scan is None or scan.index is None:
             self.art_img.setText("(no art to preview)")
             return
-        cat = scan.index.catalog
         self._ensure_palettes(sid, scan)
-
-        def _resolve(name):
-            found, _ = resolve_media(cat, [name])
-            return found.get(name) or next(
-                (v for k, v in found.items() if k.lower() == name.lower()), None)
 
         # The cameo .shp has its own box — exclude it from the body-art candidate,
         # otherwise a voxel unit's cameo gets rendered big and the voxel is skipped.
@@ -547,82 +561,128 @@ class LibraryTab(QWidget):
         def _ok(a):
             return a.status in ("present", "vanilla")
 
-        vxl = next((a.name for a in entry.assets
-                    if a.name.lower().endswith(".vxl") and _ok(a)), None)
-        shp = next((a.name for a in entry.assets
-                    if a.name.lower().endswith(".shp") and _ok(a)
-                    and a.name.upper() not in cameo_shps), None)
-        pal = self._house_palette(self._selected_palette(sid, scan))
+        if override:
+            low = override.lower()
+            vxl = override if low.endswith(".vxl") else None
+            shp = override if low.endswith(".shp") else None
+        else:
+            vxl = next((a.name for a in entry.assets
+                        if a.name.lower().endswith(".vxl") and _ok(a)), None)
+            shp = next((a.name for a in entry.assets
+                        if a.name.lower().endswith(".shp") and _ok(a)
+                        and a.name.upper() not in cameo_shps), None)
         try:
-            if vxl:
-                # body + turret + barrel voxels, each placed by its own HVA; art.ini
-                # TurretOffset shifts the turret/barrel forward (world X).
-                base = os.path.splitext(vxl)[0]
-                turret_dx = 0.18 * self._turret_offset(entry, scan)
-                parts = []
-                for suffix in ("", "TUR", "BARL"):
-                    vdata = _resolve(f"{base}{suffix}.VXL")
-                    if not vdata:
-                        continue
-                    try:
-                        mdl = parse_vxl(vdata)
-                    except Exception:
-                        continue
-                    if voxel_count(mdl) == 0:
-                        continue
-                    hva = None
-                    hdata = _resolve(f"{base}{suffix}.HVA")
-                    if hdata:
-                        try:
-                            hva = parse_hva(hdata)
-                        except Exception:
-                            hva = None
-                    off = (turret_dx, 0.0, 0.0) if suffix in ("TUR", "BARL") \
-                        else (0.0, 0.0, 0.0)
-                    parts.append((mdl, hva, off))
-                if parts:
-                    w, h, rgba = render_parts(
-                        parts, palette=pal, vpl=self._preview_vpl(sid),
-                        view_deg=self.view_combo.currentData() or 0)
-                    self._set_art_pixmap(w, h, rgba)
-                    return
-            if shp:
-                data = _resolve(shp)
-                if data:
-                    img = parse_shp(data)
-                    w, h, rgba = frame_to_rgba(
-                        img, img.frames[best_frame_index(img)], pal)
-                    self._set_art_pixmap(w, h, rgba)
-                    return
+            if vxl and self._draw_vxl(vxl, entry, sid, scan):
+                return
+            if shp and self._draw_shp(shp, sid, scan):
+                return
             self.art_img.setText("(no body SHP/VXL art to preview)")
         except Exception as e:
             self.art_img.setText(f"(preview failed: {type(e).__name__})")
 
+    def _resolve_media(self, cat, name):
+        found, _ = resolve_media(cat, [name])
+        return found.get(name) or next(
+            (v for k, v in found.items() if k.lower() == name.lower()), None)
+
+    def _draw_vxl(self, vxl, entry, sid, scan):
+        """Render a voxel (body + its TUR/BARL siblings) into art_img. Returns True
+        on success."""
+        cat = scan.index.catalog
+        pal = self._house_palette(self._selected_palette(sid, scan))
+        # body + turret + barrel voxels, each placed by its own HVA; art.ini
+        # TurretOffset shifts the turret/barrel forward (world X).
+        base = os.path.splitext(vxl)[0]
+        turret_dx = 0.18 * self._turret_offset(entry, scan)
+        parts = []
+        for suffix in ("", "TUR", "BARL"):
+            vdata = self._resolve_media(cat, f"{base}{suffix}.VXL")
+            if not vdata:
+                continue
+            try:
+                mdl = parse_vxl(vdata)
+            except Exception:
+                continue
+            if voxel_count(mdl) == 0:
+                continue
+            hva = None
+            hdata = self._resolve_media(cat, f"{base}{suffix}.HVA")
+            if hdata:
+                try:
+                    hva = parse_hva(hdata)
+                except Exception:
+                    hva = None
+            off = (turret_dx, 0.0, 0.0) if suffix in ("TUR", "BARL") \
+                else (0.0, 0.0, 0.0)
+            parts.append((mdl, hva, off))
+        if not parts:
+            return False
+        # Higher max_px than the 200 default → crisper, less grainy preview.
+        w, h, rgba = render_parts(
+            parts, max_px=360, palette=pal, vpl=self._preview_vpl(sid),
+            view_deg=self.view_combo.currentData() or 0)
+        self._set_art_pixmap(w, h, rgba)
+        return True
+
+    def _draw_shp(self, shp, sid, scan):
+        """Render a unit SHP's best frame into art_img. Returns True on success."""
+        cat = scan.index.catalog
+        pal = self._house_palette(self._selected_palette(sid, scan))
+        data = self._resolve_media(cat, shp)
+        if not data:
+            return False
+        img = parse_shp(data)
+        w, h, rgba = frame_to_rgba(img, img.frames[best_frame_index(img)], pal)
+        self._set_art_pixmap(w, h, rgba)
+        return True
+
+    def _on_file_selected(self):
+        """Clicking a .vxl / .shp in the Files table previews THAT asset in the big
+        art box (lets you flip between a unit's multiple voxel/SHP assets)."""
+        entry = getattr(self, "_detail_entry", None)
+        scan = getattr(self, "_detail_scan", None)
+        sid = getattr(self, "_detail_sid", None)
+        if entry is None or scan is None:
+            return
+        items = self.file_table.selectedItems()
+        if not items:
+            return
+        name = items[0].text().strip()
+        if not name.lower().endswith((".vxl", ".shp")):
+            return
+        self._render_art(entry, sid, scan, override=name)
+
     def _render_cameo(self, entry, sid, scan):
-        """Show the unit's cameo (PCX or SHP) from its art Cameo= field. Never
-        raises."""
-        self.cameo_img.clear()
+        """Show the unit's cameos — Cameo (top) and AltCameo (below) — from its art
+        fields. Each is PCX or SHP; SHP cameos use the dedicated cameo palette.
+        Never raises."""
+        self._render_one_cameo(self.cameo_img, entry, sid, scan, "Cameo")
+        self._render_one_cameo(self.altcameo_img, entry, sid, scan, "AltCameo")
+
+    def _render_one_cameo(self, widget, entry, sid, scan, key):
+        widget.clear()
         art_map = getattr(getattr(scan, "index", None), "art_map", None)
         cat = getattr(getattr(scan, "index", None), "catalog", None)
         art_name = getattr(entry, "art_name", "") or getattr(entry, "name", "")
         if not art_map or not cat or not art_name:
+            widget.setVisible(key == "Cameo")
             return
-        cameo = get_val(art_map, art_name, "Cameo")
+        cameo = get_val(art_map, art_name, key)
         cameo = str(cameo).strip() if cameo else ""
         if not cameo or cameo.lower() == "none":
+            # Hide the AltCameo box entirely when there's no AltCameo, so the single
+            # cameo doesn't float over an empty second slot.
+            widget.setVisible(key == "Cameo")
             return
-
-        def _resolve(name):
-            found, _ = resolve_media(cat, [name])
-            return found.get(name) or next(
-                (v for k, v in found.items() if k.lower() == name.lower()), None)
+        widget.setVisible(True)
         try:
-            pdata = _resolve(cameo.upper() + ".PCX")
+            pdata = self._resolve_media(cat, cameo.upper() + ".PCX")
             if pdata:
                 w, h, rgba = parse_pcx(pdata)
             else:
-                sdata = _resolve(cameo.upper() + ".SHP")
+                sdata = self._resolve_media(cat, cameo.upper() + ".SHP")
                 if not sdata:
+                    widget.setVisible(key == "Cameo")
                     return
                 img = parse_shp(sdata)
                 # SHP cameos use the dedicated cameo palette, NOT the unit/terrain
@@ -634,9 +694,9 @@ class LibraryTab(QWidget):
             pm = QPixmap.fromImage(qimg)
             if pm.width() > 68 or pm.height() > 68:
                 pm = pm.scaled(68, 68, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.cameo_img.setPixmap(pm)
+            widget.setPixmap(pm)
         except Exception:
-            self.cameo_img.clear()
+            widget.clear()
 
     def _set_art_pixmap(self, w, h, rgba):
         qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()

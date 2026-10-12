@@ -49,14 +49,17 @@ def unit_palette(folder, catalog):
 
 def cameo_palette(folder, catalog):
     """Dedicated cameo palette (cameo.pal) for SHP cameos — loose first, then the
-    catalog; falls back to the unit palette. SHP cameos are NOT house-coloured."""
+    catalog. SHP cameos are NOT house-coloured. If cameo.pal can't be found, fall
+    back to GRAYSCALE rather than the unit/terrain palette — a cameo rendered with
+    the unit palette comes out as colour noise, whereas grayscale is at least a
+    readable silhouette."""
     p = os.path.join(folder, "cameo.pal") if folder else ""
     if p and os.path.isfile(p):
         try:
             return load_palette(open(p, "rb").read())
         except Exception:
             pass
-    return _from_catalog(catalog, "cameo.pal") or unit_palette(folder, catalog)
+    return _from_catalog(catalog, "cameo.pal") or grayscale_palette()
 
 
 def playable_bag_sounds(assets, catalog):
