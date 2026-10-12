@@ -15,12 +15,12 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QFileDialog, QTreeWidget, QTreeWidgetItem, QTableWidget,
     QTableWidgetItem, QDoubleSpinBox, QSpinBox, QCheckBox, QMessageBox,
-    QPlainTextEdit, QGroupBox, QSplitter, QWidget, QComboBox,
+    QPlainTextEdit, QGroupBox, QSplitter, QWidget, QComboBox, QTabWidget,
 )
 
 from ..engine import (
     parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
-    plan_to_blueprint, make_backup, get_val,
+    plan_to_blueprint, plan_to_files, make_backup, get_val,
     build_media_catalog, resolve_media, pack_media_mixes,
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
@@ -284,6 +284,13 @@ class PortDialog(QDialog):
         drow.addWidget(self.bp_chk)
         drow.addWidget(self.ai_chk)
         drow.addStretch(1)
+        self.raw_btn = QPushButton("Raw INI…")
+        self.raw_btn.setToolTip(
+            "Show the actual INI text that would be written to each associated "
+            "file (rulesmd / artmd / soundmd) for the current selection.")
+        self.raw_btn.clicked.connect(self._show_raw_files)
+        self.raw_btn.setEnabled(False)
+        drow.addWidget(self.raw_btn)
         self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._run)
         self.run_btn.setEnabled(False)
@@ -320,6 +327,7 @@ class PortDialog(QDialog):
     def _busy(self, busy):
         self.analyze_btn.setEnabled(not busy)
         self.run_btn.setEnabled(not busy and self.plan is not None)
+        self.raw_btn.setEnabled(not busy and self.plan is not None)
         self.inc_btn.setEnabled(not busy and self.inc_chk.isChecked())
 
     def _src_changed(self, *_):
@@ -438,6 +446,7 @@ class PortDialog(QDialog):
             f"{n} importable object(s). Tick what you want, tune ratios, Run. "
             + (" / ".join(extra) if extra else "no art/sound files beside source"))
         self.run_btn.setEnabled(True)
+        self.raw_btn.setEnabled(True)
 
     def _fill_factors(self):
         rows = []
@@ -554,6 +563,36 @@ class PortDialog(QDialog):
         view.setReadOnly(True)
         view.setFont(QFont("monospace", 10))
         lay.addWidget(view)
+        b = QPushButton("Close")
+        b.clicked.connect(dlg.accept)
+        lay.addWidget(b)
+        dlg.exec()
+
+    def _show_raw_files(self):
+        """Tabbed raw INI view: the exact text each associated file receives for the
+        current selection (deps expanded, overrides applied)."""
+        if self.plan is None:
+            return
+        files = plan_to_files(self.plan, self._selected_names(), self._overrides())
+        if not files:
+            QMessageBox.information(
+                self, "Raw INI", "Nothing selected to show. Tick some content.")
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Raw INI — files to be written")
+        dlg.resize(840, 640)
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(
+            "Exactly what each associated file receives for the current selection "
+            "(built-in InitialPayload units and overrides included)."))
+        tabs = QTabWidget()
+        for fn, text in files.items():
+            te = QPlainTextEdit(text)
+            te.setReadOnly(True)
+            te.setFont(QFont("monospace", 10))
+            te.setLineWrapMode(QPlainTextEdit.NoWrap)
+            tabs.addTab(te, f"{fn}  ({text.count(chr(10)) + 1} lines)")
+        lay.addWidget(tabs, 1)
         b = QPushButton("Close")
         b.clicked.connect(dlg.accept)
         lay.addWidget(b)

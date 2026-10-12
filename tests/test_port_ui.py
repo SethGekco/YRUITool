@@ -115,6 +115,19 @@ def main():
     print("   " + (msg.split(chr(10))[1] if chr(10) in msg else ""))
     ok = ok and media_ok
 
+    # raw INI view: button enabled after analyze; per-file content reflects the
+    # current selection (incl. auto-pulled InitialPayload dep DUMMYGUNNER).
+    from yrbalance.engine import plan_to_files
+    raw_btn_ok = dlg.raw_btn.isEnabled()
+    files = plan_to_files(dlg.plan, dlg._selected_names(), dlg._overrides())
+    raw_ok = (raw_btn_ok and "rulesmd.ini" in files
+              and "[SUPERTANK]" in files["rulesmd.ini"]
+              and "[DUMMYGUNNER]" in files["rulesmd.ini"]
+              and "artmd.ini" in files)
+    print(f"raw INI view (btn + files {sorted(files)}): "
+          f"{'OK' if raw_ok else 'FAIL'}")
+    ok = ok and raw_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

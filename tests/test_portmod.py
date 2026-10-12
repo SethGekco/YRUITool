@@ -307,6 +307,21 @@ def main():
               f"{'OK' if apply_ok else 'FAIL'}")
         ok = ok and apply_ok
 
+        # ── raw per-file view (what each associated file receives) ──────────────
+        from yrbalance.engine import plan_to_files
+        files = plan_to_files(plan2, {"SUPERTANK", "BigGun", "SuperWH", "Invisible"},
+                              {("vehicle", "Cost"): 2.0})
+        rules = files.get("rulesmd.ini", "")
+        raw_ok = (
+            "[SUPERTANK]" in rules
+            and "[DUMMYGUNNER]" in rules          # InitialPayload dep expanded
+            and "[DummyGun]" in rules             # dep's weapon pulled too
+            and "Cost=4000" in rules              # override reflected
+            and "[SUPERTANK]" in files.get("artmd.ini", "")
+            and "[SuperReady]" in files.get("soundmd.ini", ""))
+        print(f"raw files {sorted(files)}: {'OK' if raw_ok else 'FAIL'}")
+        ok = ok and raw_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

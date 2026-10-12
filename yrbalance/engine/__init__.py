@@ -189,7 +189,7 @@ from .modhistory import (
 )
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
-    apply_port_plan, clean_owner, clean_prereq, target_countries,
+    plan_to_files, apply_port_plan, clean_owner, clean_prereq, target_countries,
     PortPlan, PortObject, StatFactor, StatChange,
 )
 from .portai import (
@@ -295,7 +295,8 @@ __all__ = [
     "lint_ai", "has_ai_sections", "format_findings", "LintFinding",
     # portmod
     "build_port_plan", "classify_new_objects", "compute_factors",
-    "plan_to_blueprint", "apply_port_plan", "clean_owner", "clean_prereq",
+    "plan_to_blueprint", "plan_to_files", "apply_port_plan", "clean_owner",
+    "clean_prereq",
     "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
     # portai
     "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",

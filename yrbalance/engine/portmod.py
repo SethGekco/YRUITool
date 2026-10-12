@@ -563,6 +563,98 @@ def _ending(lines):
     return "\r\n" if lines and lines[-1].endswith("\r\n") else "\n"
 
 
+def _expand_selection(plan, selected):
+    """Grow a selection to include each selected unit's built-in InitialPayload
+    part units (transitively) and the weapon chain of each auto-added part unit —
+    a transport's dummy passengers (and a dummy gunner's weapon) are never left
+    behind. User-picked units keep their own weapon selection unchanged. Returns a
+    new set."""
+    selected = set(selected)
+    by_name = {o.name.lower(): o for o in plan.objects}
+
+    def _kv(obj, tag):
+        for kr, vr in obj.keys:
+            if kr.lower() == tag:
+                return _clean(vr)
+        return ""
+
+    weap_tags = {t.lower() for t in ALL_WEAPON_TAGS}
+    frontier = list(selected)
+    newly = []
+    while frontier:
+        o = by_name.get(frontier.pop().lower())
+        if not o:
+            continue
+        for d in getattr(o, "deps", []):
+            if d not in selected:
+                selected.add(d)
+                frontier.append(d)
+                newly.append(d)
+    for nm in newly:                       # weapon chain of each auto-added dep
+        o = by_name.get(nm.lower())
+        if not o:
+            continue
+        for kr, vr in o.keys:
+            if kr.lower() not in weap_tags:
+                continue
+            w = _clean(vr)
+            wobj = by_name.get(w.lower()) if w else None
+            if wobj and w not in selected:
+                selected.add(w)
+                for x in (_kv(wobj, "warhead"), _kv(wobj, "projectile")):
+                    if x and x.lower() in by_name and x not in selected:
+                        selected.add(x)
+    return selected
+
+
+def plan_to_files(plan, selected=None, overrides=None):
+    """Raw INI text per associated file for the selected objects (InitialPayload
+    deps expanded, overrides applied) — exactly what each file receives on apply.
+    Returns an ordered {filename: text} dict, only for files with content, so the
+    UI can show rulesmd.ini / artmd.ini / soundmd.ini side by side."""
+    sel = _expand_selection(
+        plan, selected if selected is not None else [o.name for o in plan.objects])
+    objs = [o for o in plan.objects if o.name in sel]
+    files = {}
+
+    rules = []
+    bk = plan.by_kind()
+    for kind in sorted(bk):
+        kobjs = [o for o in bk[kind] if o.name in sel]
+        if not kobjs:
+            continue
+        rules.append(f"; --- {kind} ---")
+        for o in kobjs:
+            rules.append("")
+            rules += [ln.rstrip("\n") for ln in _section_raw(o, overrides, "\n")]
+    if rules:
+        files["rulesmd.ini"] = "\n".join(rules).strip() + "\n"
+
+    art, seen = [], set()
+    for o in objs:
+        if o.art_entry and o.art_entry[0].lower() not in seen:
+            seen.add(o.art_entry[0].lower())
+            art.append(f"[{o.art_entry[0]}]")
+            art += [f"{k}={v}" for k, v in o.art_entry[1]]
+            art.append("")
+    if art:
+        files["artmd.ini"] = "\n".join(art).strip() + "\n"
+
+    snd, seen = [], set()
+    for o in objs:
+        for name, kvs in o.sound_entries:
+            if name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            snd.append(f"[{name}]")
+            snd += [f"{k}={v}" for k, v in kvs]
+            snd.append("")
+    if snd:
+        files["soundmd.ini"] = "\n".join(snd).strip() + "\n"
+
+    return files
+
+
 def _section_raw(obj, overrides, ending):
     """[Name] + key=value lines with balanced (or overridden) stats and cleaned
     Owner/Prerequisite applied."""
@@ -616,46 +708,8 @@ def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
 
     `selected`: object names to port (default all). `overrides`: {(factor_kind,
     stat): factor}. Existing sections in the target are skipped (never clobbered)."""
-    selected = (set(selected) if selected is not None
-                else {o.name for o in plan.objects})
-    # Pull in each selected unit's built-in part units (InitialPayload deps),
-    # transitively, so a transport's dummy passengers are never left behind — and
-    # the dep units' own weapon chains (a dummy gunner is pointless without its
-    # weapon). Only auto-added deps get weapon-closed; user picks their own weapons.
-    by_name = {o.name.lower(): o for o in plan.objects}
-
-    def _kv(obj, tag):
-        for kr, vr in obj.keys:
-            if kr.lower() == tag:
-                return _clean(vr)
-        return ""
-
-    weap_tags = {t.lower() for t in ALL_WEAPON_TAGS}
-    frontier = list(selected)
-    newly = []
-    while frontier:
-        o = by_name.get(frontier.pop().lower())
-        if not o:
-            continue
-        for d in getattr(o, "deps", []):
-            if d not in selected:
-                selected.add(d)
-                frontier.append(d)
-                newly.append(d)
-    for nm in newly:                       # weapon chain of each auto-added dep
-        o = by_name.get(nm.lower())
-        if not o:
-            continue
-        for kr, vr in o.keys:
-            if kr.lower() not in weap_tags:
-                continue
-            w = _clean(vr)
-            wobj = by_name.get(w.lower()) if w else None
-            if wobj and w not in selected:
-                selected.add(w)
-                for x in (_kv(wobj, "warhead"), _kv(wobj, "projectile")):
-                    if x and x.lower() in by_name and x not in selected:
-                        selected.add(x)
+    selected = _expand_selection(
+        plan, selected if selected is not None else [o.name for o in plan.objects])
     ending = _ending(lines)
     summary = {"sections": 0, "registered": 0, "art": 0, "sound": 0,
                "skipped_existing": 0, "media": []}
