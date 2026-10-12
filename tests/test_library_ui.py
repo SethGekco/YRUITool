@@ -342,18 +342,52 @@ def main():
 
         # audio: populate the combo + export WAV using a real audio.bag if present
         import types as _t
+        from yrbalance.engine import AssetRef
+
+        # Synthetic (always runs): a bag-located sound gets status 'present' in
+        # real data (build_mod_index), which the old populate wrongly skipped.
+        syn_cat = {"TESTSND": ("bag", "/x/audio.bag")}
+        syn_scan = _t.SimpleNamespace(
+            index=_t.SimpleNamespace(catalog=syn_cat), aimd_map=None)
+        syn_entry = _t.SimpleNamespace(
+            assets=[AssetRef("TESTSND", "bag: audio.bag", "present")])
+        tab._populate_audio(syn_entry, syn_scan)
+        syn_ok = tab.audio_combo.count() == 1 and tab.export_btn.isEnabled()
+        print(f"audio combo from 'present' bag sound: "
+              f"{'OK' if syn_ok else 'FAIL'}")
+        ok = ok and syn_ok
+
+        # cameo palette: SHP cameos must use cameo.pal, not the unit palette.
+        import tempfile as _tf
+        cam_dir = _tf.mkdtemp()
+        # two distinct 6-bit palettes (colour 1 differs)
+        unit_pal = bytearray(768); unit_pal[3:6] = bytes((10, 0, 0))
+        cam_pal = bytearray(768);  cam_pal[3:6] = bytes((0, 0, 40))
+        open(os.path.join(cam_dir, "unittem.pal"), "wb").write(unit_pal)
+        open(os.path.join(cam_dir, "cameo.pal"), "wb").write(cam_pal)
+        fake_src = _t.SimpleNamespace(
+            id="camsid", rules_path=os.path.join(cam_dir, "rulesmd.ini"))
+        tab.sources = [fake_src]
+        tab._pal_cache = {}
+        cam = tab._cameo_palette("camsid", None)
+        unit = tab._preview_palette("camsid", None)
+        cam_ok = cam[1] == (0, 0, 40 << 2 | 40 >> 4) and cam[1] != unit[1]
+        print(f"cameo palette uses cameo.pal (not unit): "
+              f"{'OK' if cam_ok else 'FAIL'}")
+        ok = ok and cam_ok
+
         real_bag = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/RA2 & "
                     "Yuri's Revenge/0 World Powers/000-RA2YR Data - cncnet "
                     "edition/audio.idx")
         if os.path.isfile(real_bag):
-            from yrbalance.engine import build_media_catalog, AssetRef, parse_audio_idx
+            from yrbalance.engine import build_media_catalog, parse_audio_idx
             bagfolder = os.path.dirname(real_bag)
             cat = build_media_catalog([bagfolder])
             some = next(iter(parse_audio_idx(real_bag)))     # a real sample id
             fake_scan = _t.SimpleNamespace(
                 index=_t.SimpleNamespace(catalog=cat), aimd_map=None)
             entry = _t.SimpleNamespace(
-                assets=[AssetRef(some + ".WAV", "audio bag", "sound")])
+                assets=[AssetRef(some + ".WAV", "bag: audio.bag", "present")])
             tab._populate_audio(entry, fake_scan)
             combo_ok = tab.audio_combo.count() == 1 and tab.export_btn.isEnabled()
             print(f"audio combo populated from bag: "
