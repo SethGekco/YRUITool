@@ -20,7 +20,7 @@ import os
 import re
 from urllib.parse import urlsplit
 
-from .fetch import fetch_url
+from .fetch import _default_reader
 from .knowledge import _default_base
 
 
@@ -29,9 +29,11 @@ def _is_url(s):
 
 
 def _read_source(loc, timeout=20):
-    """Fetch text from an http(s) URL or read a local file path."""
+    """Return the RAW text of an http(s) URL or a local file path. Uses the raw
+    reader (not fetch_url) so JSON manifests and Markdown docs come back verbatim,
+    not HTML-to-text extracted."""
     if _is_url(loc):
-        return fetch_url(loc, timeout=timeout)
+        return _default_reader(loc, timeout)
     with open(loc, encoding="utf-8", errors="replace") as f:
         return f.read()
 
