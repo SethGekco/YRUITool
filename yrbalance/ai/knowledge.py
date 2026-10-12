@@ -141,11 +141,16 @@ class KnowledgeStore:
                 pass
         return out
 
-    def context_text(self, budget=8000):
-        """Concatenate ingested docs into a single context string, capped."""
+    def context_text(self, budget=8000, exclude=None):
+        """Concatenate ingested docs into a single context string, capped.
+        `exclude` is an optional set of filenames to skip (e.g. feed docs whose
+        DLL isn't present in the loaded mod)."""
+        exclude = exclude or set()
         parts = []
         total = 0
         for fn in sorted(os.listdir(self.read_dir)):
+            if fn in exclude:
+                continue
             p = os.path.join(self.read_dir, fn)
             if not os.path.isfile(p):
                 continue

@@ -62,8 +62,9 @@ def main():
         # ingest → docs land in the store with stable names, record updated
         done, failed = ingest_entries(manifest, b["new"], store)
         names = {n for _i, n, _c in done}
+        versions = {k: v.get("version") for k, v in load_record(kb).items()}
         ing_ok = (not failed and names == {"ref_a.md", "ref_b.md"}
-                  and load_record(kb) == {"a": "1", "b": "1"}
+                  and versions == {"a": "1", "b": "1"}
                   and any(n == "ref_a.md" for n, _c in store.list_docs()))
         print(f"ingest: {'OK' if ing_ok else 'FAIL'}  {sorted(names)} failed={failed}")
         ok = ok and ing_ok
@@ -92,7 +93,8 @@ def main():
         after = {n for n, _c in store.list_docs()}
         with open(os.path.join(store.read_dir, "ref_a.md"), encoding="utf-8") as f:
             refreshed = "Revised A." in f.read()
-        replace_ok = after == before and refreshed and load_record(kb)["a"] == "2"
+        replace_ok = (after == before and refreshed
+                      and load_record(kb)["a"].get("version") == "2")
         print(f"re-ingest replaces in place + refreshes: "
               f"{'OK' if replace_ok else 'FAIL'}")
         ok = ok and replace_ok
