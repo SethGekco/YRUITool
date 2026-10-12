@@ -116,6 +116,7 @@ class PortObject:
     sound_entries: list = field(default_factory=list)  # [(name, [(k, v)])]
     media_files: list = field(default_factory=list)  # best-effort filenames to copy
     obtainability: object = None                     # Obtainability or None
+    deps: list = field(default_factory=list)         # built-in part units (InitialPayload.Types) ported with it
     warnings: list = field(default_factory=list)
 
 
@@ -487,6 +488,20 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                     if dropped:
                         obj.warnings.append(
                             f"dropped unknown Prerequisite: {', '.join(dropped)}")
+                # Ares InitialPayload: built-in (often open-topped) passengers are
+                # part of the unit — port them with it. Skip Prerequisite dummies
+                # (handled separately); these are real built-in units.
+                payload = _clean(get_val(src_map, name, "InitialPayload.Types"))
+                if payload:
+                    deps = [t.strip() for t in payload.split(",") if t.strip()]
+                    obj.deps = deps
+                    if deps:
+                        miss = [d for d in deps if not _exists(src_map, d)]
+                        note = ("built-in units ported with it "
+                                "(InitialPayload): " + ", ".join(deps))
+                        if miss:
+                            note += f"  [missing in source: {', '.join(miss)}]"
+                        obj.warnings.append(note)
             # asset references living in other files (report only)
             for tag in _ART_REF_TAGS:
                 v = _clean(get_val(src_map, name, tag))
@@ -603,6 +618,44 @@ def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
     stat): factor}. Existing sections in the target are skipped (never clobbered)."""
     selected = (set(selected) if selected is not None
                 else {o.name for o in plan.objects})
+    # Pull in each selected unit's built-in part units (InitialPayload deps),
+    # transitively, so a transport's dummy passengers are never left behind — and
+    # the dep units' own weapon chains (a dummy gunner is pointless without its
+    # weapon). Only auto-added deps get weapon-closed; user picks their own weapons.
+    by_name = {o.name.lower(): o for o in plan.objects}
+
+    def _kv(obj, tag):
+        for kr, vr in obj.keys:
+            if kr.lower() == tag:
+                return _clean(vr)
+        return ""
+
+    weap_tags = {t.lower() for t in ALL_WEAPON_TAGS}
+    frontier = list(selected)
+    newly = []
+    while frontier:
+        o = by_name.get(frontier.pop().lower())
+        if not o:
+            continue
+        for d in getattr(o, "deps", []):
+            if d not in selected:
+                selected.add(d)
+                frontier.append(d)
+                newly.append(d)
+    for nm in newly:                       # weapon chain of each auto-added dep
+        o = by_name.get(nm.lower())
+        if not o:
+            continue
+        for kr, vr in o.keys:
+            if kr.lower() not in weap_tags:
+                continue
+            w = _clean(vr)
+            wobj = by_name.get(w.lower()) if w else None
+            if wobj and w not in selected:
+                selected.add(w)
+                for x in (_kv(wobj, "warhead"), _kv(wobj, "projectile")):
+                    if x and x.lower() in by_name and x not in selected:
+                        selected.add(x)
     ending = _ending(lines)
     summary = {"sections": 0, "registered": 0, "art": 0, "sound": 0,
                "skipped_existing": 0, "media": []}
