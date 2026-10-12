@@ -14,7 +14,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTabWidget, QListWidget, QListWidgetItem, QSplitter, QPlainTextEdit,
-    QDialog, QMessageBox, QCheckBox,
+    QDialog, QMessageBox, QCheckBox, QFileDialog, QInputDialog,
 )
 
 from ..engine import (
@@ -38,6 +38,7 @@ class AiBuilderTab(QWidget):
         self.mw = mw
         self._loaded_path = None
         self.aimd_map = None
+        self._working = False     # True => editing the working file, not a mod aimd
         self._lists = {}          # registry -> QListWidget
         self._ids = {}            # registry -> [ids]
 
@@ -73,6 +74,39 @@ class AiBuilderTab(QWidget):
         self.search.textChanged.connect(self._apply_filter)
         bar.addWidget(self.search)
         root.addLayout(bar)
+
+        # ── working-file row ───────────────────────────────────────────────────
+        wbar = QHBoxLayout()
+        wbar.addWidget(QLabel("<b>Working file:</b>"))
+        self.work_label = QLabel("off — editing the loaded mod's aimd.ini")
+        self.work_label.setStyleSheet("color:palette(mid);")
+        wbar.addWidget(self.work_label, 1)
+        new_blank_b = QPushButton("New blank")
+        new_blank_b.setToolTip("Start an empty working file (built separately from "
+                               "any mod; nothing is written to a mod until Export).")
+        new_blank_b.clicked.connect(self._work_new_blank)
+        new_van_b = QPushButton("New from vanilla")
+        new_van_b.setToolTip("Start a working file seeded from the vanilla YR aimd.")
+        new_van_b.clicked.connect(self._work_new_vanilla)
+        new_mod_b = QPushButton("From loaded mod")
+        new_mod_b.setToolTip("Copy the loaded mod's aimd.ini into a working file so "
+                             "you can build on it without touching the original.")
+        new_mod_b.clicked.connect(self._work_from_mod)
+        add_lib_b = QPushButton("Add from library…")
+        add_lib_b.setToolTip("Pull a saved AI library entry into the working file, "
+                             "with dedup / merge-or-keep-both conflict handling.")
+        add_lib_b.clicked.connect(self._work_add_from_library)
+        export_b = QPushButton("Export…")
+        export_b.setToolTip("Write the working file out to a mod's aimd.ini "
+                            "(the destination is backed up first).")
+        export_b.clicked.connect(self._work_export)
+        self.work_close_b = QPushButton("Close working file")
+        self.work_close_b.clicked.connect(self._work_close)
+        for b in (new_blank_b, new_van_b, new_mod_b, add_lib_b, export_b,
+                  self.work_close_b):
+            wbar.addWidget(b)
+        self._work_edit_btns = [add_lib_b, export_b, self.work_close_b]
+        root.addLayout(wbar)
 
         split = QSplitter(Qt.Horizontal)
         self.reg_tabs = QTabWidget()
@@ -114,9 +148,21 @@ class AiBuilderTab(QWidget):
         self.status = QLabel("")
         root.addWidget(self.status)
         self._shown = False
+        self._update_work_ui()
+
+    def _update_work_ui(self):
+        for b in self._work_edit_btns:
+            b.setEnabled(self._working)
+        if self._working:
+            self.work_label.setStyleSheet("color:palette(text); font-weight:bold;")
+        else:
+            self.work_label.setText("off — editing the loaded mod's aimd.ini")
+            self.work_label.setStyleSheet("color:palette(mid);")
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self._working:
+            return                 # don't clobber the working file on re-show
         cur = getattr(self.mw, "source_path", None)
         if cur != self._loaded_path or not self._shown:
             self._shown = True
@@ -124,6 +170,9 @@ class AiBuilderTab(QWidget):
 
     # ── load / fill ────────────────────────────────────────────────────────
     def _reload(self):
+        if self._working:
+            self._load_working()
+            return
         rules = getattr(self.mw, "source_path", None)
         self._loaded_path = rules
         self.aimd_map = None
@@ -156,6 +205,126 @@ class AiBuilderTab(QWidget):
         self.status.setText(
             f"{counts['TaskForces']} taskforces, {counts['ScriptTypes']} scripts, "
             f"{counts['TeamTypes']} teamtypes, {counts['AITriggerTypes']} triggers")
+
+    # ── working file ───────────────────────────────────────────────────────────
+    def _load_working(self):
+        """Populate the registry views from the working file (sidecar)."""
+        from ..engine import load_working, working_path
+        self.edit_chk.setChecked(False)
+        for reg in self._lists:
+            self._lists[reg].clear()
+            self._ids[reg] = []
+        self.detail.setPlainText("")
+        self.refs.clear()
+        lines, amap = load_working()
+        self.aimd_lines = lines
+        self.aimd_map = amap
+        self.aimd_path = working_path()
+        if amap is None:
+            self.path_label.setText("Working file (empty)")
+            return
+        self._refresh_lists()
+        counts = {k: len(v) for k, v in self._ids.items()}
+        total = sum(counts.values())
+        self.path_label.setText("● Working file (not yet exported)")
+        self.work_label.setText(
+            f"ON — {counts['TaskForces']} TF · {counts['ScriptTypes']} scripts · "
+            f"{counts['TeamTypes']} teams · {counts['AITriggerTypes']} triggers")
+        self.status.setText(f"Working file: {total} AI entr"
+                            f"{'y' if total == 1 else 'ies'}. Add from library or "
+                            "generate into it, then Export.")
+
+    def _enter_working(self):
+        self._working = True
+        self._update_work_ui()
+        self._reload()
+
+    def _work_new_blank(self):
+        from ..engine import new_blank, working_exists
+        if working_exists() and QMessageBox.question(
+                self, "New working file",
+                "Replace the current working file with a new blank one?") \
+                != QMessageBox.Yes:
+            return
+        new_blank()
+        self._enter_working()
+
+    def _work_new_vanilla(self):
+        from ..engine import new_from_vanilla, working_exists
+        if working_exists() and QMessageBox.question(
+                self, "New working file",
+                "Replace the current working file with a vanilla-seeded one?") \
+                != QMessageBox.Yes:
+            return
+        game_dir = os.path.dirname(getattr(self.mw, "source_path", "") or "")
+        try:
+            new_from_vanilla(game_dir=game_dir or None)
+        except FileNotFoundError as e:
+            QMessageBox.information(self, "New from vanilla", str(e))
+            return
+        self._enter_working()
+
+    def _work_from_mod(self):
+        from ..engine import new_from_file, working_exists
+        src = sibling_aimd(getattr(self.mw, "source_path", None))
+        if not src:
+            QMessageBox.information(self, "From loaded mod",
+                                   "Load a mod with an aimd.ini first.")
+            return
+        if working_exists() and QMessageBox.question(
+                self, "New working file",
+                "Replace the current working file with a copy of the loaded mod's "
+                "aimd.ini?") != QMessageBox.Yes:
+            return
+        new_from_file(src)
+        self._enter_working()
+
+    def _work_add_from_library(self):
+        from ..engine import load_library, working_path
+        from .ai_library_dialog import _PullDialog
+        lib = load_library()
+        if not lib:
+            QMessageBox.information(self, "Add from library",
+                                   "The AI library is empty. Extract some entries "
+                                   "in the AI Library tab first.")
+            return
+        labels = [f"[{e.kind}] {e.name}" for e in lib]
+        label, ok = QInputDialog.getItem(self, "Add from library",
+                                         "Pull which entry into the working file?",
+                                         labels, 0, False)
+        if not ok:
+            return
+        entry = lib[labels.index(label)]
+        rules_map = getattr(self.mw, "section_map", None)
+        dlg = _PullDialog(self, entry, working_path(), rules_map=rules_map)
+        dlg.exec()
+        self._reload()
+
+    def _work_export(self):
+        from ..engine import export_working, working_path
+        default = sibling_aimd(getattr(self.mw, "source_path", None)) or "aimd.ini"
+        dest, _ = QFileDialog.getSaveFileName(
+            self, "Export working file to aimd.ini",
+            default, "INI files (*.ini);;All files (*)")
+        if not dest:
+            return
+        try:
+            if os.path.isfile(dest):
+                make_backup(dest, None, keep=10)
+            export_working(dest)
+        except Exception as e:
+            QMessageBox.critical(self, "Export", f"{type(e).__name__}: {e}")
+            return
+        QMessageBox.information(
+            self, "Export",
+            f"Wrote the working file to {os.path.basename(dest)}"
+            + (" (previous version backed up)." if os.path.isfile(dest) else "."))
+
+    def _work_close(self):
+        self._working = False
+        self._update_work_ui()
+        self.path_label.setText("")
+        self._reload()
 
     def _apply_filter(self):
         text = self.search.text().strip().lower()
