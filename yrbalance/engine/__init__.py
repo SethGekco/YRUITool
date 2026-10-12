@@ -214,6 +214,10 @@ from .aiwork import (
     working_path, working_exists, resolve_vanilla_aimd, knowledge_vanilla_aimd,
     new_blank, new_from_vanilla, new_from_file, load_working, export_working,
 )
+from .unitroles import (
+    DEFAULT_ROLES, roles_path, load_roles, save_roles, set_role_units,
+    create_role, delete_role, rename_role,
+)
 from .images import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx, ShpImage, ShpFrame, ImageError,
@@ -328,6 +332,9 @@ __all__ = [
     "working_path", "working_exists", "resolve_vanilla_aimd",
     "knowledge_vanilla_aimd", "new_blank", "new_from_vanilla", "new_from_file",
     "load_working", "export_working",
+    # unitroles (user-defined role lists)
+    "DEFAULT_ROLES", "roles_path", "load_roles", "save_roles", "set_role_units",
+    "create_role", "delete_role", "rename_role",
     # images (SHP / palette)
     "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
     "best_frame_index", "house_remap_palette", "HOUSE_COLORS", "parse_pcx",

@@ -269,6 +269,46 @@ def main():
     print(f"Builder close working file: {'OK' if close_ok else 'FAIL'}")
     ok = ok and close_ok
 
+    # ── Unit Roles panel (P4) ──────────────────────────────────────────────────
+    from yrbalance.ui.ai_tab import UnitRolesPanel
+    from yrbalance.engine import build_section_map as _bsm3, parse_ini_lines as _pil3
+    # give mw a section_map with a couple of units so the picker fills
+    mw.section_map = _bsm3(_pil3(os.path.join(mod, "rulesmd.ini")))[0] \
+        if os.path.getsize(os.path.join(mod, "rulesmd.ini")) else None
+    # rulesmd in this fixture only had [GI]; add vehicle types for the picker
+    rpath = os.path.join(mod, "rulesmd.ini")
+    open(rpath, "w").write("[GI]\n[VehicleTypes]\n0=TNK\n1=APOC\n")
+    mw.section_map = _bsm3(_pil3(rpath))[0]
+
+    roles = UnitRolesPanel(mw)
+    roles.show()
+    app.processEvents()
+    # default role names present
+    rnames = [roles.role_list.item(r).text().rsplit("  (", 1)[0]
+              for r in range(roles.role_list.count())]
+    roles_seed_ok = "Rush" in rnames and "Anti-Vehicle" in rnames
+    print(f"Unit Roles seeded defaults: {'OK' if roles_seed_ok else 'FAIL'}")
+    ok = ok and roles_seed_ok
+
+    # picker filled from rules; check two units + save, reload keeps them
+    for r in range(roles.role_list.count()):
+        if roles.role_list.item(r).text().startswith("Rush"):
+            roles.role_list.setCurrentRow(r)
+            break
+    app.processEvents()
+    picker = [roles.unit_list.item(r).data(Qt.UserRole)
+              for r in range(roles.unit_list.count())]
+    for r in range(roles.unit_list.count()):
+        if roles.unit_list.item(r).data(Qt.UserRole) in ("TNK", "APOC"):
+            roles.unit_list.item(r).setCheckState(Qt.Checked)
+    roles._save_role()
+    app.processEvents()
+    from yrbalance.engine import load_roles as _lr
+    saved = _lr()["Rush"]
+    picker_ok = ("TNK" in picker and set(saved) == {"TNK", "APOC"})
+    print(f"Unit Roles picker + save: {'OK' if picker_ok else 'FAIL'}  saved={saved}")
+    ok = ok and picker_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
