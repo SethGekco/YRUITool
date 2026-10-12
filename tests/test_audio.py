@@ -53,25 +53,31 @@ def main():
           f"{'OK' if wav_ok else 'FAIL'}")
     ok = ok and wav_ok
 
-    # real-sample validation (only if the game bag is on this machine)
+    # real-sample validation (only if the game bag is on this machine): the bag's
+    # IMA-ADPCM is block-framed — each chunk starts with a [int16 predictor][u8
+    # index][pad] header. The headers must be well-formed (index 0..88) and the
+    # block-decode must have NO seam at block boundaries (the old reset-to-zero
+    # decode spiked ~8x at every boundary → audible buzz).
     if os.path.isfile(_REAL_IDX):
-        from yrbalance.engine import parse_audio_idx
+        from yrbalance.engine import (parse_audio_idx, decode_ima_adpcm_blocks)
+        import statistics
         samples = parse_audio_idx(_REAL_IDX)
         raw_all = open(_REAL_IDX[:-4] + ".bag", "rb").read()
-        name = next(iter(samples))
+        name = next(n for n, e in samples.items() if e[4] >= 4)  # a chunked one
         off, size, sr, fl, cs = samples[name]
         raw = raw_all[off:off + size]
-        pcm_cont = decode_ima_adpcm(raw, chunk_size=0)      # wrong: continuous
-        pcm_chunk = decode_ima_adpcm(raw, chunk_size=cs)    # right: per-chunk
-
-        def railed(p):
-            n = len(p) // 2
-            v = struct.unpack(f"<{n}h", p)
-            return sum(1 for x in v if abs(x) >= 32760) / n
-        r_cont, r_chunk = railed(pcm_cont), railed(pcm_chunk)
-        real_ok = r_chunk < 0.02 and r_cont > r_chunk
-        print(f"real sample {name}: railed continuous={r_cont:.1%} "
-              f"per-chunk={r_chunk:.1%}  {'OK' if real_ok else 'FAIL'}")
+        # every block header has a valid step index
+        idx_ok = all(raw[k + 2] <= 88 for k in range(0, len(raw) - 4, cs))
+        pcm = decode_ima_adpcm_blocks(raw, cs)
+        v = struct.unpack(f"<{len(pcm) // 2}h", pcm)
+        spc = 1 + 2 * (cs - 4)                       # samples per block
+        bnd = [abs(v[i] - v[i - 1]) for i in range(spc, len(v), spc)]
+        alld = [abs(v[i] - v[i - 1]) for i in range(1, len(v))]
+        ratio = (statistics.mean(bnd) / statistics.mean(alld)) if alld else 99
+        real_ok = idx_ok and ratio < 2.0             # no boundary seam
+        print(f"real sample {name}: valid block headers={idx_ok}, "
+              f"boundary/overall step ratio={ratio:.2f}  "
+              f"{'OK' if real_ok else 'FAIL'}")
         ok = ok and real_ok
     else:
         print("real-sample check: SKIP (no game audio.bag on this machine)")

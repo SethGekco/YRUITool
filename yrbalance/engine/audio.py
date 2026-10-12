@@ -82,14 +82,64 @@ def to_wav(pcm, sample_rate, channels=1, bits=16):
     return bytes(out)
 
 
+def decode_ima_adpcm_blocks(data, block_size=512):
+    """Decode Westwood audio.bag IMA-ADPCM, stored as independent IMA *blocks* of
+    `block_size` compressed bytes. Each block begins with a 4-byte header — int16
+    initial predictor (LE), uint8 step index, uint8 padding — then 4-bit ADPCM
+    nibbles (low nibble first). The predictor/index carry across the block's
+    nibbles but RESTART from each block's own header, so the waveform is continuous
+    across blocks (no reset-to-zero seam). block_size <= 4 (e.g. 0) ⇒ one block.
+
+    This is the correct format: the earlier per-chunk reset-to-zero mis-decoded the
+    header bytes as audio and dropped each block's starting value, producing a
+    buzz at every block boundary."""
+    out = bytearray()
+    n = len(data)
+    bs = block_size if (block_size and block_size >= 4) else n
+    pos = 0
+    while pos + 4 <= n:
+        end = min(pos + bs, n)
+        cur = struct.unpack_from("<h", data, pos)[0]
+        idx = data[pos + 2]
+        if idx > 88:
+            idx = 88
+        out += struct.pack("<h", cur)
+        p = pos + 4
+        while p < end:
+            byte = data[p]
+            p += 1
+            for nib in (byte & 0x0F, byte >> 4):
+                step = _STEP[idx]
+                delta = step >> 3
+                if nib & 1:
+                    delta += step >> 2
+                if nib & 2:
+                    delta += step >> 1
+                if nib & 4:
+                    delta += step
+                cur = cur - delta if nib & 8 else cur + delta
+                if cur > 32767:
+                    cur = 32767
+                elif cur < -32768:
+                    cur = -32768
+                idx += _INDEX[nib & 7]
+                if idx < 0:
+                    idx = 0
+                elif idx > 88:
+                    idx = 88
+                out += struct.pack("<h", cur)
+        pos += bs
+    return bytes(out)
+
+
 def decode_bag_sample(raw, sample_rate, flags, chunk_size):
     """Decode a raw .bag sample (bytes) using its .idx fields → AudioSample.
 
-    decode_ima_adpcm emits a single mono 16-bit stream, so the WAV is ALWAYS
-    mono — honouring a stereo flag here (channels=2) would make the mono data play
-    at ~2x speed and half length (the 'fast / short / bad quality' symptom). RA2/YR
-    .bag voice samples are mono in practice."""
-    pcm = decode_ima_adpcm(raw, chunk_size or 512)
+    The sample is block-IMA-ADPCM (header per `chunk_size` block). Output is
+    ALWAYS mono — our decoder emits one mono stream, and honouring a stereo flag
+    (channels=2) would play the mono data at ~2x speed / half length. RA2/YR .bag
+    voice samples are mono in practice."""
+    pcm = decode_ima_adpcm_blocks(raw, chunk_size or 0)
     return AudioSample(sample_rate=sample_rate or 22050, channels=1,
                        bits=16, pcm=pcm)
 
