@@ -208,18 +208,22 @@ def main(path):
 
     # ── Tab order/naming ─────────────────────────────────────────────────────
     labels = [win.tabs.tabText(i) for i in range(win.tabs.count())]
-    expected = ["Global", "General", "AI", "Gameplay", "Infantry", "Vehicles",
-                "Naval", "Aircraft", "Structures", "Defenses", "History",
-                "Library", "AI (aimd)", "Custom Script", "Eva"]
-    struct_ok = labels == expected
-    print(f"tab order/naming: {struct_ok}  {'OK' if struct_ok else 'FAIL ' + str(labels)}")
+    expected = ["Global", "Mod Balance", "Library", "AI (aimd)", "Eva"]
+    sub = [win.balance_tabs.tabText(i) for i in range(win.balance_tabs.count())]
+    expected_sub = ["General", "AI", "Gameplay", "Infantry", "Vehicles", "Naval",
+                    "Aircraft", "Structures", "Defenses", "Custom Script",
+                    "History"]
+    struct_ok = labels == expected and sub == expected_sub
+    print(f"tab order/naming: {struct_ok}  "
+          f"{'OK' if struct_ok else 'FAIL ' + str(labels) + ' / ' + str(sub)}")
     ok = ok and struct_ok
 
     # ── Eva: send a generated script to the Custom Script tab ────────────────
     win.eva_tab.script_view.setPlainText("[$INFANTRY]\nElite = yes\n")
     win.eva_tab._send_to_custom()
     eva_ok = ("Elite = yes" in win.script_panel.text()
-              and win.tabs.currentWidget() is win.script_tab)
+              and win.tabs.currentWidget() is win.balance_tabs
+              and win.balance_tabs.currentWidget() is win.script_tab)
     print(f"eva -> custom script: {eva_ok}  {'OK' if eva_ok else 'FAIL'}")
     ok = ok and eva_ok
 
@@ -268,7 +272,7 @@ def main(path):
 
     # Apply infantry-only (cost x0.5) to the working copy; twice (idempotent).
     win3.category_tabs["inf"].spins["cost"].setValue(0.5)
-    win3.tabs.setCurrentWidget(win3.category_tabs["inf"])
+    win3.show_tab(win3.category_tabs["inf"])   # nested under Mod Balance now
     win3.apply_working_current()
     c_after_1 = _cur(win3.session.lines, probe2, "cost")
     win3.apply_working_current()   # re-apply must NOT compound

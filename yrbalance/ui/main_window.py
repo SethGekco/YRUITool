@@ -155,23 +155,27 @@ class MainWindow(QMainWindow):
         self.script_tab = ScriptTab(self.script_panel)
         self.eva_tab = EvaTab(self)
 
-        # Add tabs in the requested order.
+        # The mod-editing tabs live as sub-tabs under one "Mod Balance" tab.
         self.tabs.addTab(self.global_tab, "Global")
-        self.tabs.addTab(self.form_tabs["general"], "General")
-        self.tabs.addTab(self.form_tabs["ai"], "AI")
-        self.tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
-        self.tabs.addTab(self.category_tabs["inf"], "Infantry")
-        self.tabs.addTab(self.category_tabs["veh"], "Vehicles")
-        self.tabs.addTab(self.category_tabs["nav"], "Naval")
-        self.tabs.addTab(self.category_tabs["air"], "Aircraft")
-        self.tabs.addTab(self.category_tabs["bld"], "Structures")
-        self.tabs.addTab(self.category_tabs["def"], "Defenses")
-        self.tabs.addTab(self.history_tab, "History")
+
+        self.balance_tabs = QTabWidget()
+        self.balance_tabs.addTab(self.form_tabs["general"], "General")
+        self.balance_tabs.addTab(self.form_tabs["ai"], "AI")
+        self.balance_tabs.addTab(self.form_tabs["gameplay"], "Gameplay")
+        self.balance_tabs.addTab(self.category_tabs["inf"], "Infantry")
+        self.balance_tabs.addTab(self.category_tabs["veh"], "Vehicles")
+        self.balance_tabs.addTab(self.category_tabs["nav"], "Naval")
+        self.balance_tabs.addTab(self.category_tabs["air"], "Aircraft")
+        self.balance_tabs.addTab(self.category_tabs["bld"], "Structures")
+        self.balance_tabs.addTab(self.category_tabs["def"], "Defenses")
+        self.balance_tabs.addTab(self.script_tab, "Custom Script")
+        self.balance_tabs.addTab(self.history_tab, "History")
+        self.tabs.addTab(self.balance_tabs, "Mod Balance")
+
         self.library_tab = LibraryTab(self)
         self.tabs.addTab(self.library_tab, "Library")
         self.aimd_tab = AimdTab(self)
         self.tabs.addTab(self.aimd_tab, "AI (aimd)")
-        self.tabs.addTab(self.script_tab, "Custom Script")
         self.tabs.addTab(self.eva_tab, "Eva")
         root.addWidget(self.tabs)
 
@@ -751,8 +755,19 @@ class MainWindow(QMainWindow):
             occupant_ratio=self.category_tabs["inf"].occupant_ratio(),
             passenger_ratio=self.category_tabs["veh"].passenger_ratio())
 
+    def show_tab(self, widget):
+        """Bring `widget` to the front, selecting the Mod Balance group first when
+        `widget` is one of its nested sub-tabs."""
+        if self.balance_tabs.indexOf(widget) != -1:
+            self.tabs.setCurrentWidget(self.balance_tabs)
+            self.balance_tabs.setCurrentWidget(widget)
+        else:
+            self.tabs.setCurrentWidget(widget)
+
     def _current_category_key(self):
         w = self.tabs.currentWidget()
+        if w is self.balance_tabs:           # resolve through the nested group
+            w = self.balance_tabs.currentWidget()
         for key, tab in self.category_tabs.items():
             if tab is w:
                 return key
