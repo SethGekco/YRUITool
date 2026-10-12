@@ -93,6 +93,7 @@ SOURCE = """\
 [InfantryTypes]
 0=E1
 1=GGI
+2=DUMMYGUNNER
 [VehicleTypes]
 0=HTNK
 1=MTNK
@@ -124,11 +125,22 @@ Strength=200
 Damage=100
 [Vulcan]
 Damage=50
+[DUMMYGUNNER]
+Cost=0
+Strength=50
+TechLevel=-1
+Primary=DummyGun
+[DummyGun]
+Damage=25
+Warhead=SuperWH
 [SUPERTANK]
 Cost=2000
 Strength=500
 Speed=7
 Primary=BigGun
+OpenTopped=yes
+InitialPayload.Types=DUMMYGUNNER
+InitialPayload.Nums=2
 Owner=Americans,Turkey
 Prerequisite=GATECH,DUMMYPREREQ,TurkBarracks
 Image=SUPERTANK
@@ -232,6 +244,13 @@ def main():
         print(f"asset refs flagged {tank.asset_refs}: {'OK' if asset_ok else 'FAIL'}")
         ok = ok and rescale_ok and owner_ok and prereq_ok and asset_ok
 
+        # ── InitialPayload: built-in dummy passenger is a dependency ────────────
+        dep_ok = tank.deps == ["DUMMYGUNNER"] and any(
+            "InitialPayload" in w for w in tank.warnings)
+        print(f"InitialPayload dep captured {tank.deps}: "
+              f"{'OK' if dep_ok else 'FAIL'}")
+        ok = ok and dep_ok
+
         # ── blueprint ───────────────────────────────────────────────────────
         bp = plan_to_blueprint(plan)
         bp_ok = ("[SUPERTANK]" in bp and "[BigGun]" in bp
@@ -261,6 +280,8 @@ def main():
         tmap = build_section_map(tlines)[0]
         alines = parse_ini_lines(_w(d, "tart.ini", "[Dummy]\nx=1\n"))
         amap = build_section_map(alines)[0]
+        # Select only SUPERTANK's own chain; the closure must auto-add its built-in
+        # DUMMYGUNNER passenger AND that gunner's weapon (Vulcan).
         sel = {"SUPERTANK", "BigGun", "SuperWH", "Invisible"}
         summ = apply_port_plan(tlines, tmap, plan2, selected=sel,
                                overrides={("vehicle", "Cost"): 2.0},
@@ -271,13 +292,35 @@ def main():
         override_ok = get_val(tmap, "SUPERTANK", "Cost") == "4000"  # 2000×2.0
         no_turkey = "Turkey" not in (get_val(tmap, "SUPERTANK", "Owner") or "")
         art_written = "supertank" in amap
+        # dep closure: the dummy gunner (infantry) and its weapon came along,
+        # even though neither was in `sel`.
+        gunner_written = "dummygunner" in tmap
+        gunner_registered = "DUMMYGUNNER" in {v for _, (_, _, v) in
+                                              tmap["infantrytypes"]["keys"].items()}
+        dgun_written = "dummygun" in tmap      # the gunner's source-only weapon
         apply_ok = (wrote_tank and registered and override_ok and no_turkey
-                    and art_written and summ["sections"] == 4
-                    and summ["registered"] == 1 and summ["art"] == 1)
+                    and art_written and gunner_written and gunner_registered
+                    and dgun_written and summ["sections"] == 6
+                    and summ["registered"] == 2 and summ["art"] == 1)
         print(f"apply: {summ} wrote={wrote_tank} reg={registered} "
-              f"overrideCost={get_val(tmap,'SUPERTANK','Cost')} art={art_written}  "
+              f"gunner={gunner_written}/{gunner_registered} dummygun={dgun_written} "
               f"{'OK' if apply_ok else 'FAIL'}")
         ok = ok and apply_ok
+
+        # ── raw per-file view (what each associated file receives) ──────────────
+        from yrbalance.engine import plan_to_files
+        files = plan_to_files(plan2, {"SUPERTANK", "BigGun", "SuperWH", "Invisible"},
+                              {("vehicle", "Cost"): 2.0})
+        rules = files.get("rulesmd.ini", "")
+        raw_ok = (
+            "[SUPERTANK]" in rules
+            and "[DUMMYGUNNER]" in rules          # InitialPayload dep expanded
+            and "[DummyGun]" in rules             # dep's weapon pulled too
+            and "Cost=4000" in rules              # override reflected
+            and "[SUPERTANK]" in files.get("artmd.ini", "")
+            and "[SuperReady]" in files.get("soundmd.ini", ""))
+        print(f"raw files {sorted(files)}: {'OK' if raw_ok else 'FAIL'}")
+        ok = ok and raw_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
