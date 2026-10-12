@@ -1,9 +1,10 @@
 """
-AI (aimd) tab — browse the loaded mod's aimd.ini: its TaskForces, ScriptTypes,
-TeamTypes and AITriggerTypes, with live search, a human-readable decode of the
-cryptic inline trigger line, each entry's raw definition, and cross-references
-(what uses what, double-click to jump). Buttons lint the AI and open the AI
-library. Read/browse only — editing goes through the AI library / porter.
+AI Builder sub-tab — browse the loaded mod's aimd.ini: its TaskForces,
+ScriptTypes, TeamTypes and AITriggerTypes, with live search, a human-readable
+decode of the cryptic inline trigger line, each entry's raw definition, and
+cross-references (what uses what, double-click to jump). Buttons lint the AI and
+generate waves/triggers. This is one of the three sub-tabs inside the AI (aimd)
+tab (see ai_tab.AiTab); the AI library and Unit Roles live in their own sub-tabs.
 """
 
 import os
@@ -31,7 +32,7 @@ _REG_TABS = [("TaskForces", "TaskForces"), ("ScriptTypes", "Scripts"),
              ("TeamTypes", "TeamTypes"), ("AITriggerTypes", "Triggers")]
 
 
-class AimdTab(QWidget):
+class AiBuilderTab(QWidget):
     def __init__(self, mw):
         super().__init__()
         self.mw = mw
@@ -48,8 +49,6 @@ class AimdTab(QWidget):
         reload_b.clicked.connect(self._reload)
         lint_b = QPushButton("Lint AI")
         lint_b.clicked.connect(self._lint)
-        lib_b = QPushButton("AI library…")
-        lib_b.clicked.connect(self._open_library)
         gen_tf_b = QPushButton("Generate TaskForces…")
         gen_tf_b.clicked.connect(self._generate_taskforces)
         gen_wave_b = QPushButton("Generate Waves…")
@@ -62,7 +61,6 @@ class AimdTab(QWidget):
         gen_all_b.clicked.connect(self._generate_everything)
         bar.addWidget(reload_b)
         bar.addWidget(lint_b)
-        bar.addWidget(lib_b)
         bar.addWidget(gen_tf_b)
         bar.addWidget(gen_wave_b)
         bar.addWidget(gen_spec_b)
