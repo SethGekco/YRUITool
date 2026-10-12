@@ -1,20 +1,38 @@
 """
-Obtainability classifier: for each TechnoType, how does a player actually get it?
+Obtainability classifier: for each TechnoType, how does a player actually get it,
+and if not, what is it?
 
-Labels every unit/building as one of:
-  * buildable  — appears in a build tree (TechLevel >= 0)
-  * crate      — not buildable, but a crate can grant it (CrateGoodie=yes)
-  * other      — not buildable, obtained another way (FreeUnit=, Spawns=,
-                 DeploysInto/UndeploysInto, superweapon delivery)
-  * dummy      — not buildable; only referenced by other code (a prerequisite-only
-                 placeholder, or name-marked) — logic object, not a real unit
-  * civilian   — not buildable, has art, and nothing references it (map/neutral obj)
-  * unknown    — not buildable and no clear obtain path (flag for the user)
+Classes:
+  * normal    — player-buildable (TechLevel >= 0, in a build tree)
+  * special   — not buildable, but a player can still get it indirectly (super-
+                weapon delivery, FreeUnit, spawn, deploy, crew ejected on sell,
+                paradrop, capture) AND it has an image
+  * crate     — not buildable; a crate can grant it (CrateGoodie=yes)
+  * ai-only   — not buildable, not player-obtainable, has an image, and appears in
+                aimd.ini TaskForces (the AI builds it; the player can't)
+  * civilian  — not buildable, not obtainable, has an image, and nothing in the AI
+                or logic references it (map / neutral / prop object)
+  * dummy     — a logic object, not a real unit: no image (nothing to see), or an
+                indirect-only object with no image, or a superweapon weapon-holder,
+                or a name-marked / prerequisite-only placeholder
+  * unknown   — residual: no class could be decided (should be rare)
 
-I/O-free; works on a parsed section_map (optionally an art section_map to judge
-"has art"). Each result carries human-readable reasons so the UI can be honest
-about uncertainty. Deliberately conservative: when in doubt it says `unknown`
-rather than guess.
+Decision order (first match wins), mirroring the intended taxonomy:
+  name-marked DUMMY/PRE → dummy
+  TechLevel >= 0 → normal
+  CrateGoodie=yes → crate
+  indirect obtain (SW / FreeUnit / spawn / deploy / [General] crew-paradrop /
+      capturable):  has image → special ; no image → dummy
+  otherwise unobtainable:
+      has image → superweapon weapon-holder → dummy
+                  prerequisite-only placeholder → dummy
+                  appears in aimd → ai-only
+                  else → civilian
+      no image → dummy
+
+I/O-free; works on a parsed rules section_map, optionally an art section_map (to
+judge "has art") and an aimd section_map (to spot AI-only units). Each result
+carries human-readable reasons so the UI can be honest about uncertainty.
 """
 
 from dataclasses import dataclass, field
@@ -22,15 +40,20 @@ from dataclasses import dataclass, field
 from .ini_model import get_val
 from .config import ModConfig
 from .typelists import parse_type_list
+from .weapons import ALL_WEAPON_TAGS
 
-OB_BUILDABLE = "buildable"
+OB_NORMAL = "normal"
+OB_SPECIAL = "special"
 OB_CRATE = "crate"
-OB_OTHER = "other"
-OB_DUMMY = "dummy"
+OB_AI_ONLY = "ai-only"
 OB_CIVILIAN = "civilian"
+OB_DUMMY = "dummy"
 OB_UNKNOWN = "unknown"
 
-# Keys whose values reference a TechnoType by name → normalized obtain tag.
+ALL_OBTAIN_CLASSES = (OB_NORMAL, OB_SPECIAL, OB_CRATE, OB_AI_ONLY,
+                      OB_CIVILIAN, OB_DUMMY, OB_UNKNOWN)
+
+# Keys whose values reference a TechnoType by name → normalized indirect-obtain tag.
 _OTHER_REF_KEYS = {
     "freeunit": "freeunit",
     "spawns": "spawn",
@@ -40,12 +63,14 @@ _OTHER_REF_KEYS = {
     "unitdelivery.types": "superweapon",
     "deliver": "superweapon",
 }
-_OTHER_TAGS = ("freeunit", "spawn", "deploy", "superweapon")
+# Indirect-obtain tags (a player CAN end up with the unit, just not by building it).
+_OTHER_TAGS = ("freeunit", "spawn", "deploy", "superweapon", "general")
 _TAG_REASON = {
     "freeunit": "free from a building (FreeUnit=)",
     "spawn": "spawned by another unit (Spawns=)",
     "deploy": "deploy/undeploy of another object",
     "superweapon": "superweapon / delivery payload",
+    "general": "referenced in [General] (crew / paradrop / base / free unit)",
 }
 
 
@@ -76,39 +101,112 @@ def _techno_names(section_map):
     return out
 
 
+# The techno list sections name every unit; an entry there is registration, not
+# a "reference", so they're skipped when judging whether anything references a unit.
+_LIST_SECTIONS = {"infantrytypes", "vehicletypes", "aircrafttypes",
+                  "buildingtypes"}
+
+
 def _build_reference_index(section_map, techno_lower):
     """Map techno_lower → {ref_tag} for every place a techno is referenced in a
-    way that affects obtainability. One pass over all section keys."""
+    way that affects obtainability. One pass over all section keys, plus a scan of
+    [General] (crew / paradrop / base / free units are all referenced there).
+    The techno type-list sections are skipped (listing is not a reference)."""
     refs = {}
-    for _low, s in section_map.items():
+    for low, s in section_map.items():
+        if low in _LIST_SECTIONS:
+            continue
+        general = (low == "general")
         for klow, (_li, _kr, vr) in s["keys"].items():
             if klow == "prerequisite" or klow.startswith("prerequisite"):
                 tag = "prereq"
             else:
                 tag = _OTHER_REF_KEYS.get(klow)
-            if tag is None:
-                continue
             for tok in _clean(vr).replace(",", " ").split():
                 t = tok.lower().lstrip("-")
-                if t in techno_lower:
+                if t not in techno_lower or t == low:
+                    continue      # unknown token, or a section referencing itself
+                if tag is not None:
                     refs.setdefault(t, set()).add(tag)
+                # Any techno named anywhere in [General] is obtainable somehow
+                # (base unit, paradrop, crew, free unit, …).
+                if general:
+                    refs.setdefault(t, set()).add("general")
+                # Record a bare "referenced" marker so we can tell civilian
+                # (unreferenced) from logic objects.
+                refs.setdefault(t, set()).add("@ref")
     return refs
 
 
-def _has_art(section_map, art_map, name):
+def _sw_weapon_set(section_map):
+    """Weapons named by SuperWeapon sections (keys ending in 'weapon'). Conservative:
+    only fires on an explicit Weapon= reference, so there are no false positives on
+    mods that don't use that pattern."""
+    weapons = set()
+    for sw in parse_type_list(section_map, "SuperWeaponTypes"):
+        s = section_map.get(sw.lower())
+        if not s:
+            continue
+        for klow, (_li, _kr, vr) in s["keys"].items():
+            if klow == "weapon" or klow.endswith("weapon"):
+                w = _clean(vr).lower()
+                if w and w not in ("none", ""):
+                    weapons.add(w)
+    return weapons
+
+
+def _unit_weapons(section_map, name):
+    """Lowercased weapon section names a techno carries (primary/secondary/…)."""
+    out = set()
+    for tag in ALL_WEAPON_TAGS:
+        w = _clean(get_val(section_map, name, tag))
+        if w and w.lower() not in ("none", ""):
+            out.add(w.lower())
+    return out
+
+
+def ai_unit_ids(aimd_map):
+    """Lowercased unit IDs that appear in any aimd.ini TaskForce (count,UNITID)."""
+    ids = set()
+    if not aimd_map:
+        return ids
+    for tf in parse_type_list(aimd_map, "TaskForces"):
+        s = aimd_map.get(tf.lower())
+        if not s:
+            continue
+        for klow, (_li, _kr, vr) in s["keys"].items():
+            if not klow.isdigit():
+                continue
+            parts = _clean(vr).split(",")
+            if len(parts) >= 2 and parts[1].strip():
+                ids.add(parts[1].strip().lower())
+    return ids
+
+
+def _art_state(section_map, art_map, name):
+    """'yes' / 'no' / 'unknown' — whether the techno has an image.
+
+    With an art map we can decide (image entry present or not). Without one we
+    genuinely can't tell, so we return 'unknown' rather than guess — the caller
+    then avoids image-dependent verdicts (civilian vs dummy) and stays honest."""
+    if art_map is None:
+        return "unknown"
     image = _clean(get_val(section_map, name, "Image")) or name
-    if art_map is not None:
-        return image.lower() in art_map
-    # No art map: fall back to whether an Image was explicitly set.
-    return bool(_clean(get_val(section_map, name, "Image")))
+    return "yes" if image.lower() in art_map else "no"
 
 
-def classify_obtainability(section_map, config=None, art_map=None):
-    """Return {name_lower: Obtainability} for every declared TechnoType."""
+def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None):
+    """Return {name_lower: Obtainability} for every declared TechnoType.
+
+    art_map  — artmd section map, to judge "has an image".
+    aimd_map — aimd section map, to spot AI-only units (built by AI TaskForces).
+    """
     config = config or ModConfig.default()
     names = _techno_names(section_map)
     techno_lower = {n.lower() for n in names}
     refs = _build_reference_index(section_map, techno_lower)
+    sw_weapons = _sw_weapon_set(section_map)
+    ai_units = ai_unit_ids(aimd_map)
 
     out = {}
     for name in names:
@@ -118,45 +216,87 @@ def classify_obtainability(section_map, config=None, art_map=None):
         cost = _num(get_val(section_map, name, "Cost"))
         crate = _clean(get_val(section_map, name, "CrateGoodie")).lower() == "yes"
         rset = refs.get(low, set())
-        has_art = _has_art(section_map, art_map, name)
+        art = _art_state(section_map, art_map, name)
         capturable = _clean(get_val(section_map, name, "Capturable")).lower() == "yes"
+        indirect = (rset & set(_OTHER_TAGS)) or capturable
+        in_aimd = low in ai_units
+        referenced = bool(rset)   # named in any key value anywhere (incl. @ref)
+        # Art-independent "logic object" signals.
+        sw_holder = bool(sw_weapons
+                         and (_unit_weapons(section_map, name) & sw_weapons))
+        prereq_dummy = up.endswith("PRE") or (
+            "prereq" in rset and (cost is None or cost == 0))
         reasons, also = [], []
         if crate:
             also.append("crate-eligible")
+        if in_aimd:
+            also.append("in aimd TaskForces")
 
         if "DUMMY" in up:
-            # A name-marked dummy is a dummy even if it carries a TechLevel.
             cls = OB_DUMMY
             reasons.append("name marks a dummy/placeholder")
             if "prereq" in rset:
                 reasons.append("used only as a prerequisite")
+
         elif tl is not None and tl >= 0:
-            cls = OB_BUILDABLE
-            reasons.append(f"TechLevel {int(tl)} (in a build tree)")
+            cls = OB_NORMAL
+            reasons.append(f"TechLevel {int(tl)} (player-buildable)")
+
         elif crate:
             cls = OB_CRATE
             reasons.append("not buildable; CrateGoodie=yes")
-        elif rset & set(_OTHER_TAGS):
-            cls = OB_OTHER
-            reasons += [_TAG_REASON[t] for t in _OTHER_TAGS if t in rset]
-        elif capturable:
-            cls = OB_OTHER
-            reasons.append("captured (Capturable=yes)")
-        elif up.endswith("PRE") or (
-                "prereq" in rset and not has_art and (cost is None or cost == 0)):
+
+        elif indirect:
+            # Obtainable indirectly. With no art it's a logic object delivering an
+            # effect (dummy); otherwise a real "special" unit.
+            ind_reasons = [_TAG_REASON[t] for t in _OTHER_TAGS if t in rset]
+            if capturable:
+                ind_reasons.append("captured (Capturable=yes)")
+            if art == "no":
+                cls = OB_DUMMY
+                reasons.append("indirect-obtain object with no art — logic object")
+            else:
+                cls = OB_SPECIAL
+            reasons += ind_reasons
+
+        elif sw_holder:
+            cls = OB_DUMMY
+            reasons.append("holds a weapon used by a superweapon — logic object")
+
+        elif prereq_dummy:
             cls = OB_DUMMY
             if up.endswith("PRE"):
                 reasons.append("name marks a dummy/placeholder")
             if "prereq" in rset:
                 reasons.append("used only as a prerequisite")
-            if not reasons:
-                reasons.append("not buildable, no art, free — logic placeholder")
-        elif has_art and not rset:
-            cls = OB_CIVILIAN
-            reasons.append("not buildable, has art, unreferenced (civilian/map object)")
+
+        elif art == "yes":
+            # Unobtainable but has an image: AI-only or civilian prop.
+            if in_aimd:
+                cls = OB_AI_ONLY
+                reasons.append("not player-obtainable; built by AI TaskForces (aimd)")
+            elif not referenced:
+                cls = OB_CIVILIAN
+                reasons.append(
+                    "not buildable, has art, unreferenced (civilian / map object)")
+            else:
+                cls = OB_CIVILIAN
+                reasons.append(
+                    "not buildable, has art, not AI-used (likely civilian / prop)")
+
+        elif art == "no":
+            # Unobtainable and definitely no image → logic object.
+            cls = OB_DUMMY
+            reasons.append("not buildable, no art — logic object / dummy")
+
         else:
-            cls = OB_UNKNOWN
-            reasons.append("not buildable; no clear way to obtain it")
+            # Art can't be determined (no art map). Use art-independent signals.
+            if in_aimd:
+                cls = OB_AI_ONLY
+                reasons.append("not player-obtainable; built by AI TaskForces (aimd)")
+            else:
+                cls = OB_UNKNOWN
+                reasons.append("not buildable; no clear obtain path (art unknown)")
 
         out[low] = Obtainability(name, cls, reasons, also)
     return out

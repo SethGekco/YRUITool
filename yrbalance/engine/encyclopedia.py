@@ -130,12 +130,16 @@ def build_mod_index(rules_path, label=None, config=None, vanilla_ids=None,
     rules_map = _load_map(rules_path, resolve_includes)
     art_p = _sibling(folder, "artmd.ini", "art.ini")
     snd_p = _sibling(folder, "soundmd.ini", "sound.ini")
+    aimd_p = _sibling(folder, "aimd.ini", "ai.ini")
     art_map = _load_map(art_p, resolve_includes)
     sound_map = _load_map(snd_p, resolve_includes)
+    # aimd lets the classifier separate AI-only units from civilian props.
+    aimd_map = _load_map(aimd_p, resolve_includes) if aimd_p else None
     if progress:
         progress("cataloguing assets…")
     catalog = build_media_catalog([folder])
-    obtain = classify_obtainability(rules_map, config, art_map=art_map or None)
+    obtain = classify_obtainability(rules_map, config, art_map=art_map or None,
+                                    aimd_map=aimd_map or None)
     custom_tags = load_tags(rules_path)
 
     idx = ModIndex(label=label, folder=folder, rules_path=rules_path,

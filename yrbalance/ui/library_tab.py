@@ -823,7 +823,7 @@ class LibraryTab(QWidget):
         if it.kind == "ai":
             return True
         ob = (it.obtain or "").lower()
-        if self.hide_nonbuild.isChecked() and ob != "buildable":
+        if self.hide_nonbuild.isChecked() and ob != "normal":
             return False
         if self.hide_dummy.isChecked() and ob == "dummy":
             return False
