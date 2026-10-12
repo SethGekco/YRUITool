@@ -338,6 +338,23 @@ def main():
             vxl_ok = vpm is not None and not vpm.isNull() and vpm.width() > 0
             print(f"real VXL → pixmap render: {'OK' if vxl_ok else 'FAIL'}")
             ok = ok and vxl_ok
+
+            # regression: a cameo .shp listed BEFORE the vxl (and not resolvable)
+            # must not pre-empt the voxel — the cameo belongs in its own box.
+            idx2 = types.SimpleNamespace(
+                catalog=vcat, art_map={"prevvxl": {"name_raw": "PREVVXL",
+                    "start": 0, "keys": {"cameo": (0, "Cameo", "PREVICON")}}})
+            vscan2 = types.SimpleNamespace(index=idx2, aimd_map=None)
+            ventry2 = types.SimpleNamespace(
+                art_name="PREVVXL",
+                assets=[AssetRef("PREVICON.SHP", "loose", "present"),  # the cameo
+                        AssetRef("PREVVXL.VXL", "loose", "present")])
+            tab.art_img.clear()
+            tab._render_art(ventry2, "turkey-mod", vscan2)
+            vpm2 = tab.art_img.pixmap()
+            cam_ok = vpm2 is not None and not vpm2.isNull() and vpm2.width() > 0
+            print(f"cameo doesn't pre-empt voxel: {'OK' if cam_ok else 'FAIL'}")
+            ok = ok and cam_ok
         else:
             print("real VXL render: SKIP (no sample on this machine)")
 
