@@ -289,7 +289,15 @@ class LibraryTab(QWidget):
         self.view_combo.currentIndexChanged.connect(
             lambda _i: self._show_detail())
         hrow.addWidget(self.view_combo)
+        hrow.addWidget(QLabel("Palette:"))
+        self.pal_combo = QComboBox()
+        self.pal_combo.setToolTip(
+            "Palette used to colour the SHP/voxel preview. The calculated default "
+            "for this source is pre-selected; pick another to compare.")
+        self.pal_combo.currentIndexChanged.connect(self._on_palette_changed)
+        hrow.addWidget(self.pal_combo)
         hrow.addStretch(1)
+        self._pal_source = None   # which source the combo is currently populated for
         al.addLayout(hrow)
 
         imgs = QHBoxLayout()
@@ -502,40 +510,44 @@ class LibraryTab(QWidget):
         self.bc_convert_text.setPlainText("\n".join(out))
 
     def _render_art(self, entry, sid, scan):
-        """Best-effort SHP/VXL still preview into art_img. Never raises."""
+        """Body art preview (VXL preferred, else the unit's SHP) into art_img. The
+        cameo is shown separately and is never used as body art here. Uses the
+        palette picked in pal_combo. Never raises."""
         self.art_img.clear()
         if scan is None or scan.index is None:
             self.art_img.setText("(no art to preview)")
             return
         cat = scan.index.catalog
+        self._ensure_palettes(sid, scan)
 
         def _resolve(name):
             found, _ = resolve_media(cat, [name])
             return found.get(name) or next(
                 (v for k, v in found.items() if k.lower() == name.lower()), None)
 
-        shp = next((a.name for a in entry.assets
-                    if a.name.lower().endswith(".shp")
-                    and a.status in ("present", "vanilla")), None)
+        # The cameo .shp has its own box — exclude it from the body-art candidate,
+        # otherwise a voxel unit's cameo gets rendered big and the voxel is skipped.
+        art_map = getattr(scan.index, "art_map", None) or {}
+        art_name = getattr(entry, "art_name", "") or getattr(entry, "name", "")
+        cameo_shps = set()
+        for key in ("Cameo", "AltCameo"):
+            c = (get_val(art_map, art_name, key) or "").strip()
+            if c:
+                cameo_shps.add(f"{c.upper()}.SHP")
+
+        def _ok(a):
+            return a.status in ("present", "vanilla")
+
         vxl = next((a.name for a in entry.assets
-                    if a.name.lower().endswith(".vxl")
-                    and a.status in ("present", "vanilla")), None)
+                    if a.name.lower().endswith(".vxl") and _ok(a)), None)
+        shp = next((a.name for a in entry.assets
+                    if a.name.lower().endswith(".shp") and _ok(a)
+                    and a.name.upper() not in cameo_shps), None)
+        pal = self._house_palette(self._selected_palette(sid, scan))
         try:
-            if shp:
-                data = _resolve(shp)
-                if not data:
-                    self.art_img.setText("(SHP not found in sources)")
-                    return
-                img = parse_shp(data)
-                pal = self._house_palette(self._preview_palette(sid, scan))
-                w, h, rgba = frame_to_rgba(
-                    img, img.frames[best_frame_index(img)], pal)
-                self._set_art_pixmap(w, h, rgba)
-                return
             if vxl:
-                # composite the unit's body + turret + barrel voxels, each placed
-                # by its own HVA (frame 0), like the game draws a turreted unit.
-                # art.ini TurretOffset shifts the turret/barrel forward (world X).
+                # body + turret + barrel voxels, each placed by its own HVA; art.ini
+                # TurretOffset shifts the turret/barrel forward (world X).
                 base = os.path.splitext(vxl)[0]
                 turret_dx = 0.18 * self._turret_offset(entry, scan)
                 parts = []
@@ -559,17 +571,21 @@ class LibraryTab(QWidget):
                     off = (turret_dx, 0.0, 0.0) if suffix in ("TUR", "BARL") \
                         else (0.0, 0.0, 0.0)
                     parts.append((mdl, hva, off))
-                if not parts:
-                    self.art_img.setText("(VXL not found / empty)")
+                if parts:
+                    w, h, rgba = render_parts(
+                        parts, palette=pal, vpl=self._preview_vpl(sid),
+                        view_deg=self.view_combo.currentData() or 0)
+                    self._set_art_pixmap(w, h, rgba)
                     return
-                pal = self._house_palette(self._preview_palette(sid, scan))
-                w, h, rgba = render_parts(parts, palette=pal,
-                                          vpl=self._preview_vpl(sid),
-                                          view_deg=self.view_combo.currentData()
-                                          or 0)
-                self._set_art_pixmap(w, h, rgba)
-                return
-            self.art_img.setText("(no SHP/VXL art to preview)")
+            if shp:
+                data = _resolve(shp)
+                if data:
+                    img = parse_shp(data)
+                    w, h, rgba = frame_to_rgba(
+                        img, img.frames[best_frame_index(img)], pal)
+                    self._set_art_pixmap(w, h, rgba)
+                    return
+            self.art_img.setText("(no body SHP/VXL art to preview)")
         except Exception as e:
             self.art_img.setText(f"(preview failed: {type(e).__name__})")
 
@@ -616,9 +632,90 @@ class LibraryTab(QWidget):
     def _set_art_pixmap(self, w, h, rgba):
         qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
         pm = QPixmap.fromImage(qimg)
-        if pm.width() > 240 or pm.height() > 200:
-            pm = pm.scaled(240, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        # scale up to fill the (now-larger) preview space, keeping aspect
+        box = max(220, self.art_img.width() - 8)
+        if pm.width() > box or pm.height() > box:
+            pm = pm.scaled(box, box, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.art_img.setPixmap(pm)
+
+    # ── palette picker ───────────────────────────────────────────────────────
+    _KNOWN_PALS = ("unittem.pal", "temperat.pal", "isotemp.pal", "unitsno.pal",
+                   "snow.pal", "isosnow.pal", "uniturb.pal", "urban.pal",
+                   "cameo.pal")
+
+    def _available_palettes(self, sid, scan):
+        """Palette names that exist for this source (loose folder + mod mixes),
+        the calculated default (unittem.pal) first."""
+        folder = self._folder_for(sid)
+        found, seen = [], set()
+        try:
+            for fn in sorted(os.listdir(folder)):
+                if fn.lower().endswith(".pal") and fn.lower() not in seen:
+                    seen.add(fn.lower())
+                    found.append(fn)
+        except OSError:
+            pass
+        cat = self._catalog(scan)
+        if cat:
+            for name in self._KNOWN_PALS:
+                if name.lower() not in seen and (
+                        name.upper() in cat or mix_id(name) in cat):
+                    seen.add(name.lower())
+                    found.append(name)
+        found.sort(key=lambda n: (n.lower() != "unittem.pal", n.lower()))
+        return found
+
+    def _ensure_palettes(self, sid, scan):
+        """Populate the palette combo once per source, calculated default first."""
+        if self._pal_source == sid:
+            return
+        self._pal_source = sid
+        self.pal_combo.blockSignals(True)
+        self.pal_combo.clear()
+        pals = self._available_palettes(sid, scan)
+        if pals:
+            for n in pals:
+                self.pal_combo.addItem(n, n)
+        else:
+            self.pal_combo.addItem("(auto)", None)
+        self.pal_combo.setCurrentIndex(0)
+        self.pal_combo.blockSignals(False)
+
+    def _selected_palette(self, sid, scan):
+        name = self.pal_combo.currentData()
+        if name:
+            pal = self._load_named_palette(sid, scan, name)
+            if pal:
+                return pal
+        return self._preview_palette(sid, scan)
+
+    def _load_named_palette(self, sid, scan, name):
+        key = (sid, "pal", name.lower())
+        if key in self._pal_cache:
+            return self._pal_cache[key]
+        pal = None
+        p = os.path.join(self._folder_for(sid), name)
+        if os.path.isfile(p):
+            try:
+                pal = load_palette(open(p, "rb").read())
+            except Exception:
+                pal = None
+        if pal is None:
+            cat = self._catalog(scan)
+            if cat:
+                try:
+                    found, _ = resolve_media(cat, [name])
+                    for k, v in found.items():
+                        if k.lower() == name.lower():
+                            pal = load_palette(v)
+                            break
+                except Exception:
+                    pal = None
+        self._pal_cache[key] = pal
+        return pal
+
+    def _on_palette_changed(self, _i):
+        self._show_detail()
 
     def _turret_offset(self, entry, scan):
         """TurretOffset (a single float) from the unit's art entry, or 0. The game
@@ -845,6 +942,7 @@ class LibraryTab(QWidget):
         self._items_by_source = {}
         self._scan_by_source = {}
         self._pal_cache = {}
+        self._pal_source = None     # force palette combo to repopulate
         for s in self.sources:
             try:
                 scan = scan_source(s)
