@@ -8,12 +8,14 @@ overwhelming view is split by task:
                   scripts / teamtypes you can extract, bookmark and push into any
                   mod (full collection surface lands in a later phase; for now it
                   launches the existing AI library dialog).
-  • Unit Roles  — user-defined role lists (Rush, Bombardment, …) that will drive
-                  quick AITrigger generation (lands in a later phase).
+  • Unit Roles  — user-defined unit role lists (Rush, Bombardment, …) that drive
+                  one-click AITrigger generation for a whole role.
 
 The container keeps the external `main_window.aimd_tab` handle; its sub-tabs are
 reachable as `.builder`, `.library`, `.roles`.
 """
+
+import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -33,6 +35,8 @@ from ..engine import (
     ai_rename_collection as rename_collection,
     ai_add_to_collection as add_to_collection,
     ai_remove_from_collection as remove_from_collection,
+    load_roles, set_role_units, create_role, delete_role, rename_role,
+    parse_type_list,
 )
 from .aimd_tab import AiBuilderTab
 
@@ -447,29 +451,255 @@ class AiLibraryPanel(QWidget):
 
 
 class UnitRolesPanel(QWidget):
-    """Placeholder for user-defined unit role lists (Rush, Bombardment, Anti-air,
-    …). Lands in a later phase: curate units per role (auto-suggested from the
-    engine's role detection, freely editable) and generate AITriggers for them."""
+    """User-defined unit role lists → one-click AITrigger generation.
+
+    Left: the role lists (Rush, Bombardment/Anti-*, …), add/rename/delete. Right:
+    a checkable list of the loaded mod's units for the selected role — the saved
+    picks are pre-checked, and "Suggest units" pre-checks the ones the engine's role
+    detector thinks fit (freely editable afterwards). "Generate AITriggers…" builds
+    a TaskForce + Script + TeamType + AITrigger for the checked units with
+    role-appropriate weights and pulls it into the AI Builder's current aimd (the
+    working file if one is open, else the loaded mod's) with the usual dedup/merge
+    preview + backup. Role lists are stored in the unit_roles.json sidecar."""
 
     def __init__(self, mw):
         super().__init__()
         self.mw = mw
-        lay = QVBoxLayout(self)
-        lay.addStretch(1)
-        title = QLabel("<h3>Unit Roles</h3>")
-        title.setAlignment(Qt.AlignCenter)
-        lay.addWidget(title)
-        blurb = QLabel(
-            "Define reusable unit role lists — rushing units, bombardment units, "
-            "anti-air, and so on — and generate AITriggerTypes for a whole role at "
-            "once.\n\nComing in a later update. Units will be auto-suggested per "
-            "role from the loaded rules and freely editable.")
-        blurb.setWordWrap(True)
-        blurb.setAlignment(Qt.AlignCenter)
-        blurb.setMaximumWidth(560)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        row.addWidget(blurb)
-        row.addStretch(1)
-        lay.addLayout(row)
-        lay.addStretch(2)
+        self.roles = {}
+        self._loaded_units_for = None
+
+        root = QHBoxLayout(self)
+        # ── roles column ──
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.addWidget(QLabel("<b>Roles</b>"))
+        self.role_list = QListWidget()
+        self.role_list.currentRowChanged.connect(lambda _r: self._show_role())
+        self.role_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.role_list.customContextMenuRequested.connect(self._role_menu)
+        ll.addWidget(self.role_list, 1)
+        newb = QPushButton("New role…")
+        newb.clicked.connect(self._new_role)
+        ll.addWidget(newb)
+        left.setMaximumWidth(220)
+        root.addWidget(left)
+
+        # ── units column ──
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.role_title = QLabel("<b>Units</b>")
+        rl.addWidget(self.role_title)
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("Filter:"))
+        self.unit_search = QLineEdit()
+        self.unit_search.setClearButtonEnabled(True)
+        self.unit_search.textChanged.connect(self._filter_units)
+        srow.addWidget(self.unit_search, 1)
+        rl.addLayout(srow)
+        self.unit_list = QListWidget()
+        rl.addWidget(self.unit_list, 1)
+
+        brow = QHBoxLayout()
+        suggest = QPushButton("Suggest units")
+        suggest.setToolTip("Pre-check units the engine's role detector thinks fit "
+                           "this role (from the loaded rules). You can still edit.")
+        suggest.clicked.connect(self._suggest)
+        save = QPushButton("Save role")
+        save.clicked.connect(self._save_role)
+        gen = QPushButton("Generate AITriggers…")
+        gen.setToolTip("Build a TaskForce + Script + TeamType + AITrigger for the "
+                       "checked units and pull it into the AI Builder's aimd.")
+        gen.clicked.connect(self._generate)
+        brow.addWidget(suggest)
+        brow.addStretch(1)
+        brow.addWidget(save)
+        brow.addWidget(gen)
+        rl.addLayout(brow)
+        self.status = QLabel("")
+        rl.addWidget(self.status)
+        root.addWidget(right, 1)
+
+        self.reload()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._fill_units()      # loaded mod may have changed since last shown
+
+    # ── roles ──
+    def reload(self):
+        self.roles = load_roles()
+        cur = self._current_role()
+        self.role_list.blockSignals(True)
+        self.role_list.clear()
+        for name, units in self.roles.items():
+            self.role_list.addItem(QListWidgetItem(f"{name}  ({len(units)})"))
+        self.role_list.blockSignals(False)
+        row = 0
+        if cur:
+            for r in range(self.role_list.count()):
+                if self.role_list.item(r).text().rsplit("  (", 1)[0] == cur:
+                    row = r
+                    break
+        self.role_list.setCurrentRow(row if self.role_list.count() else -1)
+
+    def _current_role(self):
+        it = self.role_list.currentItem()
+        return it.text().rsplit("  (", 1)[0] if it else None
+
+    def _fill_units(self):
+        """Populate the checkable unit list from the loaded mod's TechnoTypes."""
+        sm = getattr(self.mw, "section_map", None)
+        src = getattr(self.mw, "source_path", None)
+        if sm is self._loaded_units_for:
+            self._apply_role_checks()
+            return
+        self._loaded_units_for = sm
+        self.unit_list.clear()
+        if not sm:
+            self.role_title.setText("<b>Units</b> — load a mod's rules to pick units")
+            return
+        units = []
+        for reg in ("InfantryTypes", "VehicleTypes", "AircraftTypes"):
+            units += list(parse_type_list(sm, reg))
+        seen = set()
+        for u in units:
+            if u.lower() in seen:
+                continue
+            seen.add(u.lower())
+            it = QListWidgetItem(u)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Unchecked)
+            it.setData(Qt.UserRole, u)
+            self.unit_list.addItem(it)
+        self.role_title.setText(f"<b>Units</b> — {self.unit_list.count()} from "
+                                f"{os.path.basename(src or 'rules')}")
+        self._apply_role_checks()
+
+    def _apply_role_checks(self):
+        """Check the units saved for the current role; uncheck the rest."""
+        role = self._current_role()
+        saved = {u.lower() for u in self.roles.get(role, [])}
+        for r in range(self.unit_list.count()):
+            it = self.unit_list.item(r)
+            it.setCheckState(Qt.Checked if it.data(Qt.UserRole).lower() in saved
+                             else Qt.Unchecked)
+
+    def _show_role(self):
+        self._apply_role_checks()
+        role = self._current_role()
+        n = len(self.roles.get(role, []))
+        self.status.setText(f"“{role}”: {n} unit(s) saved." if role else "")
+
+    def _checked_units(self):
+        return [self.unit_list.item(r).data(Qt.UserRole)
+                for r in range(self.unit_list.count())
+                if self.unit_list.item(r).checkState() == Qt.Checked]
+
+    def _filter_units(self):
+        t = self.unit_search.text().strip().lower()
+        for r in range(self.unit_list.count()):
+            it = self.unit_list.item(r)
+            self.unit_list.setRowHidden(r, bool(t) and t not in it.text().lower())
+
+    def _role_menu(self, pos):
+        it = self.role_list.itemAt(pos)
+        if it is None:
+            return
+        name = it.text().rsplit("  (", 1)[0]
+        menu = QMenu(self)
+        ren = menu.addAction("Rename…")
+        dele = menu.addAction("Delete role")
+        chosen = menu.exec(self.role_list.mapToGlobal(pos))
+        if chosen == ren:
+            new, ok = QInputDialog.getText(self, "Rename role", "New name:",
+                                           text=name)
+            if ok and new.strip():
+                if rename_role(name, new.strip()) is None:
+                    QMessageBox.warning(self, "Rename",
+                                        f"A role named “{new.strip()}” exists.")
+                else:
+                    self.reload()
+        elif chosen == dele:
+            if QMessageBox.question(self, "Delete", f"Delete role “{name}”?") \
+                    == QMessageBox.Yes:
+                delete_role(name)
+                self.reload()
+
+    def _new_role(self):
+        name, ok = QInputDialog.getText(self, "New role", "Role name:")
+        if ok and name.strip():
+            create_role(name.strip())
+            self.reload()
+
+    def _save_role(self):
+        role = self._current_role()
+        if not role:
+            return
+        set_role_units(role, self._checked_units())
+        self.reload()
+        self.status.setText(f"Saved {len(self._checked_units())} unit(s) to "
+                            f"“{role}”.")
+
+    def _suggest(self):
+        role = self._current_role()
+        src = getattr(self.mw, "source_path", None)
+        if not role or not src:
+            QMessageBox.information(self, "Suggest",
+                                   "Load a mod's rules first, then pick a role.")
+            return
+        from ..wavegen.role_bundles import suggest_units_for_role
+        self.status.setText("Detecting units for this role…")
+        self.status.repaint()
+        picks = {u.lower() for u in suggest_units_for_role(role, src)}
+        if not picks:
+            self.status.setText("No auto-suggestions for this role (custom role, or "
+                                "the detector found none) — pick units manually.")
+            return
+        n = 0
+        for r in range(self.unit_list.count()):
+            it = self.unit_list.item(r)
+            if it.data(Qt.UserRole).lower() in picks:
+                it.setCheckState(Qt.Checked)
+                n += 1
+        self.status.setText(f"Suggested {n} unit(s) — review, then Save or Generate.")
+
+    def _generate(self):
+        role = self._current_role()
+        if not role:
+            return
+        units = self._checked_units()
+        if not units:
+            QMessageBox.information(self, "Generate",
+                                   "Check at least one unit for this role.")
+            return
+        from ..wavegen.role_bundles import build_role_entry
+        from ..engine import working_path, target_countries
+        from .ai_library_dialog import _PullDialog, _sibling_aimd
+        entry = build_role_entry(role, units)
+
+        container = self.parent()
+        while container is not None and not isinstance(container, AiTab):
+            container = container.parent()
+        builder = container.builder if isinstance(container, AiTab) else None
+        sm = getattr(self.mw, "section_map", None)
+        countries = target_countries(sm) if sm else None
+
+        if builder is not None and getattr(builder, "_working", False):
+            _PullDialog(self, entry, working_path(), rules_map=sm,
+                        countries=countries).exec()
+        else:
+            tgt = _sibling_aimd(getattr(self.mw, "source_path", None))
+            if not tgt:
+                QMessageBox.information(
+                    self, "Generate",
+                    "Load a mod with an aimd.ini, or open a working file in the AI "
+                    "Builder first — the generated triggers are pulled into that "
+                    "aimd (with a backup).")
+                return
+            _PullDialog(self, entry, tgt, rules_map=sm, countries=countries).exec()
+
+        if builder is not None:
+            builder._reload()
+            container.show_builder()
