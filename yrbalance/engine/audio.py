@@ -83,10 +83,14 @@ def to_wav(pcm, sample_rate, channels=1, bits=16):
 
 
 def decode_bag_sample(raw, sample_rate, flags, chunk_size):
-    """Decode a raw .bag sample (bytes) using its .idx fields → AudioSample."""
-    channels = 2 if (flags & 0x01) else 1
+    """Decode a raw .bag sample (bytes) using its .idx fields → AudioSample.
+
+    decode_ima_adpcm emits a single mono 16-bit stream, so the WAV is ALWAYS
+    mono — honouring a stereo flag here (channels=2) would make the mono data play
+    at ~2x speed and half length (the 'fast / short / bad quality' symptom). RA2/YR
+    .bag voice samples are mono in practice."""
     pcm = decode_ima_adpcm(raw, chunk_size or 512)
-    return AudioSample(sample_rate=sample_rate or 22050, channels=channels,
+    return AudioSample(sample_rate=sample_rate or 22050, channels=1,
                        bits=16, pcm=pcm)
 
 

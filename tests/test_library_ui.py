@@ -401,6 +401,33 @@ def main():
         else:
             print("audio bag check: SKIP (no game audio.bag on this machine)")
 
+    # detail pane is 4 tabs: Preview / INI / Assets / Balance Culture
+    import types as _t2
+    dtabs = [tab.detail_tabs.tabText(i)
+             for i in range(tab.detail_tabs.count())]
+    tabs_ok = dtabs == ["Preview", "INI", "Assets", "Balance Culture"]
+    print(f"detail tabs {dtabs}: {'OK' if tabs_ok else 'FAIL'}")
+    ok = ok and tabs_ok
+
+    # INI tab builder emits the raw rules section (+ art/sound) for an entry
+    from yrbalance.engine import build_section_map, parse_ini_lines
+    with tempfile.TemporaryDirectory() as d:
+        rp = _w(d, "r.ini", "[GI]\nCost=100\nStrength=120\nPrimary=M60\n"
+                            "[M60]\nDamage=25\n")
+        ap = _w(d, "a.ini", "[GI]\nCameo=GICAMEO\nSequence=E1Seq\n")
+        rmap = build_section_map(parse_ini_lines(rp))[0]
+        amap = build_section_map(parse_ini_lines(ap))[0]
+        idx = _t2.SimpleNamespace(rules_map=rmap, art_map=amap, sound_map={})
+        scan = _t2.SimpleNamespace(index=idx)
+        entry = _t2.SimpleNamespace(name="GI", art_name="GI", sound_names=[],
+                                    weapons=[("Primary", "M60", "", "")])
+        txt = tab._ini_text(entry, scan)
+        ini_ok = ("[GI]" in txt and "Cost=100" in txt and "[M60]" in txt
+                  and "Damage=25" in txt and "artmd.ini" in txt
+                  and "Cameo=GICAMEO" in txt)
+        print(f"INI tab raw sections: {'OK' if ini_ok else 'FAIL'}")
+        ok = ok and ini_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
