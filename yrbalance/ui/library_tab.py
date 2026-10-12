@@ -38,7 +38,7 @@ from ..engine import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
-    parse_vpl, parse_hva, find_in_mixes,
+    parse_vpl, parse_hva, find_in_mixes, mix_id,
 )
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
@@ -447,7 +447,9 @@ class LibraryTab(QWidget):
                 if not sdata:
                     return
                 img = parse_shp(sdata)
-                pal = self._house_palette(self._preview_palette(sid, scan))
+                # SHP cameos use the dedicated cameo palette, NOT the unit/terrain
+                # palette, and are not house-coloured.
+                pal = self._cameo_palette(sid, scan)
                 w, h, rgba = frame_to_rgba(
                     img, img.frames[best_frame_index(img)], pal)
             qimg = QImage(bytes(rgba), w, h, QImage.Format_RGBA8888).copy()
@@ -481,6 +483,35 @@ class LibraryTab(QWidget):
             return 0.0
 
     _PAL_NAMES = ("unittem.pal", "temperat.pal", "isotemp.pal", "cameo.pal")
+
+    def _cameo_palette(self, sid, scan):
+        """Dedicated cameo palette (cameo.pal) for SHP cameos — loose first, then
+        the mod's mixes; falls back to the unit palette, then grayscale. Cached."""
+        key = (sid, "cameo")
+        if key in self._pal_cache:
+            return self._pal_cache[key]
+        pal = None
+        src = next((s for s in self.sources if s.id == sid), None)
+        folder = os.path.dirname(src.rules_path) if src else ""
+        p = os.path.join(folder, "cameo.pal")
+        if os.path.isfile(p):
+            try:
+                pal = load_palette(open(p, "rb").read())
+            except Exception:
+                pal = None
+        if pal is None and scan is not None and scan.index is not None:
+            try:
+                found, _ = resolve_media(scan.index.catalog, ["cameo.pal"])
+                for k, v in found.items():
+                    if k.lower() == "cameo.pal":
+                        pal = load_palette(v)
+                        break
+            except Exception:
+                pal = None
+        if pal is None:
+            pal = self._preview_palette(sid, scan)   # fall back to unit palette
+        self._pal_cache[key] = pal
+        return pal
 
     def _preview_palette(self, sid, scan):
         if sid in self._pal_cache:
@@ -638,14 +669,8 @@ class LibraryTab(QWidget):
         if not cat:
             return
         self._audio_catalog = cat
-        seen = set()
-        for a in entry.assets:
-            if a.status != "sound":
-                continue
-            loc = cat.get(a.name.upper())
-            if loc is not None and loc[0] == "bag" and a.name.upper() not in seen:
-                seen.add(a.name.upper())
-                self.audio_combo.addItem(a.name, a.name)
+        for name in _playable_bag_sounds(entry.assets, cat):
+            self.audio_combo.addItem(name, name)
         has = self.audio_combo.count() > 0
         self.play_btn.setEnabled(has and bool(self._player))
         self.export_btn.setEnabled(has)
@@ -1270,6 +1295,20 @@ def _find_audio_player():
         if p:
             return p
     return None
+
+
+def _playable_bag_sounds(assets, catalog):
+    """Names of audio assets that live in an audio .bag (and are therefore
+    decodable/playable), in order, de-duplicated. Only bag entries are playable
+    samples; status labels aren't reliable here (a bag-found sound is marked
+    'present', not 'sound'), so we key purely off the catalog location."""
+    out, seen = [], set()
+    for a in assets:
+        loc = catalog.get(a.name.upper()) or catalog.get(mix_id(a.name))
+        if loc is not None and loc[0] == "bag" and a.name.upper() not in seen:
+            seen.add(a.name.upper())
+            out.append(a.name)
+    return out
 
 
 def _play_wav_file(player, path):
