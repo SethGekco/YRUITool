@@ -304,10 +304,6 @@ class AiBuilderTab(QWidget):
         lay.addWidget(close)
         dlg.exec()
 
-    def _open_library(self):
-        from .ai_library_dialog import AILibraryDialog
-        AILibraryDialog(self.mw).exec()
-
     def _generate_taskforces(self):
         rules = getattr(self.mw, "source_path", None)
         if not rules:

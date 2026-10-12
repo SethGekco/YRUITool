@@ -199,6 +199,69 @@ def main():
               f"{'OK' if lint_ok else 'FAIL'}")
         ok = ok and lint_ok
 
+        # ── P2: collections / bookmarks / rename / reorder ──────────────────
+        from yrbalance.engine import (
+            ai_create_collection as create_collection,
+            ai_add_to_collection as add_to_collection,
+            ai_remove_from_collection as remove_from_collection,
+            ai_load_collections as load_collections,
+            ai_rename_collection as rename_collection,
+            ai_delete_collection as delete_collection,
+            set_bookmark, rename_entry, reorder_entries, remove_entry,
+        )
+        # collections persist, reference entries by (name, kind), survive reload
+        create_collection("naval answers")
+        add_to_collection("naval answers", (ent.name, "bundle"))
+        add_to_collection("naval answers", ("just-a-tf", "taskforce"))
+        cols = load_collections()
+        col = next((c for c in cols if c.name == "naval answers"), None)
+        col_ok = (col is not None and [ent.name, "bundle"] in col.items
+                  and len(col.items) == 2)
+        print(f"collection create + add (2 items): {'OK' if col_ok else 'FAIL'}")
+        ok = ok and col_ok
+
+        # saving the library does NOT clobber collections (shared doc)
+        set_bookmark(ent.name, "bundle", True)
+        cols2 = load_collections()
+        bm = next(e for e in load_library()
+                  if e.kind == "bundle" and e.name == ent.name)
+        preserve_ok = (bm.bookmarked and any(c.name == "naval answers"
+                                             for c in cols2))
+        print(f"bookmark set + collections preserved across save: "
+              f"{'OK' if preserve_ok else 'FAIL'}")
+        ok = ok and preserve_ok
+
+        # rename an entry → collection reference follows, no clash check
+        rename_entry("just-a-tf", "taskforce", "renamed-tf")
+        colR = next(c for c in load_collections() if c.name == "naval answers")
+        libnames = {e.name for e in load_library()}
+        rename_ok = ("renamed-tf" in libnames and "just-a-tf" not in libnames
+                     and ["renamed-tf", "taskforce"] in colR.items)
+        print(f"rename entry (collection ref follows): "
+              f"{'OK' if rename_ok else 'FAIL'}")
+        ok = ok and rename_ok
+
+        # reorder the whole library by keys
+        before = [(e.name, e.kind) for e in load_library()]
+        reorder_entries(list(reversed(before)))
+        after = [(e.name, e.kind) for e in load_library()]
+        reorder_ok = after == list(reversed(before))
+        print(f"reorder entries: {'OK' if reorder_ok else 'FAIL'}")
+        ok = ok and reorder_ok
+
+        # rename + delete collection; remove_entry drops it from collections
+        rename_collection("naval answers", "naval")
+        remove_entry(ent.name, "bundle")
+        colD = next((c for c in load_collections() if c.name == "naval"), None)
+        clean_ok = (colD is not None
+                    and [ent.name, "bundle"] not in colD.items
+                    and ["renamed-tf", "taskforce"] in colD.items)
+        delete_collection("naval")
+        gone_ok = not any(c.name == "naval" for c in load_collections())
+        print(f"rename coll + remove_entry prunes coll + delete coll: "
+              f"{'OK' if clean_ok and gone_ok else 'FAIL'}")
+        ok = ok and clean_ok and gone_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

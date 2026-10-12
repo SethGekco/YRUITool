@@ -141,6 +141,80 @@ def main():
           f"{'OK' if sec_edit_ok else 'FAIL'}")
     ok = ok and sec_edit_ok
 
+    # ── AI Library collection surface (P2) ────────────────────────────────────
+    import tempfile as _tf
+    home = _tf.mkdtemp()
+    os.environ["HOME"] = home          # isolate the ailibrary.json sidecar
+    from yrbalance.engine import (
+        parse_ini_lines as _pil2, build_section_map as _bsm2, extract_block,
+        add_entry, ai_create_collection, ai_add_to_collection, set_bookmark,
+    )
+    srcmap = _bsm2(_pil2(os.path.join(mod, "aimd.ini")))[0]
+    add_entry(extract_block(srcmap, "taskforce", "TF1", source="turkey", name="alpha"))
+    add_entry(extract_block(srcmap, "script", "SC1", source="turkey", name="beta"))
+    set_bookmark("beta", "script", True)
+    ai_create_collection("faves")
+    ai_add_to_collection("faves", ("alpha", "taskforce"))
+
+    from yrbalance.ui.ai_tab import AiLibraryPanel
+    panel = AiLibraryPanel(mw)
+    panel.reload()
+    app.processEvents()
+
+    # collections column: All / Bookmarked / faves
+    coltexts = [panel.col_list.item(r).text() for r in range(panel.col_list.count())]
+    lib_cols_ok = (any("All entries" in t for t in coltexts)
+                   and any("Bookmarked" in t for t in coltexts)
+                   and any("faves" in t for t in coltexts))
+    print(f"AI library collections column: {'OK' if lib_cols_ok else 'FAIL'}  {coltexts}")
+    ok = ok and lib_cols_ok
+
+    # All view lists both entries; bookmark star on beta
+    panel.col_list.setCurrentRow(0)
+    app.processEvents()
+    ent_texts = [panel.entry_list.item(r).text()
+                 for r in range(panel.entry_list.count())]
+    all_ok = (len(ent_texts) == 2 and any("alpha" in t for t in ent_texts)
+              and any("★" in t and "beta" in t for t in ent_texts))
+    print(f"AI library All view (2 entries, star on beta): "
+          f"{'OK' if all_ok else 'FAIL'}  {ent_texts}")
+    ok = ok and all_ok
+
+    # Bookmarked view → only beta
+    for r in range(panel.col_list.count()):
+        if "Bookmarked" in panel.col_list.item(r).text():
+            panel.col_list.setCurrentRow(r)
+            break
+    app.processEvents()
+    bm_only = [panel.entry_list.item(r).text()
+               for r in range(panel.entry_list.count())]
+    bm_ok = len(bm_only) == 1 and "beta" in bm_only[0]
+    print(f"AI library Bookmarked view filters: {'OK' if bm_ok else 'FAIL'}  {bm_only}")
+    ok = ok and bm_ok
+
+    # faves collection → only alpha
+    for r in range(panel.col_list.count()):
+        if "faves" in panel.col_list.item(r).text():
+            panel.col_list.setCurrentRow(r)
+            break
+    app.processEvents()
+    fav = [panel.entry_list.item(r).text()
+           for r in range(panel.entry_list.count())]
+    fav_ok = len(fav) == 1 and "alpha" in fav[0]
+    print(f"AI library collection view filters: {'OK' if fav_ok else 'FAIL'}  {fav}")
+    ok = ok and fav_ok
+
+    # search narrows the All view
+    panel.col_list.setCurrentRow(0)
+    panel.search.setText("alpha")
+    app.processEvents()
+    searched = [panel.entry_list.item(r).text()
+                for r in range(panel.entry_list.count())]
+    search_ok = len(searched) == 1 and "alpha" in searched[0]
+    panel.search.clear()
+    print(f"AI library search narrows: {'OK' if search_ok else 'FAIL'}  {searched}")
+    ok = ok and search_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

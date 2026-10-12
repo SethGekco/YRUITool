@@ -57,6 +57,11 @@ class LibEntry:
     notes: list = field(default_factory=list)      # extraction-time (auto) notes
     user_notes: str = ""           # free-form private details the user writes
     credits: str = ""              # separate credits box (original author etc.)
+    bookmarked: bool = False       # user flag — surfaced in the "★ Bookmarked" view
+
+    def key(self):
+        """Identity of an entry in the library (name + kind)."""
+        return (self.name, self.kind)
 
     def to_json(self):
         d = asdict(self)
@@ -71,30 +76,52 @@ class LibEntry:
             trigger_id=d.get("trigger_id", ""), trigger_def=d.get("trigger_def", ""),
             units=list(d.get("units", [])), unit_stubs=dict(d.get("unit_stubs", {})),
             notes=list(d.get("notes", [])),
-            user_notes=d.get("user_notes", ""), credits=d.get("credits", ""))
+            user_notes=d.get("user_notes", ""), credits=d.get("credits", ""),
+            bookmarked=bool(d.get("bookmarked", False)))
+
+
+@dataclass
+class AiCollection:
+    """A named, ordered grouping of library entries, referenced by (name, kind)."""
+    name: str
+    items: list = field(default_factory=list)        # [[name, kind]]
 
 
 def library_path():
     return os.path.join(os.path.expanduser("~"), ".yrbalancetool", "ailibrary.json")
 
 
-def load_library(path=None):
+def _load_doc(path=None):
+    """Read the whole library document ({entries, collections}) as a dict."""
     path = path or library_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
             raw = json.load(fh)
     except (FileNotFoundError, ValueError):
-        return []
-    return [LibEntry.from_json(e) for e in raw.get("entries", [])]
+        return {"entries": [], "collections": []}
+    raw.setdefault("entries", [])
+    raw.setdefault("collections", [])
+    return raw
 
 
-def save_library(entries, path=None):
+def _save_doc(doc, path=None):
     path = path or library_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump({"entries": [e.to_json() for e in entries]}, fh, indent=1)
+        json.dump(doc, fh, indent=1)
     os.replace(tmp, path)
+
+
+def load_library(path=None):
+    return [LibEntry.from_json(e) for e in _load_doc(path).get("entries", [])]
+
+
+def save_library(entries, path=None):
+    """Persist the entry list, preserving any collections already on disk."""
+    doc = _load_doc(path)
+    doc["entries"] = [e.to_json() for e in entries]
+    _save_doc(doc, path)
 
 
 def add_entry(entry, path=None):
@@ -110,6 +137,12 @@ def remove_entry(name, kind, path=None):
     entries = [e for e in load_library(path)
                if not (e.name == name and e.kind == kind)]
     save_library(entries, path)
+    # drop the removed entry from every collection too
+    cols = load_collections(path)
+    for c in cols:
+        c.items = [it for it in c.items
+                   if not (it[0] == name and it[1] == kind)]
+    save_collections(cols, path)
     return entries
 
 
@@ -124,6 +157,121 @@ def set_entry_meta(name, kind, user_notes=None, credits=None, path=None):
                 e.credits = credits
     save_library(entries, path)
     return entries
+
+
+def rename_entry(name, kind, new_name, path=None):
+    """Rename a stored entry, keeping collection references in sync. Returns the
+    updated entry list, or None if the new name clashes with another same-kind
+    entry."""
+    new_name = (new_name or "").strip()
+    if not new_name or new_name == name:
+        return load_library(path)
+    entries = load_library(path)
+    if any(e.name == new_name and e.kind == kind for e in entries):
+        return None
+    for e in entries:
+        if e.name == name and e.kind == kind:
+            e.name = new_name
+    save_library(entries, path)
+    cols = load_collections(path)
+    for c in cols:
+        for it in c.items:
+            if it[0] == name and it[1] == kind:
+                it[0] = new_name
+    save_collections(cols, path)
+    return entries
+
+
+def set_bookmark(name, kind, on, path=None):
+    entries = load_library(path)
+    for e in entries:
+        if e.name == name and e.kind == kind:
+            e.bookmarked = bool(on)
+    save_library(entries, path)
+    return entries
+
+
+def reorder_entries(ordered_keys, path=None):
+    """Reorder the library to match `ordered_keys` ([(name, kind)]); any entries
+    not named keep their relative order after the listed ones."""
+    entries = load_library(path)
+    index = {(e.name, e.kind): e for e in entries}
+    out, seen = [], set()
+    for k in ordered_keys:
+        k = tuple(k)
+        if k in index and k not in seen:
+            out.append(index[k])
+            seen.add(k)
+    for e in entries:
+        if (e.name, e.kind) not in seen:
+            out.append(e)
+    save_library(out, path)
+    return out
+
+
+# ── collections ─────────────────────────────────────────────────────────────
+def load_collections(path=None):
+    return [AiCollection(name=c.get("name", ""),
+                         items=[list(it) for it in c.get("items", [])])
+            for c in _load_doc(path).get("collections", [])]
+
+
+def save_collections(collections, path=None):
+    doc = _load_doc(path)
+    doc["collections"] = [{"name": c.name, "items": [list(it) for it in c.items]}
+                          for c in collections]
+    _save_doc(doc, path)
+
+
+def create_collection(name, path=None):
+    name = (name or "").strip()
+    cols = load_collections(path)
+    if name and not any(c.name == name for c in cols):
+        cols.append(AiCollection(name=name))
+        save_collections(cols, path)
+    return cols
+
+
+def delete_collection(name, path=None):
+    cols = [c for c in load_collections(path) if c.name != name]
+    save_collections(cols, path)
+    return cols
+
+
+def rename_collection(old, new, path=None):
+    new = (new or "").strip()
+    cols = load_collections(path)
+    if not new or any(c.name == new for c in cols):
+        return cols
+    for c in cols:
+        if c.name == old:
+            c.name = new
+    save_collections(cols, path)
+    return cols
+
+
+def add_to_collection(name, item, path=None):
+    """Add (entry_name, kind) to a collection (creating it if needed)."""
+    item = list(item)
+    cols = load_collections(path)
+    col = next((c for c in cols if c.name == name), None)
+    if col is None:
+        col = AiCollection(name=name)
+        cols.append(col)
+    if item not in col.items:
+        col.items.append(item)
+    save_collections(cols, path)
+    return cols
+
+
+def remove_from_collection(name, item, path=None):
+    item = list(item)
+    cols = load_collections(path)
+    for c in cols:
+        if c.name == name:
+            c.items = [it for it in c.items if it != item]
+    save_collections(cols, path)
+    return cols
 
 
 # ── signatures / similarity (for dedup + near-dup warnings) ─────────────────

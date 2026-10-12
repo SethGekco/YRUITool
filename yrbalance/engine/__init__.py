@@ -199,8 +199,16 @@ from .portai import (
 )
 from .ailib import (
     load_library, save_library, add_entry, remove_entry, set_entry_meta,
+    rename_entry, set_bookmark, reorder_entries,
+    load_collections as ai_load_collections,
+    save_collections as ai_save_collections,
+    create_collection as ai_create_collection,
+    delete_collection as ai_delete_collection,
+    rename_collection as ai_rename_collection,
+    add_to_collection as ai_add_to_collection,
+    remove_from_collection as ai_remove_from_collection,
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
-    LibEntry, LibBlock, PullPlan, PullItem,
+    LibEntry, LibBlock, AiCollection, PullPlan, PullItem,
 )
 from .images import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
@@ -306,8 +314,12 @@ __all__ = [
     "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",
     # ailib
     "load_library", "save_library", "add_entry", "remove_entry", "set_entry_meta",
+    "rename_entry", "set_bookmark", "reorder_entries",
+    "ai_load_collections", "ai_save_collections", "ai_create_collection",
+    "ai_delete_collection", "ai_rename_collection", "ai_add_to_collection",
+    "ai_remove_from_collection",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
-    "apply_pull", "LibEntry", "LibBlock", "PullPlan", "PullItem",
+    "apply_pull", "LibEntry", "LibBlock", "AiCollection", "PullPlan", "PullItem",
     # images (SHP / palette)
     "parse_shp", "load_palette", "grayscale_palette", "frame_to_rgba",
     "best_frame_index", "house_remap_palette", "HOUSE_COLORS", "parse_pcx",
