@@ -157,6 +157,31 @@ def get_val(section_map, section, key, default=None):
     return entry[2].split(";")[0].strip()
 
 
+# Small shared value helpers (several engine modules each had private copies).
+def clean_value(v):
+    """Strip an inline comment and surrounding whitespace from a raw value."""
+    return "" if v is None else v.split(";", 1)[0].strip()
+
+
+def num_value(v):
+    """Parse a numeric stat value → float, or None. Tolerates a trailing '%'."""
+    try:
+        return float(clean_value(v).rstrip("%"))
+    except (TypeError, ValueError):
+        return None
+
+
+def numbered_entries(section_map, sec):
+    """[(index:int, cleaned_value:str)] for a section's numeric keys, sorted."""
+    s = section_map.get(sec.lower())
+    if not s:
+        return []
+    out = [(int(k), clean_value(vr))
+           for k, (_li, _kr, vr) in s["keys"].items() if k.isdigit()]
+    out.sort()
+    return out
+
+
 # =============================================================================
 # LINE MODIFICATION ENGINE
 # =============================================================================

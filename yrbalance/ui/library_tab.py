@@ -40,6 +40,14 @@ from ..engine import (
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes, mix_id,
 )
+# Dialog split out in cleanup C3; re-exported so existing references resolve.
+from .add_source_dialog import _AddSourceDialog
+# Reusable media helpers extracted in cleanup C1 (aliased to the old local names).
+from .media_preview import (
+    unit_palette as _unit_palette, cameo_palette as _cameo_pal,
+    playable_bag_sounds as _playable_bag_sounds,
+    find_audio_player as _find_audio_player, play_wav_file as _play_wav_file,
+)
 from ..ai.ollama_client import OllamaClient
 from ..ai.eva import summarize_balance
 from .encyclopedia_dialog import _Worker
@@ -482,64 +490,28 @@ class LibraryTab(QWidget):
         except (ValueError, TypeError):
             return 0.0
 
-    _PAL_NAMES = ("unittem.pal", "temperat.pal", "isotemp.pal", "cameo.pal")
+    def _folder_for(self, sid):
+        src = next((s for s in self.sources if s.id == sid), None)
+        return os.path.dirname(src.rules_path) if src else ""
+
+    @staticmethod
+    def _catalog(scan):
+        return scan.index.catalog if (scan and scan.index) else None
 
     def _cameo_palette(self, sid, scan):
-        """Dedicated cameo palette (cameo.pal) for SHP cameos — loose first, then
-        the mod's mixes; falls back to the unit palette, then grayscale. Cached."""
+        """Cached cameo palette (see media_preview.cameo_palette)."""
         key = (sid, "cameo")
-        if key in self._pal_cache:
-            return self._pal_cache[key]
-        pal = None
-        src = next((s for s in self.sources if s.id == sid), None)
-        folder = os.path.dirname(src.rules_path) if src else ""
-        p = os.path.join(folder, "cameo.pal")
-        if os.path.isfile(p):
-            try:
-                pal = load_palette(open(p, "rb").read())
-            except Exception:
-                pal = None
-        if pal is None and scan is not None and scan.index is not None:
-            try:
-                found, _ = resolve_media(scan.index.catalog, ["cameo.pal"])
-                for k, v in found.items():
-                    if k.lower() == "cameo.pal":
-                        pal = load_palette(v)
-                        break
-            except Exception:
-                pal = None
-        if pal is None:
-            pal = self._preview_palette(sid, scan)   # fall back to unit palette
-        self._pal_cache[key] = pal
-        return pal
+        if key not in self._pal_cache:
+            self._pal_cache[key] = _cameo_pal(self._folder_for(sid),
+                                              self._catalog(scan))
+        return self._pal_cache[key]
 
     def _preview_palette(self, sid, scan):
-        if sid in self._pal_cache:
-            return self._pal_cache[sid]
-        pal = None
-        src = next((s for s in self.sources if s.id == sid), None)
-        folder = os.path.dirname(src.rules_path) if src else ""
-        for name in self._PAL_NAMES:
-            p = os.path.join(folder, name)
-            if os.path.isfile(p):
-                try:
-                    pal = load_palette(open(p, "rb").read())
-                    break
-                except Exception:
-                    pal = None
-        if pal is None and scan is not None and scan.index is not None:
-            try:
-                found, _ = resolve_media(scan.index.catalog, ["unittem.pal"])
-                for k, v in found.items():
-                    if k.lower() == "unittem.pal":
-                        pal = load_palette(v)
-                        break
-            except Exception:
-                pal = None
-        if pal is None:
-            pal = grayscale_palette()
-        self._pal_cache[sid] = pal
-        return pal
+        """Cached unit/terrain palette (see media_preview.unit_palette)."""
+        if sid not in self._pal_cache:
+            self._pal_cache[sid] = _unit_palette(self._folder_for(sid),
+                                                 self._catalog(scan))
+        return self._pal_cache[sid]
 
     def _house_palette(self, base):
         """Apply the selected house colour to the remap range (16-31); returns the
@@ -1283,124 +1255,3 @@ def _vpl_cache_path():
     return os.path.join(os.path.expanduser("~"), ".yrbalancetool", "voxels.vpl")
 
 
-def _find_audio_player():
-    """Best-effort system WAV player (QtMultimedia isn't bundled). Returns an
-    identifier used by _play_wav_file, or None."""
-    if sys.platform == "win32":
-        return "winsound"
-    if sys.platform == "darwin":
-        return shutil.which("afplay")
-    for cmd in ("paplay", "aplay", "ffplay", "mpv", "cvlc"):
-        p = shutil.which(cmd)
-        if p:
-            return p
-    return None
-
-
-def _playable_bag_sounds(assets, catalog):
-    """Names of audio assets that live in an audio .bag (and are therefore
-    decodable/playable), in order, de-duplicated. Only bag entries are playable
-    samples; status labels aren't reliable here (a bag-found sound is marked
-    'present', not 'sound'), so we key purely off the catalog location."""
-    out, seen = [], set()
-    for a in assets:
-        loc = catalog.get(a.name.upper()) or catalog.get(mix_id(a.name))
-        if loc is not None and loc[0] == "bag" and a.name.upper() not in seen:
-            seen.add(a.name.upper())
-            out.append(a.name)
-    return out
-
-
-def _play_wav_file(player, path):
-    """Play a WAV file asynchronously via the detected player."""
-    if player == "winsound":
-        import winsound
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-        return
-    args = [player, path]
-    if player.endswith("ffplay"):
-        args = [player, "-nodisp", "-autoexit", path]
-    elif player.endswith("cvlc"):
-        args = [player, "--play-and-exit", path]
-    subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-class _AddSourceDialog(QDialog):
-    """Pick a mod to add. The path field accepts a pasted FOLDER or rules file;
-    Browse uses the non-native dialog with hidden (dot-)folders shown, so paths
-    like …/.wine/… are reachable. Mode is chosen here too."""
-
-    def __init__(self, parent, start=""):
-        super().__init__(parent)
-        self.setWindowTitle("Add source to library")
-        self.resize(640, 220)
-        self.rules_path = ""
-        self.mode = "reference"
-
-        lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(
-            "Paste a mod folder or a rules(md).ini path, or Browse:"))
-        row = QHBoxLayout()
-        self.edit = QLineEdit(start)
-        self.edit.setPlaceholderText(
-            "/home/you/…/mod   or   /home/you/…/rulesmd.ini")
-        self.edit.setClearButtonEnabled(True)
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
-        row.addWidget(self.edit, 1)
-        row.addWidget(browse)
-        lay.addLayout(row)
-
-        self.ref = QRadioButton("Reference — read live from its folder "
-                                "(breaks if the folder moves/deletes)")
-        self.snap = QRadioButton("Snapshot — copy rules/aimd/art/sound into a "
-                                 "private library dir (self-contained)")
-        self.ref.setChecked(True)
-        lay.addWidget(self.ref)
-        lay.addWidget(self.snap)
-
-        self.err = QLabel("")
-        self.err.setStyleSheet("color:#c62828;")
-        lay.addWidget(self.err)
-
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(self._accept)
-        bb.rejected.connect(self.reject)
-        lay.addWidget(bb)
-
-    def _browse(self):
-        start = self.edit.text().strip() or QDir.homePath()
-        if os.path.isfile(start):
-            start = os.path.dirname(start)
-        dlg = QFileDialog(self, "Choose a mod's rules(md).ini", start)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, True)   # Qt dialog = paste + hidden
-        dlg.setFileMode(QFileDialog.ExistingFile)
-        dlg.setNameFilters(["Rules INI (rules*.ini)", "All files (*)"])
-        dlg.setFilter(dlg.filter() | QDir.Hidden)              # show .wine etc.
-        if dlg.exec() == QFileDialog.Accepted:
-            files = dlg.selectedFiles()
-            if files:
-                self.edit.setText(files[0])
-
-    def _resolve(self, text):
-        p = os.path.expanduser(text.strip().strip('"').strip("'"))
-        if not p:
-            return "", "Enter a folder or rules file path."
-        if os.path.isdir(p):
-            low = {f.lower(): f for f in os.listdir(p)}
-            for n in ("rulesmd.ini", "rules.ini"):
-                if n in low:
-                    return os.path.join(p, low[n]), ""
-            return "", "No rulesmd.ini / rules.ini in that folder."
-        if os.path.isfile(p):
-            return p, ""
-        return "", "That path doesn't exist."
-
-    def _accept(self):
-        path, err = self._resolve(self.edit.text())
-        if err:
-            self.err.setText(err)
-            return
-        self.rules_path = path
-        self.mode = "reference" if self.ref.isChecked() else "snapshot"
-        self.accept()

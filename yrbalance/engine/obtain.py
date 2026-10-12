@@ -37,7 +37,7 @@ carries human-readable reasons so the UI can be honest about uncertainty.
 
 from dataclasses import dataclass, field
 
-from .ini_model import get_val
+from .ini_model import get_val, clean_value as _clean, num_value as _num
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
@@ -80,18 +80,6 @@ class Obtainability:
     cls: str
     reasons: list = field(default_factory=list)
     also: list = field(default_factory=list)   # secondary flags (e.g. crate-eligible)
-
-
-def _clean(v):
-    return "" if v is None else v.split(";", 1)[0].strip()
-
-
-def _num(v):
-    s = _clean(v).rstrip("%")
-    try:
-        return float(s)
-    except (TypeError, ValueError):
-        return None
 
 
 def _techno_names(section_map):

@@ -20,7 +20,8 @@ reference), never merely because they are unfamiliar.
 
 from dataclasses import dataclass
 
-from .ini_model import get_val
+from .ini_model import (get_val, clean_value as _clean,
+                        numbered_entries as _numbered)
 
 # Index-list registries: [Reg] has 0=<id>,1=<id>,… pointing at [<id>] sections.
 _INDEX_REGISTRIES = ("TaskForces", "ScriptTypes", "TeamTypes")
@@ -34,32 +35,12 @@ class LintFinding:
     message: str
 
 
-def _clean(v):
-    """Strip an inline comment and surrounding whitespace from a raw value."""
-    if v is None:
-        return ""
-    return v.split(";", 1)[0].strip()
-
-
 def _is_int(s):
     try:
         int(s)
         return True
     except (TypeError, ValueError):
         return False
-
-
-def _numbered(section_map, sec):
-    """Return [(index:int, cleaned_value:str)] for a section's numeric keys, sorted."""
-    s = section_map.get(sec.lower())
-    if not s:
-        return []
-    out = []
-    for klow, (_li, _kr, vr) in s["keys"].items():
-        if klow.isdigit():
-            out.append((int(klow), _clean(vr)))
-    out.sort()
-    return out
 
 
 def has_ai_sections(section_map):

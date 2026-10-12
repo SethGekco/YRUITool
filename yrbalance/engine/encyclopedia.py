@@ -16,6 +16,7 @@ import os
 from dataclasses import dataclass, field
 
 from .ini_model import get_val, parse_ini_lines, build_section_map
+from .fsutil import sibling_file as _sibling
 from .includes import load_with_includes
 from .config import ModConfig
 from .typelists import parse_type_list
@@ -78,16 +79,6 @@ class ModIndex:
 
     def unit_names(self):
         return sorted(u.name for u in self.units.values())
-
-
-def _sibling(folder, *names):
-    if not folder or not os.path.isdir(folder):
-        return None
-    low = {f.lower(): f for f in os.listdir(folder)}
-    for n in names:
-        if n.lower() in low:
-            return os.path.join(folder, low[n.lower()])
-    return None
 
 
 def _asset_location(catalog, name, vanilla_ids, is_sound=False):

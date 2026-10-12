@@ -34,7 +34,9 @@ from .ini_model import (
     parse_last_value_from_line,
     parse_last_ratio_from_line,
     get_current_field_value_from_line,
+    clean_value, num_value, numbered_entries,
 )
+from .fsutil import sibling_file
 from .includes import (
     resolve_includes,
     load_with_includes,
@@ -243,6 +245,7 @@ __all__ = [
     "scale_from_vanilla", "format_edited_value", "parse_vanilla_from_line",
     "parse_last_value_from_line", "parse_last_ratio_from_line",
     "get_current_field_value_from_line",
+    "clean_value", "num_value", "numbered_entries", "sibling_file",
     # includes
     "resolve_includes", "load_with_includes", "include_graph", "flatten_graph",
     "has_includes",
