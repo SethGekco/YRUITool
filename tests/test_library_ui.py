@@ -355,6 +355,22 @@ def main():
             cam_ok = vpm2 is not None and not vpm2.isNull() and vpm2.width() > 0
             print(f"cameo doesn't pre-empt voxel: {'OK' if cam_ok else 'FAIL'}")
             ok = ok and cam_ok
+
+            # click-to-preview: selecting a specific .vxl in the Files table should
+            # render THAT asset via the override path (override wins over auto-pick).
+            tab._detail_entry = ventry2
+            tab._detail_sid = "turkey-mod"
+            tab._detail_scan = vscan2
+            tab.art_img.clear()
+            tab._render_art(ventry2, "turkey-mod", vscan2, override="PREVVXL.VXL")
+            ovpm = tab.art_img.pixmap()
+            override_ok = ovpm is not None and not ovpm.isNull() and ovpm.width() > 0
+            # a cameo-only override (SHP that isn't body art) should still attempt a
+            # render rather than crash
+            tab._render_art(ventry2, "turkey-mod", vscan2, override="PREVICON.SHP")
+            print(f"click-to-preview override renders asset: "
+                  f"{'OK' if override_ok else 'FAIL'}")
+            ok = ok and override_ok
         else:
             print("real VXL render: SKIP (no sample on this machine)")
 
