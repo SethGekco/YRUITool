@@ -24,6 +24,7 @@ from ..ai.ollama_client import OllamaClient, OllamaError
 from ..ai.knowledge import KnowledgeStore
 from ..ai.eva import Eva
 from ..ai.fetch import fetch_url
+from ..ai.reference_feed import check_feed, ingest_entries
 from ..ai.vector_index import KnowledgeIndex
 
 _DEFAULT_URL = "http://localhost:11434"
@@ -145,6 +146,25 @@ class EvaTab(QWidget):
         urow.addWidget(self.learn_btn)
         outer.addLayout(urow)
 
+        # ── Reference feed row ──
+        frow = QHBoxLayout()
+        frow.addWidget(QLabel("Reference feed:"))
+        self.feed_edit = QLineEdit(self.settings.value("eva_feed_url", ""))
+        self.feed_edit.setPlaceholderText(
+            "raw manifest.json URL of your modding-features reference repo")
+        self.feed_edit.editingFinished.connect(
+            lambda: self.settings.setValue("eva_feed_url",
+                                           self.feed_edit.text().strip()))
+        frow.addWidget(self.feed_edit, 1)
+        self.feed_btn = QPushButton("Check for modding updates")
+        self.feed_btn.setToolTip(
+            "Fetch the feed, show new/updated feature notes, and (with your OK) "
+            "add them to Eva's knowledge. Feed content is reference-only — never "
+            "run as commands and never touches your mod files.")
+        self.feed_btn.clicked.connect(self._check_feed)
+        frow.addWidget(self.feed_btn)
+        outer.addLayout(frow)
+
         # ── Memory (retrieval) row ──
         mrow = QHBoxLayout()
         mrow.addWidget(QLabel("Embed model:"))
@@ -241,6 +261,7 @@ class EvaTab(QWidget):
     def _busy(self, busy):
         for w in (self.send_btn, self.refresh_btn, self.input,
                   getattr(self, "learn_btn", None), getattr(self, "url_learn", None),
+                  getattr(self, "feed_btn", None),
                   getattr(self, "rebuild_idx_btn", None)):
             if w is not None:
                 w.setEnabled(not busy)
@@ -438,6 +459,57 @@ class EvaTab(QWidget):
     def _learn_failed(self, msg):
         self._busy(False)
         self.status.setText(f"Could not fetch that URL: {msg}")
+
+    # ── reference feed ───────────────────────────────────────────────────────
+    def _check_feed(self):
+        url = self.feed_edit.text().strip()
+        if not url:
+            self.status.setText("Set a reference-feed manifest URL first.")
+            return
+        self.settings.setValue("eva_feed_url", url)
+        self._feed_url = url
+        self._busy(True)
+        self.status.setText("Checking reference feed …")
+        self._run(lambda: check_feed(url, self.knowledge.base_dir),
+                  self._feed_checked, self._feed_failed)
+
+    def _feed_checked(self, buckets):
+        self._busy(False)
+        updated = buckets["updated"]
+        todo = buckets["new"] + updated
+        if not todo:
+            self.status.setText(
+                f"Reference feed up to date "
+                f"({len(buckets['current'])} feature note(s) known).")
+            return
+        lines = [f"  • {e['title']}  ({'update' if e in updated else 'new'})"
+                 for e in todo]
+        resp = QMessageBox.question(
+            self, "Modding updates",
+            f"{len(buckets['new'])} new, {len(updated)} updated feature note(s):"
+            "\n\n" + "\n".join(lines) + "\n\nAdd them to Eva's knowledge?",
+            QMessageBox.Yes | QMessageBox.No)
+        if resp != QMessageBox.Yes:
+            self.status.setText("Reference update cancelled.")
+            return
+        self._busy(True)
+        self.status.setText("Fetching feature notes …")
+        self._run(lambda: ingest_entries(self._feed_url, todo, self.knowledge),
+                  self._feed_ingested, self._feed_failed)
+
+    def _feed_ingested(self, result):
+        self._busy(False)
+        done, failed = result
+        self._update_know_label()
+        msg = f"Learned {len(done)} feature note(s) from the feed."
+        if failed:
+            msg += f" {len(failed)} could not be fetched."
+        msg += "  Click “Rebuild memory index” so Eva can retrieve them."
+        self.status.setText(msg)
+
+    def _feed_failed(self, msg):
+        self._busy(False)
+        self.status.setText(f"Reference feed check failed: {msg}")
 
     def _transcript_text(self):
         lines = []

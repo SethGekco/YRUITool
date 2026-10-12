@@ -66,13 +66,17 @@ class KnowledgeStore:
         except OSError:
             return False
 
-    def add_doc(self, name, text):
+    def add_doc(self, name, text, overwrite=False):
         """Write text directly into the read/ store (for fetched pages, chats).
-        Returns the path. Sanitizes the name and ensures a .txt/.md extension."""
+        Returns the path. Sanitizes the name and ensures a .txt/.md extension.
+        overwrite=True writes to a deterministic path (read/<name>), replacing any
+        prior copy — used for feed docs so a re-ingest updates in place rather than
+        piling up _1/_2 copies."""
         safe = re.sub(r"[^A-Za-z0-9._ -]", "_", name).strip() or "note"
         if not os.path.splitext(safe)[1]:
             safe += ".txt"
-        dest = self._unique_dest(safe)
+        dest = (os.path.join(self.read_dir, safe) if overwrite
+                else self._unique_dest(safe))
         with open(dest, "w", encoding="utf-8") as f:
             f.write(text)
         return dest
