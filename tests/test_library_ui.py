@@ -30,6 +30,7 @@ def main():
         os.environ["HOME"] = home
         from PySide6.QtWidgets import (QApplication, QWidget, QMessageBox,
                                        QInputDialog)
+        from PySide6.QtCore import Qt
         app = QApplication.instance() or QApplication([])
         QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
         QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
@@ -427,6 +428,31 @@ def main():
                   and "Cameo=GICAMEO" in txt)
         print(f"INI tab raw sections: {'OK' if ini_ok else 'FAIL'}")
         ok = ok and ini_ok
+
+    # Collections drag-reorder persists the new mod-folder order (save captured,
+    # not written to the real catalog).
+    import yrbalance.ui.library_tab as _L
+    _saved = {}
+    _orig_save = _L.save_catalog
+    _L.save_catalog = lambda s, c, *a, **k: _saved.update(order=[x.id for x in s])
+    try:
+        S = lambda i: _t2.SimpleNamespace(id=i, label=i.upper(), mode="reference",
+                                          balance=None, balance_summary="")
+        tab.sources = [S("a"), S("b"), S("c")]
+        tab._items_by_source = {"a": [], "b": [], "c": []}
+        tab.collections = []
+        tab._rebuild_collections()
+        autos = [i for i in range(tab.col_list.count())
+                 if (tab.col_list.item(i).data(Qt.UserRole) or ("", ""))[0] == "auto"]
+        for idx, d in zip(autos, [("auto", "c"), ("auto", "a"), ("auto", "b")]):
+            tab.col_list.item(idx).setData(Qt.UserRole, d)
+        tab._persist_source_order()
+        reorder_ok = (_saved.get("order") == ["c", "a", "b"]
+                      and [s.id for s in tab.sources] == ["c", "a", "b"])
+        print(f"collections reorder persists: {'OK' if reorder_ok else 'FAIL'}")
+        ok = ok and reorder_ok
+    finally:
+        _L.save_catalog = _orig_save
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

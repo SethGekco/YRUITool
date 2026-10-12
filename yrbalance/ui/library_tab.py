@@ -17,23 +17,23 @@ import subprocess
 import tempfile
 import datetime
 
-from PySide6.QtCore import Qt, QSettings, QDir
+from PySide6.QtCore import Qt, QSettings, QDir, QTimer
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton, QComboBox, QApplication,
+    QRadioButton, QComboBox, QApplication, QMenu,
 )
 
 from ..engine import (
-    load_catalog, add_source, remove_source, set_source_summary,
+    load_catalog, save_catalog, add_source, remove_source, set_source_summary,
     create_collection, delete_collection, rename_collection, rename_source,
     add_to_collection, scan_source,
     describe_culture, balance_culture, conversion_factors, convert_unit_stats,
     convert_weapon_stats, culture_statfactors, load_tags, set_unit_tags, all_tags,
-    parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
+    parse_ini_lines, build_section_map, parse_type_list, build_port_plan, apply_port_plan,
     make_backup, unit_report, extract_bundle, resolve_media, get_val,
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
@@ -106,8 +106,12 @@ class LibraryTab(QWidget):
         self.hide_dummy = QCheckBox("dummy")
         self.hide_civilian = QCheckBox("civilian")
         self.hide_noart = QCheckBox("no art files")
+        self.hide_vanilla = QCheckBox("vanilla")
+        self.hide_vanilla.setToolTip(
+            "Hide TechnoTypes that exist in vanilla YR (by name), so only the "
+            "mod's own/added objects show.")
         for cb in (self.hide_nonbuild, self.hide_dummy, self.hide_civilian,
-                   self.hide_noart):
+                   self.hide_noart, self.hide_vanilla):
             cb.toggled.connect(self._apply_filter)
             frow.addWidget(cb)
         frow.addStretch(1)
@@ -123,7 +127,15 @@ class LibraryTab(QWidget):
         self.col_list = QListWidget()
         self.col_list.currentRowChanged.connect(self._on_collection)
         self.col_list.itemDoubleClicked.connect(self._rename_collection_row)
-        self.col_list.setToolTip("Double-click a mod folder or collection to rename")
+        self.col_list.setToolTip(
+            "Double-click to rename · right-click for Rename/Remove · "
+            "drag mod folders to reorder")
+        # Right-click menu (rename/remove) + drag-to-reorder mod folders.
+        self.col_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.col_list.customContextMenuRequested.connect(self._col_context_menu)
+        self.col_list.setDragDropMode(QAbstractItemView.InternalMove)
+        self.col_list.setDefaultDropAction(Qt.MoveAction)
+        self.col_list.model().rowsMoved.connect(self._on_sources_reordered)
         ll.addWidget(self.col_list, 1)
         self.add_to_btn = QPushButton("Add selected → collection…")
         self.add_to_btn.clicked.connect(self._add_selected_to_collection)
@@ -903,17 +915,26 @@ class LibraryTab(QWidget):
         self.col_list.clear()
         self._col_desc = []
         total = sum(len(v) for v in self._items_by_source.values())
-        self.col_list.addItem(QListWidgetItem(f"All sources  ({total})"))
-        self._col_desc.append(("all", None))
+
+        def _add(text, desc):
+            it = QListWidgetItem(text)
+            it.setData(Qt.UserRole, desc)        # (mode, key) for drag/menu mapping
+            # Only mod folders are drag-reorderable; All/collections are pinned.
+            flags = it.flags() & ~Qt.ItemIsDropEnabled
+            if desc[0] != "auto":
+                flags &= ~Qt.ItemIsDragEnabled
+            it.setFlags(flags)
+            self.col_list.addItem(it)
+            self._col_desc.append(desc)
+
+        _add(f"All sources  ({total})", ("all", None))
         for s in self.sources:
             n = len(self._items_by_source.get(s.id, []))
-            self.col_list.addItem(QListWidgetItem(f"📁 {s.label}  ({n})"))
-            self._col_desc.append(("auto", s.id))
+            _add(f"📁 {s.label}  ({n})", ("auto", s.id))
         for c in self.collections:
             if c.auto_source:
                 continue
-            self.col_list.addItem(QListWidgetItem(f"★ {c.name}  ({len(c.items)})"))
-            self._col_desc.append(("col", c.name))
+            _add(f"★ {c.name}  ({len(c.items)})", ("col", c.name))
         self.col_list.blockSignals(False)
         self.col_list.setCurrentRow(
             keep_row if keep_row is not None and keep_row < self.col_list.count()
@@ -970,7 +991,25 @@ class LibraryTab(QWidget):
         if self.hide_noart.isChecked() and \
                 not self._has_art.get((it.source_id, it.name.lower()), False):
             return False
+        if self.hide_vanilla.isChecked() and it.name.lower() in self._vanilla_names():
+            return False
         return True
+
+    def _vanilla_names(self):
+        """Lowercased set of vanilla-YR TechnoType names (cached), read from the
+        bundled vanilla rules, so the 'vanilla' hide filter can drop stock units."""
+        if getattr(self, "_vanilla_name_cache", None) is not None:
+            return self._vanilla_name_cache
+        names = set()
+        try:
+            smap = build_section_map(parse_ini_lines(_DEFAULT_VANILLA))[0]
+            for sec in ("InfantryTypes", "VehicleTypes", "AircraftTypes",
+                        "BuildingTypes"):
+                names.update(n.lower() for n in parse_type_list(smap, sec))
+        except Exception:
+            pass
+        self._vanilla_name_cache = names
+        return names
 
     def _apply_filter(self):
         pred = self._current_predicate()
@@ -1265,6 +1304,41 @@ class LibraryTab(QWidget):
                                     f"Delete collection '{key}'?") == QMessageBox.Yes:
                 delete_collection(key)
                 self._reload()
+
+    def _col_context_menu(self, pos):
+        """Right-click a mod folder / collection → Rename / Remove."""
+        item = self.col_list.itemAt(pos)
+        if item is None:
+            return
+        desc = item.data(Qt.UserRole)
+        if not desc or desc[0] == "all":
+            return                       # "All sources" can't be renamed/removed
+        self.col_list.setCurrentRow(self.col_list.row(item))
+        menu = QMenu(self)
+        menu.addAction("Rename…", lambda: self._rename_collection_row(item))
+        menu.addAction("Remove", self._remove_selected)
+        menu.exec(self.col_list.mapToGlobal(pos))
+
+    def _on_sources_reordered(self, *_args):
+        # A drag reordered the mod-folder rows — persist the new source order.
+        # Deferred so we don't mutate the list from inside its own move signal.
+        QTimer.singleShot(0, self._persist_source_order)
+
+    def _persist_source_order(self):
+        order = [self.col_list.item(i).data(Qt.UserRole)[1]
+                 for i in range(self.col_list.count())
+                 if (self.col_list.item(i).data(Qt.UserRole) or ("", ""))[0]
+                 == "auto"]
+        by_id = {s.id: s for s in self.sources}
+        new = [by_id[sid] for sid in order if sid in by_id]
+        if len(new) != len(self.sources):
+            self._rebuild_collections()          # unexpected — restore canonical
+            return
+        if [s.id for s in new] == [s.id for s in self.sources]:
+            return                               # no actual change
+        self.sources = new
+        save_catalog(self.sources, self.collections)
+        self._rebuild_collections()              # re-lay canonically, new order
 
     # ── Eva summary ──────────────────────────────────────────────────────────
     def _eva_summarize(self):
