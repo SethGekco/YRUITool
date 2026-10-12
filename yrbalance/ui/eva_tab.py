@@ -366,7 +366,7 @@ class EvaTab(QWidget):
         if not s:
             return
         self.mw.script_panel.editor.setPlainText(s)
-        self.mw.tabs.setCurrentWidget(self.mw.script_tab)
+        self.mw.show_tab(self.mw.script_tab)   # Custom Script is nested under Mod Balance
 
     def _preview(self):
         s = self._current_script()
