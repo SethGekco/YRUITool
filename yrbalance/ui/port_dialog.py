@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from ..engine import (
     parse_ini_lines, build_section_map, build_port_plan, apply_port_plan,
-    plan_to_blueprint, plan_to_files, make_backup, get_val,
+    plan_to_blueprint, plan_to_files, make_backup, get_val, sibling_file as _sibling,
     build_media_catalog, resolve_media, pack_media_mixes,
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
@@ -32,15 +32,6 @@ _CONF_COLOR = {"high": "#2e7d32", "medium": "#f9a825", "low": "#c62828",
                "none": "#888888"}
 
 
-def _sibling(folder, *names):
-    """First existing file in `folder` matching any of `names` (case-insensitive)."""
-    if not folder or not os.path.isdir(folder):
-        return None
-    low = {f.lower(): f for f in os.listdir(folder)}
-    for n in names:
-        if n.lower() in low:
-            return os.path.join(folder, low[n.lower()])
-    return None
 
 
 class _Worker(QThread):

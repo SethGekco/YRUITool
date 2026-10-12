@@ -19,7 +19,7 @@ the target aimd lines in place.
 
 from dataclasses import dataclass, field
 
-from .ini_model import get_val
+from .ini_model import get_val, numbered_entries as _numbered
 from .typelists import parse_type_list
 from .sections import append_raw_section, set_key_in_appended_section
 from .portmod import _clean, _ordered_keys, clean_owner, _register_type_list
@@ -51,16 +51,6 @@ class AIImportPlan:
         for e in self.entries:
             out.setdefault(e.kind, []).append(e)
         return out
-
-
-def _numbered(section_map, sec):
-    s = section_map.get(sec.lower())
-    if not s:
-        return []
-    out = [(int(k), _clean(v)) for k, (_li, _kr, v) in s["keys"].items()
-           if k.isdigit()]
-    out.sort()
-    return out
 
 
 def _existing_ids(tgt):

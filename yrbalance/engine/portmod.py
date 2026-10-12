@@ -22,7 +22,7 @@ Design intent (per the feature spec):
 from dataclasses import dataclass, field
 import statistics
 
-from .ini_model import get_val
+from .ini_model import get_val, clean_value as _clean, num_value as _num
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
@@ -47,21 +47,6 @@ _DEFAULT_GENERIC_PREREQS = {
 
 
 # ── small helpers ───────────────────────────────────────────────────────────
-def _clean(v):
-    return "" if v is None else v.split(";", 1)[0].strip()
-
-
-def _num(v):
-    s = _clean(v)
-    if not s:
-        return None
-    s = s.rstrip("%")
-    try:
-        return float(s)
-    except ValueError:
-        return None
-
-
 def _stat(section_map, name, stat):
     return _num(get_val(section_map, name, stat))
 
