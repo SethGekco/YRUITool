@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AimdTab smoke test (offscreen Qt): point it at a mod with an aimd.ini, confirm the
+AI Builder smoke test (offscreen Qt): point it at a mod with an aimd.ini, confirm the
 four registries fill, a trigger decodes in the detail pane, cross-references list,
 jump-to-ref switches tabs, and live search filters.
 
@@ -52,11 +52,21 @@ def main():
     open(rules, "w").write("[GI]\n")
     open(os.path.join(mod, "aimd.ini"), "w").write(AIMD)
 
-    from yrbalance.ui.aimd_tab import AimdTab
+    from yrbalance.ui.aimd_tab import AiBuilderTab
+    from yrbalance.ui.ai_tab import AiTab
     mw = QWidget()
     mw.source_path = rules
     mw.section_map = None
-    tab = AimdTab(mw)
+
+    # container: three sub-tabs, builder reachable as .builder
+    container = AiTab(mw)
+    cont_ok = ([container.sub.tabText(i) for i in range(container.sub.count())]
+               == ["AI Builder", "AI Library", "Unit Roles"]
+               and isinstance(container.builder, AiBuilderTab))
+    print(f"AiTab sub-tabs (Builder/Library/Roles): {'OK' if cont_ok else 'FAIL'}")
+    ok = ok and cont_ok
+
+    tab = AiBuilderTab(mw)
     tab.show()                 # fire showEvent → load
     app.processEvents()
 
