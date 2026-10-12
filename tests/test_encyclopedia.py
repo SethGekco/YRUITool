@@ -83,8 +83,8 @@ def main():
               f"weapons={u.weapons}  {'OK' if stats_ok and wchain_ok else 'FAIL'}")
         ok = ok and stats_ok and wchain_ok
 
-        # obtain class (TechLevel 5 → buildable)
-        ob_ok = u.obtain == "buildable"
+        # obtain class (TechLevel 5 → normal / player-buildable)
+        ob_ok = u.obtain == "normal"
         print(f"obtain: {u.obtain}  {'OK' if ob_ok else 'FAIL'}")
         ok = ok and ob_ok
 

@@ -159,8 +159,9 @@ from .history import scan_changes, revert_change
 from .backup import make_backup, list_backups, default_backup_dir
 from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
 from .obtain import (
-    classify_obtainability, Obtainability,
-    OB_BUILDABLE, OB_CRATE, OB_OTHER, OB_DUMMY, OB_CIVILIAN, OB_UNKNOWN,
+    classify_obtainability, Obtainability, ai_unit_ids, ALL_OBTAIN_CLASSES,
+    OB_NORMAL, OB_SPECIAL, OB_CRATE, OB_AI_ONLY, OB_CIVILIAN, OB_DUMMY,
+    OB_UNKNOWN,
 )
 from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
@@ -330,8 +331,10 @@ __all__ = [
     "convert_unit_stats", "convert_weapon_stats", "culture_statfactors",
     "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
-    "classify_obtainability", "Obtainability",
-    "OB_BUILDABLE", "OB_CRATE", "OB_OTHER", "OB_DUMMY", "OB_CIVILIAN", "OB_UNKNOWN",
+    "classify_obtainability", "Obtainability", "ai_unit_ids",
+    "ALL_OBTAIN_CLASSES",
+    "OB_NORMAL", "OB_SPECIAL", "OB_CRATE", "OB_AI_ONLY", "OB_CIVILIAN",
+    "OB_DUMMY", "OB_UNKNOWN",
     # mixlib
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
     "is_vanilla_mix", "is_stock_mix", "stock_mix_names",

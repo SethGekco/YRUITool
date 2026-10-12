@@ -25,11 +25,13 @@ from ..ai.eva import plan_tags
 from ..ai.ollama_client import OllamaClient
 
 _KINDS = ["infantry", "vehicle", "aircraft", "building"]
-_OBTAIN = ["buildable", "crate", "other", "dummy", "civilian", "unknown"]
+_OBTAIN = ["normal", "special", "crate", "ai-only", "civilian", "dummy",
+           "unknown"]
 
 _STATUS_COLOR = {"present": "#2e7d32", "vanilla": "#888888", "missing": "#c62828"}
-_OBTAIN_COLOR = {"buildable": "#2e7d32", "crate": "#1565c0", "other": "#6a1b9a",
-                 "dummy": "#999999", "civilian": "#8d6e63", "unknown": "#c62828"}
+_OBTAIN_COLOR = {"normal": "#2e7d32", "special": "#6a1b9a", "crate": "#1565c0",
+                 "ai-only": "#ef6c00", "civilian": "#8d6e63", "dummy": "#999999",
+                 "unknown": "#c62828"}
 
 
 class _Worker(QThread):

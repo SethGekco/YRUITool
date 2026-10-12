@@ -213,17 +213,39 @@ of filenames) and Phobos' `[$include]` variant. Resolve the include graph into o
 effective section map before analysis/port (Rex's turkey-mod rulesmd uses
 `[#include]` for SW/country files). Make inclusion opt-in per file in the porter.
 
-## Object buildability / obtainability classifier — v1 SHIPPED, refine
-`engine/obtain.py` labels every TechnoType: buildable / crate / other
-(FreeUnit/Spawns/Deploy/SW/Capturable) / dummy / civilian / unknown, with reasons;
-wired into the porter (building split, blueprint, Port dialog). Remaining:
-- **Shrink the `unknown` bucket** — on kitchen-sink mods ~40% land in `unknown`
-  (non-buildable, unreferenced, no art). Many are AI-only units built by aimd
-  taskforces (not scanned), Ares-specific obtain paths, or deprecated/test
-  objects. Scan aimd TaskForces for AI-buildable units; add Ares mechanics.
-- **Deeper dummy taxonomy** — Rex wants a discussion on *types* of dummies
-  (SW-tied spawns, prereq placeholders, drone holders, etc.); encode each.
-- Consider a secondary "AI-only" flag, and surface the class as a porter filter.
+## Object buildability / obtainability classifier — v2 SHIPPED, refine
+`engine/obtain.py` labels every TechnoType with a 7-class taxonomy (agreed with
+Rex): **normal** (player-buildable) / **special** (indirect obtain — SW / FreeUnit
+/ spawn / deploy / [General] crew-paradrop / capture — AND has art) / **crate**
+(CrateGoodie) / **ai-only** (unobtainable, has art, appears in aimd TaskForces) /
+**civilian** (unobtainable, has art, unreferenced) / **dummy** (no art, or indirect-
+only no-art, or superweapon weapon-holder, or name/prereq placeholder) / **unknown**
+(residual — only when art can't be determined). Art is tri-state (yes/no/unknown)
+so the classifier stays honest when there's no artmd to check. `build_mod_index`
+now loads the sibling aimd so AI-only units separate from civilian props; this
+collapses the old ~40% `unknown` bucket on real (artmd-bearing) mods. Wired through
+the Encyclopedia filter/colours, Library `non-buildable` filter, porter. Remaining:
+- **Pass source aimd into the porter's classify** so ported source units get the
+  ai-only class too (currently porter classifies without aimd).
+- **Catalog-based art detection** — when a mod has no artmd but ships loose/mixed
+  art files, judge "has art" from the media catalog (name.shp/.vxl) instead of
+  returning art=unknown.
+- **opentopped/passenger-only → dummy** — the one sub-rule from Rex's taxonomy not
+  yet detected (no rules-side signal; would need aimd co-occurrence analysis). Such
+  units currently fall to ai-only, which is arguably more useful anyway.
+- **Deeper dummy taxonomy** — distinguish *types* of dummies (SW-tied spawns,
+  prereq placeholders, drone holders) as sub-labels.
+
+## Learn new DLL features fast via the built-in LLM (Eva)
+> Rex's forward-looking note (alongside the obtainability work).
+
+New engine DLLs (Phobos/Ares/Kratos/etc.) keep adding mechanics that create NEW
+obtain paths and object roles the classifier's hardcoded rules don't know about
+(e.g. a novel "obtainable via <new SW type>" or a new kind of logic dummy). Since
+the tool already ships Eva + a knowledge base, explore letting Eva *learn* new DLL
+features from its docs (the `phobos_*`/`kratos_*`/`ares_*` knowledge files) and
+propose/extend classifier rules — so new scenarios are handled without a code
+change. Pairs with the obtainability classifier and the extension-detection logic.
 
 ## Sound effects & music support
 Let Eva add sound effects and music to a mod for the user — or walk them through
