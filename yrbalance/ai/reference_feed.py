@@ -63,8 +63,10 @@ def _resolve_doc(feed_url, base, doc):
 
 
 def fetch_manifest(feed_url):
-    """Parse the feed manifest → list of {id, title, doc, version, tags}. Accepts
-    either {"entries": [...]} or a bare list."""
+    """Parse the feed manifest → list of {id, title, doc, version, tags, dll,
+    dll_file}. Accepts either {"entries": [...]} or a bare list. `dll`/`dll_file`
+    are "" for engine-agnostic/core notes; when set they gate the entry to mods
+    that ship that DLL."""
     data = json.loads(_read_source(feed_url))
     entries = data.get("entries", []) if isinstance(data, dict) else data
     out = []
@@ -76,6 +78,8 @@ def fetch_manifest(feed_url):
                 "doc": str(e["doc"]),
                 "version": str(e.get("version", "1")),
                 "tags": [str(t) for t in e.get("tags", [])],
+                "dll": str(e.get("dll", "")),
+                "dll_file": str(e.get("dll_file", "")),
             })
     return out
 
@@ -100,6 +104,13 @@ def _save_record(base_dir, rec):
         json.dump(rec, f, indent=2, sort_keys=True)
 
 
+def _rec_version(entry):
+    """Ingested version from a record entry (dict {version,...} or legacy str)."""
+    if isinstance(entry, dict):
+        return entry.get("version")
+    return entry
+
+
 def check_feed(feed_url, base_dir=None):
     """Diff the manifest against the ingested record. Returns
     {'new': [...], 'updated': [...], 'current': [...]} entry lists — no doc fetch."""
@@ -107,7 +118,7 @@ def check_feed(feed_url, base_dir=None):
     rec = load_record(base_dir)
     buckets = {"new": [], "updated": [], "current": []}
     for e in fetch_manifest(feed_url):
-        prev = rec.get(e["id"])
+        prev = _rec_version(rec.get(e["id"]))
         if prev is None:
             buckets["new"].append(e)
         elif prev != e["version"]:
@@ -143,8 +154,31 @@ def ingest_entries(feed_url, entries, store):
             + (f"  tags: {', '.join(e['tags'])}" if e["tags"] else "")
             + "\n; Source: tool reference feed (curated modding-feature notes).\n\n"
         )
-        path = store.add_doc(_doc_name(e), header + text, overwrite=True)
-        rec[e["id"]] = e["version"]
+        name = _doc_name(e)
+        path = store.add_doc(name, header + text, overwrite=True)
+        # Record version + the gating DLL + the stored doc name, so Eva can later
+        # suppress this doc for mods that don't ship the DLL.
+        rec[e["id"]] = {"version": e["version"], "dll": e.get("dll", ""),
+                        "doc": os.path.basename(path)}
         done.append((e["id"], os.path.basename(path), len(text)))
     _save_record(store.base_dir, rec)
     return done, failed
+
+
+def blocked_docs(active_dlls, base_dir=None):
+    """Set of ingested feed-doc filenames that should be HIDDEN from Eva because
+    their DLL isn't present in the mod. `active_dlls` is the set from
+    dll_detect.detect_dlls (lowercased, no .dll). Entries with no `dll` (core /
+    engine-agnostic notes) are never blocked; legacy flat records (pre-gating) are
+    treated as un-gated."""
+    from .dll_detect import normalize_dll
+    active = {normalize_dll(d) for d in (active_dlls or set())}
+    out = set()
+    for _id, entry in load_record(base_dir).items():
+        if not isinstance(entry, dict):
+            continue
+        dll = normalize_dll(entry.get("dll", ""))
+        doc = entry.get("doc")
+        if dll and doc and dll not in active:
+            out.add(doc)
+    return out

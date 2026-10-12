@@ -136,18 +136,22 @@ class KnowledgeIndex:
         self._save()
         return embedded
 
-    def retrieve(self, query, top_k=6, max_chars=6000):
+    def retrieve(self, query, top_k=6, max_chars=6000, exclude=None):
         """
         Return (context_text, sources) for a query. sources is a list of
         {"name", "score"} for the docs whose chunks were included, best first.
-        Empty ("", []) if there is no index.
+        Empty ("", []) if there is no index. `exclude` is an optional set of doc
+        filenames to drop (e.g. feed docs whose DLL isn't in the loaded mod).
         """
         docs = self.data.get("docs", {})
         if not docs:
             return "", []
+        exclude = exclude or set()
         qv = self.client.embed([query], self.embed_model)[0]
         scored = []
         for fn, d in docs.items():
+            if fn in exclude:
+                continue
             for ch in d.get("chunks", []):
                 scored.append((cosine(qv, ch["vec"]), fn, ch["text"]))
         scored.sort(key=lambda x: x[0], reverse=True)

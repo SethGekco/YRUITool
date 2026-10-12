@@ -247,7 +247,22 @@ class EvaTab(QWidget):
         self.settings.setValue("eva_num_ctx", self.ctx_spin.value())
         self._sync_index()
         return Eva(self._client(), self.knowledge, model, index=self.index,
-                   num_ctx=self.ctx_spin.value(), top_k=self.topk_spin.value())
+                   num_ctx=self.ctx_spin.value(), top_k=self.topk_spin.value(),
+                   excluded_docs=self._gated_feed_docs())
+
+    def _gated_feed_docs(self):
+        """Feed docs to hide from Eva: reference-feature notes whose DLL isn't
+        shipped by the loaded mod (so Eva won't explain features in use nowhere)."""
+        try:
+            from ..ai.dll_detect import detect_dlls
+            from ..ai.reference_feed import blocked_docs
+            src = getattr(self.mw, "source_path", None)
+            if not src:
+                return set()
+            active = detect_dlls(os.path.dirname(src))
+            return blocked_docs(active, self.knowledge.base_dir)
+        except Exception:
+            return set()
 
     def _run(self, fn, on_done, on_fail):
         w = _Worker(fn)

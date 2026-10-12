@@ -227,28 +227,33 @@ def rules_summary(section_map, config=None, max_general=1500):
 
 class Eva:
     def __init__(self, client, knowledge, model, index=None, num_ctx=None,
-                 top_k=6):
+                 top_k=6, excluded_docs=None):
         self.client = client
         self.knowledge = knowledge
         self.model = model
         self.index = index          # KnowledgeIndex for retrieval (optional)
         self.num_ctx = num_ctx      # model context window (optional)
         self.top_k = top_k
+        # Feed docs to hide (DLLs not present in the loaded mod) — gating.
+        self.excluded_docs = set(excluded_docs or set())
 
     def _knowledge_text(self, query):
         """Return (context_text, sources): retrieval if an index exists, else the
-        capped dump (whose sources are all ingested docs)."""
+        capped dump (whose sources are all ingested docs). Docs in
+        self.excluded_docs are suppressed (reference-feed DLL gating)."""
+        ex = self.excluded_docs
         if self.index is not None:
             try:
-                text, sources = self.index.retrieve(query, top_k=self.top_k)
+                text, sources = self.index.retrieve(query, top_k=self.top_k,
+                                                    exclude=ex)
                 if text.strip():
                     return text, sources
             except Exception:
                 pass  # fall back to the plain dump
         if self.knowledge is not None:
-            text = self.knowledge.context_text()
+            text = self.knowledge.context_text(exclude=ex)
             sources = ([{"name": n, "score": None}
-                        for n, _ in self.knowledge.list_docs()]
+                        for n, _ in self.knowledge.list_docs() if n not in ex]
                        if text.strip() else [])
             return text, sources
         return "", []
