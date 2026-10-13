@@ -221,6 +221,7 @@ from .voicelib import (
     delete_voice_collection, add_to_voice_collection,
     remove_from_voice_collection,
     build_voice_plan, apply_voice_plan, plan_to_text as voice_plan_to_text,
+    export_set, import_set, VOICE_FILE_EXT,
     VoiceSet, VoiceEntry, VoiceSample, VoiceCollection, VoicePlan, VoiceItem,
     IDX_NAME_MAX,
 )
@@ -352,6 +353,7 @@ __all__ = [
     "create_voice_collection", "delete_voice_collection",
     "add_to_voice_collection", "remove_from_voice_collection",
     "build_voice_plan", "apply_voice_plan", "voice_plan_to_text",
+    "export_set", "import_set", "VOICE_FILE_EXT",
     "VoiceSet", "VoiceEntry", "VoiceSample", "VoiceCollection", "VoicePlan",
     "VoiceItem", "IDX_NAME_MAX",
     # aiwork (AI Builder working file)
