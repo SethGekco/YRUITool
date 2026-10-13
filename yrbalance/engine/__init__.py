@@ -171,7 +171,8 @@ from .mixlib import (
     VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
     build_media_catalog, resolve_media, pack_media_mixes, find_in_mixes,
     collect_asset_ids, build_vanilla_asset_ids, vanilla_asset_ids, classify_missing,
-    parse_audio_idx, read_audio_sample,
+    parse_audio_idx, read_audio_sample, write_audio_idx,
+    inject_audio_samples, AUDIO_NAME_MAX,
 )
 from .encyclopedia import (
     build_mod_index, search_indexes, unit_report, export_unit, effective_tags,
@@ -219,7 +220,9 @@ from .voicelib import (
     load_voice_collections, save_voice_collections, create_voice_collection,
     delete_voice_collection, add_to_voice_collection,
     remove_from_voice_collection,
-    VoiceSet, VoiceEntry, VoiceSample, VoiceCollection, IDX_NAME_MAX,
+    build_voice_plan, apply_voice_plan, plan_to_text as voice_plan_to_text,
+    VoiceSet, VoiceEntry, VoiceSample, VoiceCollection, VoicePlan, VoiceItem,
+    IDX_NAME_MAX,
 )
 from .aiwork import (
     working_path, working_exists, resolve_vanilla_aimd, knowledge_vanilla_aimd,
@@ -348,7 +351,9 @@ __all__ = [
     "load_voice_collections", "save_voice_collections",
     "create_voice_collection", "delete_voice_collection",
     "add_to_voice_collection", "remove_from_voice_collection",
-    "VoiceSet", "VoiceEntry", "VoiceSample", "VoiceCollection", "IDX_NAME_MAX",
+    "build_voice_plan", "apply_voice_plan", "voice_plan_to_text",
+    "VoiceSet", "VoiceEntry", "VoiceSample", "VoiceCollection", "VoicePlan",
+    "VoiceItem", "IDX_NAME_MAX",
     # aiwork (AI Builder working file)
     "working_path", "working_exists", "resolve_vanilla_aimd",
     "knowledge_vanilla_aimd", "new_blank", "new_from_vanilla", "new_from_file",
@@ -396,6 +401,7 @@ __all__ = [
     "build_media_catalog", "resolve_media", "pack_media_mixes", "find_in_mixes",
     "collect_asset_ids", "build_vanilla_asset_ids", "vanilla_asset_ids",
     "classify_missing", "parse_audio_idx", "read_audio_sample",
+    "write_audio_idx", "inject_audio_samples", "AUDIO_NAME_MAX",
     # encyclopedia
     "build_mod_index", "search_indexes", "unit_report", "export_unit",
     "effective_tags", "ModIndex", "UnitEntry", "AssetRef",
