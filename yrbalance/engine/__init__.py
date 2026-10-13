@@ -210,6 +210,17 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, AiCollection, PullPlan, PullItem,
 )
+from .voicelib import (
+    voicelib_path, samples_dir, idx_name_ok, parse_sound_tokens,
+    entry_sample_names, voice_tags, extract_voice_set, store_samples,
+    sample_bytes, sample_wav,
+    load_sets, save_sets, add_set, remove_set, rename_set,
+    set_meta as set_voice_meta, set_bookmark as set_voice_bookmark,
+    load_voice_collections, save_voice_collections, create_voice_collection,
+    delete_voice_collection, add_to_voice_collection,
+    remove_from_voice_collection,
+    VoiceSet, VoiceEntry, VoiceSample, VoiceCollection, IDX_NAME_MAX,
+)
 from .aiwork import (
     working_path, working_exists, resolve_vanilla_aimd, knowledge_vanilla_aimd,
     new_blank, new_from_vanilla, new_from_file, load_working, export_working,
@@ -328,6 +339,16 @@ __all__ = [
     "ai_remove_from_collection",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "AiCollection", "PullPlan", "PullItem",
+    # voicelib (voice sets)
+    "voicelib_path", "samples_dir", "idx_name_ok", "parse_sound_tokens",
+    "entry_sample_names", "voice_tags", "extract_voice_set", "store_samples",
+    "sample_bytes", "sample_wav",
+    "load_sets", "save_sets", "add_set", "remove_set", "rename_set",
+    "set_voice_meta", "set_voice_bookmark",
+    "load_voice_collections", "save_voice_collections",
+    "create_voice_collection", "delete_voice_collection",
+    "add_to_voice_collection", "remove_from_voice_collection",
+    "VoiceSet", "VoiceEntry", "VoiceSample", "VoiceCollection", "IDX_NAME_MAX",
     # aiwork (AI Builder working file)
     "working_path", "working_exists", "resolve_vanilla_aimd",
     "knowledge_vanilla_aimd", "new_blank", "new_from_vanilla", "new_from_file",
