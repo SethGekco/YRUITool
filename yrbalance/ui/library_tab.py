@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton, QComboBox, QApplication, QMenu,
+    QRadioButton, QComboBox, QApplication, QMenu, QTreeWidget, QTreeWidgetItem,
 )
 
 from ..engine import (
@@ -39,6 +39,8 @@ from ..engine import (
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes, mix_id,
+    extract_voice_set, store_samples, add_set, load_sets, idx_name_ok,
+    entry_sample_names as _entry_sample_names,
 )
 # Dialog split out in cleanup C3; re-exported so existing references resolve.
 from .add_source_dialog import _AddSourceDialog
@@ -383,6 +385,46 @@ class LibraryTab(QWidget):
         bl.addWidget(self.bc_convert_text, 1)
         tabs.addTab(bc, "Balance Culture")
 
+        # 5) Voices — the unit's voice set, grouped the way the game wires it:
+        #    tag -> soundmd entry -> samples. The Assets tab's Audio row is a
+        #    flat list of playable filenames; this one shows the structure, and
+        #    saves the whole set into the voice library.
+        voc = QWidget()
+        vl = QVBoxLayout(voc)
+        self.voice_tree = QTreeWidget()
+        self.voice_tree.setColumnCount(2)
+        self.voice_tree.setHeaderLabels(["Voice / sample", "Sound entry / location"])
+        self.voice_tree.setRootIsDecorated(True)
+        self.voice_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.voice_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.voice_tree.setColumnWidth(0, 240)
+        self.voice_tree.setToolTip(
+            "A unit's voice is three layers: the tag on the unit, the soundmd "
+            "entry it names, and the samples that entry lists. Select a sample "
+            "to play it.")
+        self.voice_tree.itemSelectionChanged.connect(self._on_voice_selected)
+        vl.addWidget(self.voice_tree, 1)
+        self.voice_info = QLabel("")
+        self.voice_info.setWordWrap(True)
+        self.voice_info.setStyleSheet("color:#888;")
+        vl.addWidget(self.voice_info)
+        vrow = QHBoxLayout()
+        self.voice_play_btn = QPushButton("▶ Play")
+        self.voice_play_btn.clicked.connect(self._voice_play)
+        self.voice_export_btn = QPushButton("Export WAV…")
+        self.voice_export_btn.clicked.connect(self._voice_export)
+        self.voice_save_btn = QPushButton("Save as voice set…")
+        self.voice_save_btn.setToolTip(
+            "Copy this unit's voice tags, its soundmd entries and the original "
+            "sample bytes into the voice library, for re-use in another mod.")
+        self.voice_save_btn.clicked.connect(self._voice_save)
+        vrow.addWidget(self.voice_play_btn)
+        vrow.addWidget(self.voice_export_btn)
+        vrow.addStretch(1)
+        vrow.addWidget(self.voice_save_btn)
+        vl.addLayout(vrow)
+        tabs.addTab(voc, "Voices")
+
         return tabs
 
     def _on_tab_changed(self, _i):
@@ -403,6 +445,7 @@ class LibraryTab(QWidget):
             self.tags_edit.clear()
             self.tags_edit.setEnabled(False)
             self._clear_audio()
+            self._clear_voices()
             self.preview.setText("Select an item to preview its art / audio.")
             self.bc_text.setPlainText("")
             self.bc_convert_text.setPlainText("")
@@ -430,6 +473,7 @@ class LibraryTab(QWidget):
                                           "(source not scanned).")
             self.ini_text.setPlainText("")
             self.file_table.setRowCount(0)
+            self._clear_voices()
             self.preview.setText("")
             self.bc_text.setPlainText("")
             self.bc_convert_text.setPlainText("")
@@ -441,6 +485,7 @@ class LibraryTab(QWidget):
         self._render_art(entry, it.source_id, scan)
         self._render_cameo(entry, it.source_id, scan)
         self._populate_audio(entry, scan)
+        self._fill_voices(entry, it, scan)
         self.preview.setText("")
         self._fill_balance_culture(it, scan)
 
@@ -1004,6 +1049,157 @@ class LibraryTab(QWidget):
             self.status.setText(f"Exported {os.path.basename(path)}.")
         except Exception as e:
             self.status.setText(f"Export failed: {type(e).__name__}: {e}")
+
+    # ── voices ─────────────────────────────────────────────────────────────
+    def _clear_voices(self):
+        self.voice_tree.clear()
+        self.voice_info.setText("")
+        self._voice_set = None
+        self._voice_catalog = None
+        self.voice_play_btn.setEnabled(False)
+        self.voice_export_btn.setEnabled(False)
+        self.voice_save_btn.setEnabled(False)
+
+    def _sample_location(self, cat, name):
+        """(label, playable) for a sample name against a media catalog."""
+        loc = (cat or {}).get(name.upper()) or (cat or {}).get(name.upper() + ".WAV")
+        if loc is None:
+            return "✗ not found", False
+        if loc[0] == "bag":
+            return f"♪ {os.path.basename(loc[1])}", True
+        if loc[0] == "loose":
+            return f"· {os.path.basename(loc[1])}", False
+        return f"· {os.path.basename(loc[1])} (mix)", False
+
+    def _fill_voices(self, entry, it, scan):
+        """Group this unit's voice set as tag → soundmd entry → samples."""
+        self._clear_voices()
+        idx = scan.index if (scan and scan.index) else None
+        if idx is None or not getattr(idx, "sound_map", None):
+            self.voice_info.setText(
+                "No soundmd.ini was found beside this mod's rulesmd — voice "
+                "entries can't be resolved.")
+            return
+        cat = self._catalog(scan)
+        vset = extract_voice_set(entry.name, idx.rules_map, idx.sound_map,
+                                 source=self._source_label(it.source_id),
+                                 name=f"{entry.name} voices")
+        self._voice_set = vset
+        self._voice_catalog = cat
+        by_entry = {e.name.lower(): e for e in vset.entries}
+
+        playable = 0
+        for tag, ref in vset.tags:
+            top = QTreeWidgetItem([tag, ref])
+            ent = by_entry.get(ref.lower())
+            if ent is None:
+                top.setText(1, f"{ref} — ✗ no such soundmd entry")
+            else:
+                for nm in _entry_sample_names(ent):
+                    label, ok = self._sample_location(cat, nm)
+                    if not idx_name_ok(nm):
+                        label += "  (name > 16 bytes)"
+                    kid = QTreeWidgetItem([nm, label])
+                    if ok:
+                        kid.setData(0, Qt.UserRole, nm)
+                        playable += 1
+                    top.addChild(kid)
+            self.voice_tree.addTopLevelItem(top)
+            top.setExpanded(True)
+
+        if not vset.tags:
+            self.voice_info.setText(f"[{entry.name}] sets no voice tags.")
+            return
+        self.voice_save_btn.setEnabled(True)
+        bits = [f"{len(vset.tags)} tags", f"{len(vset.entries)} sound entries",
+                f"{len(vset.samples)} samples ({playable} playable)"]
+        if vset.notes:
+            bits.append(vset.notes[0])
+        self.voice_info.setText(" · ".join(bits))
+
+    def _on_voice_selected(self):
+        name = self._voice_sample_name()
+        self.voice_play_btn.setEnabled(bool(name) and bool(self._player))
+        self.voice_export_btn.setEnabled(bool(name))
+
+    def _voice_sample_name(self):
+        """The selected row's sample name, if it is a playable bag sample."""
+        items = self.voice_tree.selectedItems()
+        if not items:
+            return None
+        return items[0].data(0, Qt.UserRole)
+
+    def _voice_current_wav(self):
+        name = self._voice_sample_name()
+        if not name or not getattr(self, "_voice_catalog", None):
+            return None, None
+        try:
+            return name, bag_sample_to_wav(self._voice_catalog, name)
+        except Exception as e:
+            self.status.setText(f"Audio decode failed: {type(e).__name__}: {e}")
+            return name, None
+
+    def _voice_play(self):
+        name, wav = self._voice_current_wav()
+        if not wav or not self._player:
+            return
+        try:
+            fd, path = tempfile.mkstemp(suffix=".wav", prefix="yrbt_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(wav)
+            self._tmp_wavs.append(path)
+            _play_wav_file(self._player, path)
+            self.status.setText(f"Playing {name}…")
+        except Exception as e:
+            self.status.setText(f"Playback failed: {type(e).__name__}: {e}")
+
+    def _voice_export(self):
+        name, wav = self._voice_current_wav()
+        if not wav:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export WAV",
+                                              f"{name}.wav", "WAV (*.wav)")
+        if not path:
+            return
+        try:
+            with open(path, "wb") as f:
+                f.write(wav)
+            self.status.setText(f"Exported {os.path.basename(path)}.")
+        except Exception as e:
+            self.status.setText(f"Export failed: {type(e).__name__}: {e}")
+
+    def _voice_save(self):
+        """Copy the current voice set — tags, soundmd entries, original sample
+        bytes — into the voice library sidecar."""
+        vset = getattr(self, "_voice_set", None)
+        if vset is None:
+            return
+        taken = {s.name for s in load_sets()}
+        label, ok = QInputDialog.getText(self, "Save voice set",
+                                         "Name for this voice set:",
+                                         text=vset.name)
+        label = (label or "").strip()
+        if not ok or not label:
+            return
+        if label in taken and QMessageBox.question(
+                self, "Replace?",
+                f"A voice set called “{label}” already exists. Replace it?"
+        ) != QMessageBox.Yes:
+            return
+        vset.name = label
+        try:
+            stored, missing = store_samples(vset, self._voice_catalog or {})
+            add_set(vset)
+        except Exception as e:
+            QMessageBox.warning(self, "Save failed",
+                                f"{type(e).__name__}: {e}")
+            return
+        msg = (f"Saved “{label}” — {len(vset.entries)} sound entries, "
+               f"{stored} samples copied")
+        if missing:
+            msg += f"; {len(missing)} not found ({', '.join(missing[:4])}"
+            msg += ", …)" if len(missing) > 4 else ")"
+        self.status.setText(msg + ".")
 
     # ── data ─────────────────────────────────────────────────────────────────
     def _reload(self, keep_row=None):
