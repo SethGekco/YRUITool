@@ -101,23 +101,60 @@ def build_role_entry(display_role, units, label=None):
         trigger_id="RTRIG", trigger_def=trig, units=list(units))
 
 
-def suggest_units_for_role(display_role, rules_path):
+# Role tags that disqualify a unit from auto-suggestion however well its Verses
+# profile matches the role. The role tags themselves (AG-*/AA) say only "this
+# weapon can hurt that armor class" — magnitude is not part of that judgement —
+# so without these gates a unit whose weapon is useless still gets pre-checked.
+#   UNDESIRABLE — the parser's own flat-grade verdict (grade <= -5)
+#   LOW_DPS     — its bottom-quartile damage marker
+SUGGEST_EXCLUDE_TAGS = ("UNDESIRABLE", "LOW_DPS")
+
+
+def suggest_units_for_role(display_role, rules_path, min_dps=0.0,
+                           exclude_tags=SUGGEST_EXCLUDE_TAGS,
+                           with_reasons=False):
     """Units whose detected role tags match `display_role`, using the wavegen role
-    detector on `rules_path`. Best-effort: returns [] on any parse failure so the
-    caller falls back to pure manual selection."""
+    detector on `rules_path`.
+
+    A tag match alone is a weak signal: `assign_roles` keys purely off `Verses`
+    clearing `ROLE_THRESHOLD`, so a weapon that technically hurts infantry
+    qualifies no matter how little damage it does. Two gates narrow it:
+
+      exclude_tags — drop units carrying a disqualifying tag (see above).
+      min_dps      — absolute floor on the parser's `dps_score`. Absolute on
+                     purpose: the LOW_DPS quartile marker is *relative* to the
+                     mod, so in a mod of uniformly weak weapons its top quartile
+                     is still weak, and a genuinely strong unit in a strong mod
+                     gets marked LOW_DPS. 0 disables the floor.
+
+    With `with_reasons`, returns (picked, [(unit_id, why_rejected)]) so the
+    caller can tell the user what was filtered instead of silently shrinking the
+    list. Best-effort: returns empty on any parse failure, so the caller falls
+    back to pure manual selection.
+    """
     _key, tags = _resolve(display_role)
     if not tags or not rules_path:
-        return []
+        return ([], []) if with_reasons else []
     want = {t.lower() for t in tags}
+    excl = {t.lower() for t in (exclude_tags or ())}
     try:
         from .rulesmd_parser import RulesMdParser
         parser = RulesMdParser(rules_path)
         parser.parse()
     except Exception:
-        return []
-    out = []
+        return ([], []) if with_reasons else []
+    out, rejected = [], []
     for uid, rec in getattr(parser, "units", {}).items():
         rr = {str(r).lower() for r in (getattr(rec, "roles", None) or [])}
-        if rr & want:
-            out.append(uid)
-    return out
+        if not (rr & want):
+            continue
+        bad = sorted(rr & excl)
+        if bad:
+            rejected.append((uid, "tagged " + ", ".join(t.upper() for t in bad)))
+            continue
+        dps = float(getattr(rec, "dps_score", 0.0) or 0.0)
+        if min_dps > 0 and dps < min_dps:
+            rejected.append((uid, f"dps {dps:.0f} < floor {min_dps:.0f}"))
+            continue
+        out.append(uid)
+    return (out, rejected) if with_reasons else out

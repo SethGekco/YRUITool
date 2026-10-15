@@ -162,6 +162,7 @@ from .backup import make_backup, list_backups, default_backup_dir
 from .lint import lint_ai, has_ai_sections, format_findings, LintFinding
 from .obtain import (
     classify_obtainability, Obtainability, ai_unit_ids, ALL_OBTAIN_CLASSES,
+    TECH_SLIDER_MAX,
     OB_NORMAL, OB_SPECIAL, OB_CRATE, OB_AI_ONLY, OB_CIVILIAN, OB_DUMMY,
     OB_UNKNOWN,
 )
@@ -365,7 +366,7 @@ __all__ = [
     "LibrarySource", "Collection", "LibraryItem", "SourceScan",
     # obtain
     "classify_obtainability", "Obtainability", "ai_unit_ids",
-    "ALL_OBTAIN_CLASSES",
+    "ALL_OBTAIN_CLASSES", "TECH_SLIDER_MAX",
     "OB_NORMAL", "OB_SPECIAL", "OB_CRATE", "OB_AI_ONLY", "OB_CIVILIAN",
     "OB_DUMMY", "OB_UNKNOWN",
     # mixlib
