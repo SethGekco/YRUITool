@@ -457,7 +457,9 @@ class UnitRolesPanel(QWidget):
     Left: the role lists (Rush, Bombardment/Anti-*, …), add/rename/delete. Right:
     a checkable list of the loaded mod's units for the selected role — the saved
     picks are pre-checked, and "Suggest units" pre-checks the ones the engine's role
-    detector thinks fit (freely editable afterwards). "Generate AITriggers…" builds
+    detector thinks fit, minus any it has graded too weak to be worth fielding
+    (freely editable afterwards; what was filtered is named in the status line).
+    "Generate AITriggers…" builds
     a TaskForce + Script + TeamType + AITrigger for the checked units with
     role-appropriate weights and pulls it into the AI Builder's current aimd (the
     working file if one is open, else the loaded mod's) with the usual dedup/merge
@@ -740,10 +742,18 @@ class UnitRolesPanel(QWidget):
         from ..wavegen.role_bundles import suggest_units_for_role
         self.status.setText("Detecting units for this role…")
         self.status.repaint()
-        picks = {u.lower() for u in suggest_units_for_role(role, src)}
+        found, rejected = suggest_units_for_role(role, src, with_reasons=True)
+        picks = {u.lower() for u in found}
+        # Say what was filtered out. A role tag only means "this weapon can hurt
+        # that armor class", so weak units match too and get gated — silently
+        # shrinking the list would look like the detector missing them.
+        skipped = (f"  {len(rejected)} skipped as too weak "
+                   f"({', '.join(u for u, _ in rejected[:4])}"
+                   + ("…)" if len(rejected) > 4 else ")")) if rejected else ""
         if not picks:
-            self.status.setText("No auto-suggestions for this role (custom role, or "
-                                "the detector found none) — pick units manually.")
+            self.status.setText(
+                "No auto-suggestions for this role (custom role, or the detector "
+                "found none) — pick units manually." + skipped)
             return
         n = 0
         for r in range(self.unit_list.count()):
@@ -751,7 +761,8 @@ class UnitRolesPanel(QWidget):
             if it.data(Qt.UserRole).lower() in picks:
                 it.setCheckState(Qt.Checked)
                 n += 1
-        self.status.setText(f"Suggested {n} unit(s) — review, then Save or Generate.")
+        self.status.setText(f"Suggested {n} unit(s) — review, then Save or "
+                            f"Generate.{skipped}")
 
     def _generate(self):
         role = self._current_role()

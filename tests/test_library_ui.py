@@ -435,11 +435,12 @@ def main():
         else:
             print("audio bag check: SKIP (no game audio.bag on this machine)")
 
-    # detail pane is 4 tabs: Preview / INI / Assets / Balance Culture
+    # detail pane is 5 tabs: Preview / INI / Assets / Balance Culture / Voices
     import types as _t2
     dtabs = [tab.detail_tabs.tabText(i)
              for i in range(tab.detail_tabs.count())]
-    tabs_ok = dtabs == ["Preview", "INI", "Assets", "Balance Culture"]
+    tabs_ok = dtabs == ["Preview", "INI", "Assets", "Balance Culture",
+                        "Voices"]
     print(f"detail tabs {dtabs}: {'OK' if tabs_ok else 'FAIL'}")
     ok = ok and tabs_ok
 
@@ -461,6 +462,45 @@ def main():
                   and "Cameo=GICAMEO" in txt)
         print(f"INI tab raw sections: {'OK' if ini_ok else 'FAIL'}")
         ok = ok and ini_ok
+
+    # Voices tab: groups tag → soundmd entry → samples, marks a bag-resident
+    # sample playable, and flags a tag whose soundmd entry doesn't exist.
+    # Tag order follows voicelib._VOICE_TAGS (Select, Attack, Feedback).
+    with tempfile.TemporaryDirectory() as d:
+        rp = _w(d, "r.ini", "[GI]\nVoiceSelect=GIYessir\nVoiceAttack=NoSuch\n"
+                            "VoiceFeedback=GIFeed\n")
+        sp = _w(d, "s.ini", "[GIYessir]\nSounds=$giyes1,giyes2\n"
+                            "[GIFeed]\nSounds=gifeed1\n")
+        rmap = build_section_map(parse_ini_lines(rp))[0]
+        smap = build_section_map(parse_ini_lines(sp))[0]
+        vcat = {"GIYES1": ("bag", "/x/audio.bag", (0, 40, 22050, 0, 20))}
+        vscan = _t2.SimpleNamespace(
+            index=_t2.SimpleNamespace(rules_map=rmap, sound_map=smap,
+                                      catalog=vcat), aimd_map=None)
+        tab._fill_voices(_t2.SimpleNamespace(name="GI"),
+                         _t2.SimpleNamespace(source_id="x", name="GI"), vscan)
+        tops = [tab.voice_tree.topLevelItem(i)
+                for i in range(tab.voice_tree.topLevelItemCount())]
+        shape = [(t.text(0), t.childCount()) for t in tops]
+        tab.voice_tree.setCurrentItem(tops[0].child(0))
+        voc_ok = (
+            shape == [("VoiceSelect", 2), ("VoiceAttack", 0),
+                      ("VoiceFeedback", 1)]
+            and tops[0].child(0).data(0, Qt.UserRole) == "GIYES1"   # in the bag
+            and "not found" in tops[0].child(1).text(1)             # GIYES2 isn't
+            and "no such soundmd entry" in tops[1].text(1)
+            and tab.voice_save_btn.isEnabled()
+            and tab.voice_export_btn.isEnabled())                   # selection
+        print(f"Voices tab tag→entry→samples: "
+              f"{'OK' if voc_ok else 'FAIL'} {shape}")
+        ok = ok and voc_ok
+
+        # clearing the detail pane must reset the Voices tab too
+        tab._clear_voices()
+        vclr_ok = (tab.voice_tree.topLevelItemCount() == 0
+                   and not tab.voice_save_btn.isEnabled())
+        print(f"Voices tab clears: {'OK' if vclr_ok else 'FAIL'}")
+        ok = ok and vclr_ok
 
     # Collections drag-reorder persists the new mod-folder order (save captured,
     # not written to the real catalog).

@@ -339,7 +339,25 @@ def _is_tough(rec, parser):
         return False
 
 
-def suggest_units_for_role(display_role, rules_path):
+# Role tags that disqualify a unit however well its Verses profile matches.
+# The role tags themselves say only "this weapon can hurt that armor class" —
+# magnitude is not part of that judgement — so without these a unit whose
+# weapon is useless still gets pre-checked.
+#   UNDESIRABLE — the parser's own flat-grade verdict (grade <= -5)
+#
+# LOW_DPS was here too and has been REMOVED from the default. It is the
+# bottom-QUARTILE marker, i.e. relative to the mod, which is the same flaw the
+# absolute floors were added to fix: in vanilla it rejects the GI, a unit that
+# clears every absolute floor it is measured against. Relative ranking cannot
+# decide capability — a mod of uniformly weak weapons still has a top quartile,
+# and a strong unit in a strong mod still has a bottom one. Callers that want
+# it can still pass exclude_tags=("UNDESIRABLE", "LOW_DPS").
+SUGGEST_EXCLUDE_TAGS = ("UNDESIRABLE",)
+
+
+def suggest_units_for_role(display_role, rules_path, min_dps=0.0,
+                           exclude_tags=SUGGEST_EXCLUDE_TAGS,
+                           with_reasons=False):
     """Units whose detected role tags match `display_role`, using the wavegen role
     detector on `rules_path`. Best-effort: returns [] on any parse failure so the
     caller falls back to pure manual selection.
@@ -361,8 +379,10 @@ def suggest_units_for_role(display_role, rules_path):
     """
     key, tags = _resolve(display_role)
     if not tags or not rules_path:
-        return []
+        return ([], []) if with_reasons else []
     want = {t.lower() for t in tags}
+    excl = {t.lower() for t in (exclude_tags or ())}
+    rejected = []
     try:
         from .rulesmd_parser import (
             RulesMdParser, defense_range_profile, defense_kill_dps_floor,
@@ -373,7 +393,7 @@ def suggest_units_for_role(display_role, rules_path):
         parser = RulesMdParser(rules_path)
         parser.parse()
     except Exception:
-        return []
+        return ([], []) if with_reasons else []
 
     camp = None
     if key in DEFENSE_CAMP_KEYS:
@@ -430,22 +450,40 @@ def suggest_units_for_role(display_role, rules_path):
         rr = {str(r).lower() for r in (getattr(rec, "roles", None) or [])}
         if not (rr & want):
             continue
+        bad = sorted(rr & excl)
+        if bad:
+            rejected.append((uid, "tagged " + ", ".join(b.upper()
+                                                        for b in bad)))
+            continue
+        dps = float(getattr(rec, "dps_score", 0.0) or 0.0)
+        if min_dps > 0 and dps < min_dps:
+            rejected.append((uid, f"dps {dps:.0f} < floor {min_dps:.0f}"))
+            continue
         if tiers and str(getattr(rec, "tier", UNCOMPUTED_TIER)) not in tiers:
+            rejected.append((uid, f"tier {getattr(rec, 'tier', '?')}"))
             continue
         if buildable is not None and uid not in buildable:
+            rejected.append((uid, "not player-buildable"))
             continue
         if any_tags and not (rr & any_tags):
+            rejected.append((uid, "no " + "/".join(role_any_tags(
+                display_role)) + " tag"))
             continue
         if max_build:
             try:
                 if build_prereq_count(uid, parser.ini, parser.aliases,
                                       getattr(rec, "faction", None),
                                       getattr(parser, "sides", None)) > max_build:
+                    rejected.append((uid, f"needs > {max_build} buildings "
+                                          "built first"))
                     continue
             except Exception:
                 continue
         if bld_floor > 0 and dps_is_trustworthy(rec):
-            if best_weapon_dps_vs(rec, ARMOR_BUILDING) < bld_floor:
+            bd = best_weapon_dps_vs(rec, ARMOR_BUILDING)
+            if bd < bld_floor:
+                rejected.append((uid, f"building dps {bd:.2f} < "
+                                      f"{bld_floor:.2f}"))
                 continue
         if camp is None:
             cands.append((uid, rec))
@@ -477,21 +515,30 @@ def suggest_units_for_role(display_role, rules_path):
         if (camp["floor"] > 0 and camp["armor"]
                 and dps_is_trustworthy(rec)
                 and best_weapon_dps_vs(rec, camp["armor"]) < camp["floor"]):
+            rejected.append((uid, "cannot kill a defense fast enough"))
             continue
         cands.append((uid, rec))
 
     if camp is None or key != BREACH_CAMP_KEY:
-        return [uid for uid, _rec in cands]
+        out = [uid for uid, _rec in cands]
+        return (out, rejected) if with_reasons else out
 
     # A breacher drives into the defense's envelope, so it also has to survive
     # the trip: require at-or-above-median toughness among the candidates.
     tough = [float(getattr(r, "strength", 0) or 0) for _u, r in cands]
     tough = [x for x in tough if x > 0]
     if not tough:
-        return [uid for uid, _rec in cands]
+        out = [uid for uid, _rec in cands]
+        return (out, rejected) if with_reasons else out
     tough.sort()
     mid = tough[len(tough) // 2] if len(tough) % 2 else (
         tough[len(tough) // 2 - 1] + tough[len(tough) // 2]) / 2.0
-    return [uid for uid, rec in cands
-            if float(getattr(rec, "strength", 0) or 0) >= mid]
+    out = []
+    for uid, rec in cands:
+        if float(getattr(rec, "strength", 0) or 0) >= mid:
+            out.append(uid)
+        else:
+            rejected.append((uid, "too fragile to breach (below median "
+                                  "toughness)"))
+    return (out, rejected) if with_reasons else out
     return out

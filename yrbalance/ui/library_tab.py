@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QTabWidget, QTableWidget, QTableWidgetItem,
     QSplitter, QFileDialog, QMessageBox, QInputDialog, QGroupBox, QPlainTextEdit,
     QHeaderView, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox,
-    QRadioButton, QComboBox, QApplication, QMenu,
+    QRadioButton, QComboBox, QApplication, QMenu, QTreeWidget, QTreeWidgetItem,
 )
 
 from ..engine import (
@@ -39,6 +39,10 @@ from ..engine import (
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes, mix_id,
+    load_addons, add_addon, remove_addon, scan_addon,
+    spec_summary,
+    extract_voice_set, store_samples, add_set, load_sets, idx_name_ok,
+    entry_sample_names as _entry_sample_names,
 )
 # Dialog split out in cleanup C3; re-exported so existing references resolve.
 from .add_source_dialog import _AddSourceDialog
@@ -188,8 +192,39 @@ class LibraryTab(QWidget):
             self._tables[kind] = (tbl, [])
         self.ktabs.currentChanged.connect(self._on_tab_changed)
         center.addWidget(self.ktabs)
+
+        # ── addon tabs: user-declared views Eva authored ─────────────────────
+        # Its own strip rather than extra entries in ktabs: scan_source coerces
+        # any unknown kind to "other", so an addon masquerading as a
+        # TechnoType kind would have to change the predicates every existing
+        # tab depends on. The header stays visible with no addons so the entry
+        # point is discoverable.
+        addon_box = QWidget()
+        abl = QVBoxLayout(addon_box)
+        abl.setContentsMargins(0, 4, 0, 0)
+        ahdr = QHBoxLayout()
+        ahdr.addWidget(QLabel("<b>Addon tabs</b>"))
+        self.addon_new_btn = QPushButton("New tab from Eva…")
+        self.addon_new_btn.setToolTip(
+            "Describe a tab in plain English — e.g. a tab for detecting "
+            "AttachmentTypes. Eva proposes it; you approve before it appears.")
+        self.addon_new_btn.clicked.connect(self._new_addon)
+        ahdr.addWidget(self.addon_new_btn)
+        self.addon_del_btn = QPushButton("Remove tab")
+        self.addon_del_btn.clicked.connect(self._remove_addon)
+        ahdr.addWidget(self.addon_del_btn)
+        self.addon_hint = QLabel("")
+        self.addon_hint.setWordWrap(True)
+        self.addon_hint.setStyleSheet("color:#888;")
+        ahdr.addWidget(self.addon_hint, 1)
+        abl.addLayout(ahdr)
+        self.atabs = QTabWidget()
+        self._addon_tables = {}            # addon name -> QTableWidget
+        abl.addWidget(self.atabs, 1)
+        center.addWidget(addon_box)
+
         center.addWidget(self._build_detail())
-        center.setSizes([360, 260])
+        center.setSizes([330, 190, 250])
 
         # ── balance culture (stacked under collections in the left column) ────
         bal_box = QGroupBox("Balance culture")
@@ -219,6 +254,7 @@ class LibraryTab(QWidget):
         # defer the (potentially slow) source scan until the tab is first shown,
         # so adding large mods never slows app startup
         self._loaded = False
+        self._rebuild_addon_tabs()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -383,6 +419,53 @@ class LibraryTab(QWidget):
         bl.addWidget(self.bc_convert_text, 1)
         tabs.addTab(bc, "Balance Culture")
 
+        # 5) Voices — the unit's voice set, grouped the way the game wires it:
+        #    tag -> soundmd entry -> samples. The Assets tab's Audio row is a
+        #    flat list of playable filenames; this one shows the structure, and
+        #    saves the whole set into the voice library.
+        voc = QWidget()
+        vl = QVBoxLayout(voc)
+        self.voice_tree = QTreeWidget()
+        self.voice_tree.setColumnCount(2)
+        self.voice_tree.setHeaderLabels(["Voice / sample", "Sound entry / location"])
+        self.voice_tree.setRootIsDecorated(True)
+        self.voice_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.voice_tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.voice_tree.setColumnWidth(0, 240)
+        self.voice_tree.setToolTip(
+            "A unit's voice is three layers: the tag on the unit, the soundmd "
+            "entry it names, and the samples that entry lists. Select a sample "
+            "to play it.")
+        self.voice_tree.itemSelectionChanged.connect(self._on_voice_selected)
+        vl.addWidget(self.voice_tree, 1)
+        self.voice_info = QLabel("")
+        self.voice_info.setWordWrap(True)
+        self.voice_info.setStyleSheet("color:#888;")
+        vl.addWidget(self.voice_info)
+        vrow = QHBoxLayout()
+        self.voice_play_btn = QPushButton("▶ Play")
+        self.voice_play_btn.clicked.connect(self._voice_play)
+        self.voice_export_btn = QPushButton("Export WAV…")
+        self.voice_export_btn.clicked.connect(self._voice_export)
+        self.voice_save_btn = QPushButton("Save as voice set…")
+        self.voice_save_btn.setToolTip(
+            "Copy this unit's voice tags, its soundmd entries and the original "
+            "sample bytes into the voice library, for re-use in another mod.")
+        self.voice_save_btn.clicked.connect(self._voice_save)
+        vrow.addWidget(self.voice_play_btn)
+        vrow.addWidget(self.voice_export_btn)
+        vrow.addStretch(1)
+        self.voice_apply_btn = QPushButton("Apply saved set…")
+        self.voice_apply_btn.setToolTip(
+            "Apply a voice set from the library onto this unit — preview first, "
+            "with a merge/keep-both choice for anything that collides. Samples "
+            "are injected into this mod's audio.bag.")
+        self.voice_apply_btn.clicked.connect(self._voice_apply)
+        vrow.addWidget(self.voice_apply_btn)
+        vrow.addWidget(self.voice_save_btn)
+        vl.addLayout(vrow)
+        tabs.addTab(voc, "Voices")
+
         return tabs
 
     def _on_tab_changed(self, _i):
@@ -403,6 +486,7 @@ class LibraryTab(QWidget):
             self.tags_edit.clear()
             self.tags_edit.setEnabled(False)
             self._clear_audio()
+            self._clear_voices()
             self.preview.setText("Select an item to preview its art / audio.")
             self.bc_text.setPlainText("")
             self.bc_convert_text.setPlainText("")
@@ -430,6 +514,7 @@ class LibraryTab(QWidget):
                                           "(source not scanned).")
             self.ini_text.setPlainText("")
             self.file_table.setRowCount(0)
+            self._clear_voices()
             self.preview.setText("")
             self.bc_text.setPlainText("")
             self.bc_convert_text.setPlainText("")
@@ -441,6 +526,7 @@ class LibraryTab(QWidget):
         self._render_art(entry, it.source_id, scan)
         self._render_cameo(entry, it.source_id, scan)
         self._populate_audio(entry, scan)
+        self._fill_voices(entry, it, scan)
         self.preview.setText("")
         self._fill_balance_culture(it, scan)
 
@@ -1005,6 +1091,266 @@ class LibraryTab(QWidget):
         except Exception as e:
             self.status.setText(f"Export failed: {type(e).__name__}: {e}")
 
+    # ── addon tabs ─────────────────────────────────────────────────────────
+    def _addon_rules_maps(self):
+        """[(mod label, rules section_map)] for every scanned source."""
+        out = []
+        scans = getattr(self, "_scan_by_source", None) or {}
+        for sid, scan in scans.items():
+            idx = getattr(scan, "index", None)
+            rmap = getattr(idx, "rules_map", None) if idx else None
+            if rmap:
+                out.append((self._source_label(sid), rmap))
+        return out
+
+    def _rebuild_addon_tabs(self):
+        """One tab per stored addon, aggregated across every scanned mod."""
+        self.atabs.clear()
+        self._addon_tables = {}
+        specs = load_addons()
+        self.atabs.setVisible(bool(specs))
+        self.addon_del_btn.setEnabled(bool(specs))
+        if not specs:
+            self.addon_hint.setText(
+                "none yet — describe one and Eva will build it")
+            return
+        maps = self._addon_rules_maps()
+        for spec in specs:
+            tbl = QTableWidget(0, 0)
+            tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+            tbl.verticalHeader().setVisible(False)
+            tbl.setToolTip(spec.notes or spec_summary(spec))
+            self._fill_addon_table(spec, tbl, maps)
+            self.atabs.addTab(tbl, spec.name)
+            self._addon_tables[spec.name] = tbl
+        self.addon_hint.setText(f"{len(specs)} addon tab(s)")
+
+    def _fill_addon_table(self, spec, tbl, maps):
+        headers = ["Name", "Source"] + [c.label for c in spec.columns]
+        tbl.setColumnCount(len(headers))
+        tbl.setHorizontalHeaderLabels(headers)
+        rows = []
+        for label, rmap in maps:
+            for r in scan_addon(spec, rmap):
+                rows.append((label, r))
+        if spec.group_by:
+            rows.sort(key=lambda lr: (lr[1].group, lr[1].name))
+        tbl.setRowCount(len(rows))
+        for i, (label, r) in enumerate(rows):
+            tbl.setItem(i, 0, QTableWidgetItem(r.name))
+            tbl.setItem(i, 1, QTableWidgetItem(label))
+            for j, c in enumerate(spec.columns):
+                tbl.setItem(i, 2 + j,
+                            QTableWidgetItem(r.values.get(c.label, "")))
+        h = tbl.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.Interactive)
+        for j in range(1, len(headers)):
+            h.setSectionResizeMode(j, QHeaderView.Interactive)
+        h.setStretchLastSection(True)
+
+    def _new_addon(self):
+        from .addon_dialog import AddonRequestDialog
+        dlg = AddonRequestDialog(self, self._addon_rules_maps())
+        if dlg.exec() == QDialog.Accepted and dlg.spec is not None:
+            add_addon(dlg.spec)
+            self._rebuild_addon_tabs()
+            idx = self.atabs.count() - 1
+            for i in range(self.atabs.count()):
+                if self.atabs.tabText(i) == dlg.spec.name:
+                    idx = i
+            self.atabs.setCurrentIndex(max(idx, 0))
+            self.status.setText(f"Added the “{dlg.spec.name}” addon tab.")
+
+    def _remove_addon(self):
+        i = self.atabs.currentIndex()
+        if i < 0:
+            return
+        name = self.atabs.tabText(i)
+        if QMessageBox.question(
+                self, "Remove addon tab",
+                f"Remove the “{name}” tab? The addon is deleted from your "
+                "library; your mod is not touched.") != QMessageBox.Yes:
+            return
+        remove_addon(name)
+        self._rebuild_addon_tabs()
+        self.status.setText(f"Removed the “{name}” addon tab.")
+    # ── voices ─────────────────────────────────────────────────────────────
+    def _clear_voices(self):
+        self.voice_tree.clear()
+        self.voice_info.setText("")
+        self._voice_set = None
+        self._voice_catalog = None
+        self.voice_play_btn.setEnabled(False)
+        self.voice_export_btn.setEnabled(False)
+        self.voice_save_btn.setEnabled(False)
+        self.voice_apply_btn.setEnabled(False)
+
+    def _sample_location(self, cat, name):
+        """(label, playable) for a sample name against a media catalog."""
+        loc = (cat or {}).get(name.upper()) or (cat or {}).get(name.upper() + ".WAV")
+        if loc is None:
+            return "✗ not found", False
+        if loc[0] == "bag":
+            return f"♪ {os.path.basename(loc[1])}", True
+        if loc[0] == "loose":
+            return f"· {os.path.basename(loc[1])}", False
+        return f"· {os.path.basename(loc[1])} (mix)", False
+
+    def _fill_voices(self, entry, it, scan):
+        """Group this unit's voice set as tag → soundmd entry → samples."""
+        self._clear_voices()
+        idx = scan.index if (scan and scan.index) else None
+        if idx is None or not getattr(idx, "sound_map", None):
+            self.voice_info.setText(
+                "No soundmd.ini was found beside this mod's rulesmd — voice "
+                "entries can't be resolved.")
+            return
+        cat = self._catalog(scan)
+        vset = extract_voice_set(entry.name, idx.rules_map, idx.sound_map,
+                                 source=self._source_label(it.source_id),
+                                 name=f"{entry.name} voices")
+        self._voice_set = vset
+        self._voice_catalog = cat
+        by_entry = {e.name.lower(): e for e in vset.entries}
+
+        playable = 0
+        for tag, ref in vset.tags:
+            top = QTreeWidgetItem([tag, ref])
+            ent = by_entry.get(ref.lower())
+            if ent is None:
+                top.setText(1, f"{ref} — ✗ no such soundmd entry")
+            else:
+                for nm in _entry_sample_names(ent):
+                    label, ok = self._sample_location(cat, nm)
+                    if not idx_name_ok(nm):
+                        label += "  (name > 16 bytes)"
+                    kid = QTreeWidgetItem([nm, label])
+                    if ok:
+                        kid.setData(0, Qt.UserRole, nm)
+                        playable += 1
+                    top.addChild(kid)
+            self.voice_tree.addTopLevelItem(top)
+            top.setExpanded(True)
+
+        if not vset.tags:
+            self.voice_info.setText(f"[{entry.name}] sets no voice tags.")
+            return
+        self.voice_save_btn.setEnabled(True)
+        self.voice_apply_btn.setEnabled(bool(load_sets()))
+        bits = [f"{len(vset.tags)} tags", f"{len(vset.entries)} sound entries",
+                f"{len(vset.samples)} samples ({playable} playable)"]
+        if vset.notes:
+            bits.append(vset.notes[0])
+        self.voice_info.setText(" · ".join(bits))
+
+    def _on_voice_selected(self):
+        name = self._voice_sample_name()
+        self.voice_play_btn.setEnabled(bool(name) and bool(self._player))
+        self.voice_export_btn.setEnabled(bool(name))
+
+    def _voice_sample_name(self):
+        """The selected row's sample name, if it is a playable bag sample."""
+        items = self.voice_tree.selectedItems()
+        if not items:
+            return None
+        return items[0].data(0, Qt.UserRole)
+
+    def _voice_current_wav(self):
+        name = self._voice_sample_name()
+        if not name or not getattr(self, "_voice_catalog", None):
+            return None, None
+        try:
+            return name, bag_sample_to_wav(self._voice_catalog, name)
+        except Exception as e:
+            self.status.setText(f"Audio decode failed: {type(e).__name__}: {e}")
+            return name, None
+
+    def _voice_play(self):
+        name, wav = self._voice_current_wav()
+        if not wav or not self._player:
+            return
+        try:
+            fd, path = tempfile.mkstemp(suffix=".wav", prefix="yrbt_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(wav)
+            self._tmp_wavs.append(path)
+            _play_wav_file(self._player, path)
+            self.status.setText(f"Playing {name}…")
+        except Exception as e:
+            self.status.setText(f"Playback failed: {type(e).__name__}: {e}")
+
+    def _voice_export(self):
+        name, wav = self._voice_current_wav()
+        if not wav:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export WAV",
+                                              f"{name}.wav", "WAV (*.wav)")
+        if not path:
+            return
+        try:
+            with open(path, "wb") as f:
+                f.write(wav)
+            self.status.setText(f"Exported {os.path.basename(path)}.")
+        except Exception as e:
+            self.status.setText(f"Export failed: {type(e).__name__}: {e}")
+
+    def _voice_save(self):
+        """Copy the current voice set — tags, soundmd entries, original sample
+        bytes — into the voice library sidecar."""
+        vset = getattr(self, "_voice_set", None)
+        if vset is None:
+            return
+        taken = {s.name for s in load_sets()}
+        label, ok = QInputDialog.getText(self, "Save voice set",
+                                         "Name for this voice set:",
+                                         text=vset.name)
+        label = (label or "").strip()
+        if not ok or not label:
+            return
+        if label in taken and QMessageBox.question(
+                self, "Replace?",
+                f"A voice set called “{label}” already exists. Replace it?"
+        ) != QMessageBox.Yes:
+            return
+        vset.name = label
+        try:
+            stored, missing = store_samples(vset, self._voice_catalog or {})
+            add_set(vset)
+        except Exception as e:
+            QMessageBox.warning(self, "Save failed",
+                                f"{type(e).__name__}: {e}")
+            return
+        msg = (f"Saved “{label}” — {len(vset.entries)} sound entries, "
+               f"{stored} samples copied")
+        if missing:
+            msg += f"; {len(missing)} not found ({', '.join(missing[:4])}"
+            msg += ", …)" if len(missing) > 4 else ")"
+        self.status.setText(msg + ".")
+
+    def _voice_apply(self):
+        """Apply a saved voice set onto the selected unit, in its own mod."""
+        it = self._selected_item()
+        if it is None:
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            return
+        # Target the ORIGINAL mod, not a snapshot copy in our sidecar — editing
+        # the snapshot would silently leave the real mod untouched.
+        rules = src.orig_path or src.rules_path
+        if not os.path.isfile(rules):
+            QMessageBox.warning(
+                self, "Can't apply",
+                f"The source mod's rulesmd is no longer at:\n{rules}")
+            return
+        from .voice_apply_dialog import VoiceApplyDialog
+        dlg = VoiceApplyDialog(self, it.name, os.path.dirname(rules), rules)
+        if dlg.exec() == QDialog.Accepted:
+            self.status.setText(getattr(dlg, "result_message", "Applied."))
+            self._scan_by_source.pop(it.source_id, None)   # re-scan next show
+            self._show_detail()
+
     # ── data ─────────────────────────────────────────────────────────────────
     def _reload(self, keep_row=None):
         self.sources, self.collections = load_catalog()
@@ -1027,6 +1373,7 @@ class LibraryTab(QWidget):
         self._rebuild_tables()
         self._refresh_tag_combo()
         self._apply_filter()
+        self._rebuild_addon_tabs()
 
     def _item_tags(self, item):
         return self._tags_by_source.get(item.source_id, {}).get(

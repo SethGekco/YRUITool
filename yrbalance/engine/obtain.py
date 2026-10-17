@@ -41,6 +41,11 @@ from .ini_model import get_val, clean_value as _clean, num_value as _num
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
+from .techlevel import parse_generic_prereqs
+
+# The skirmish/multiplayer tech-level slider tops out here, so a TechLevel above
+# it is never reached in normal play.
+TECH_SLIDER_MAX = 10
 
 OB_NORMAL = "normal"
 OB_SPECIAL = "special"
@@ -80,6 +85,14 @@ class Obtainability:
     cls: str
     reasons: list = field(default_factory=list)
     also: list = field(default_factory=list)   # secondary flags (e.g. crate-eligible)
+    # Buildability predicates, independent of `cls`. A techno can carry
+    # TechLevel >= 0 and still be unbuildable (BuildLimit=0, a Prerequisite that
+    # names nothing, a TechLevel above the slider), which `cls` alone cannot
+    # express — it answers "how do you get it", not "can it be built".
+    human_buildable: bool = True
+    ai_buildable: bool = True
+    spawner: bool = False               # Spawns= of another unit AND unbuildable
+    blockers: list = field(default_factory=list)   # why it isn't buildable
 
 
 def _techno_names(section_map):
@@ -183,6 +196,55 @@ def _art_state(section_map, art_map, name):
     return "yes" if image.lower() in art_map else "no"
 
 
+def _prereq_impossible(section_map, name, generics, building_lower):
+    """(impossible, reason) for a techno's plain `Prerequisite=`.
+
+    Deliberately conservative — a false "unbuildable" verdict is worse than
+    missing one. It fires only when the key lists at least one token and **not
+    one** of them names a declared BuildingType or a [General] generic
+    prerequisite group, i.e. nothing that could ever be built. A section
+    carrying an Ares `Prerequisite.List*` is skipped outright: those cannot be
+    judged from the plain key, so we decline to guess.
+    """
+    s = section_map.get(name.lower())
+    if s and any(k.startswith("prerequisite") and k != "prerequisite"
+                 for k in s["keys"]):
+        return False, ""                     # Ares prereq lists — not our call
+    raw = _clean(get_val(section_map, name, "Prerequisite"))
+    toks = [t.lower().lstrip("-") for t in raw.replace(",", " ").split()]
+    toks = [t for t in toks if t and t != "none"]
+    if not toks:
+        return False, ""
+    if any(t in building_lower or t.upper() in generics for t in toks):
+        return False, ""
+    return True, f"Prerequisite={raw} names nothing that exists"
+
+
+def _buildability(section_map, name, tl, generics, building_lower):
+    """(human_buildable, ai_buildable, blockers) for one techno."""
+    human = ai = True
+    blockers = []
+    if tl is None or tl <= -1:
+        shown = int(tl) if tl is not None else -1
+        human = False
+        blockers.append(f"TechLevel {shown} (never buildable)")
+    elif tl > TECH_SLIDER_MAX:
+        # Above the slider nothing reaches it; surfaced as the AI blocker to
+        # match the project's filter taxonomy ("not buildable for AI").
+        ai = False
+        blockers.append(f"TechLevel {int(tl)} is above the tech slider max "
+                        f"({TECH_SLIDER_MAX}) — not AI-buildable")
+    if _num(get_val(section_map, name, "BuildLimit")) == 0:
+        human = False
+        blockers.append("BuildLimit=0")
+    impossible, why = _prereq_impossible(section_map, name, generics,
+                                         building_lower)
+    if impossible:
+        human = False
+        blockers.append(why)
+    return human, ai, blockers
+
+
 def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None):
     """Return {name_lower: Obtainability} for every declared TechnoType.
 
@@ -195,6 +257,9 @@ def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None
     refs = _build_reference_index(section_map, techno_lower)
     sw_weapons = _sw_weapon_set(section_map)
     ai_units = ai_unit_ids(aimd_map)
+    generics = parse_generic_prereqs(section_map)
+    building_lower = {b.lower() for b in parse_type_list(section_map,
+                                                         "BuildingTypes")}
 
     out = {}
     for name in names:
@@ -214,11 +279,20 @@ def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None
                          and (_unit_weapons(section_map, name) & sw_weapons))
         prereq_dummy = up.endswith("PRE") or (
             "prereq" in rset and (cost is None or cost == 0))
+        human_ok, ai_ok, blockers = _buildability(section_map, name, tl,
+                                                   generics, building_lower)
+        spawner = "spawn" in rset and not human_ok
         reasons, also = [], []
         if crate:
             also.append("crate-eligible")
         if in_aimd:
             also.append("in aimd TaskForces")
+        if not human_ok:
+            also.append("not player-buildable")
+        if not ai_ok:
+            also.append("not AI-buildable")
+        if spawner:
+            also.append("spawner")
 
         if "DUMMY" in up:
             cls = OB_DUMMY
@@ -228,7 +302,17 @@ def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None
 
         elif tl is not None and tl >= 0:
             cls = OB_NORMAL
-            reasons.append(f"TechLevel {int(tl)} (player-buildable)")
+            if human_ok:
+                reasons.append(f"TechLevel {int(tl)} (player-buildable)")
+            else:
+                # TechLevel says buildable, something else forbids it. `cls` is
+                # deliberately NOT downgraded here: the porter, encyclopedia and
+                # Library filters all key off it, so reclassifying would
+                # silently relabel units across three consumers. The blockers
+                # and the predicates carry the truth; callers that need
+                # "actually buildable" should read human_buildable.
+                reasons.append(f"TechLevel {int(tl)}, but not actually "
+                               f"buildable: {'; '.join(blockers)}")
 
         elif crate:
             cls = OB_CRATE
@@ -286,5 +370,7 @@ def classify_obtainability(section_map, config=None, art_map=None, aimd_map=None
                 cls = OB_UNKNOWN
                 reasons.append("not buildable; no clear obtain path (art unknown)")
 
-        out[low] = Obtainability(name, cls, reasons, also)
+        out[low] = Obtainability(name, cls, reasons, also,
+                                 human_buildable=human_ok, ai_buildable=ai_ok,
+                                 spawner=spawner, blockers=blockers)
     return out
