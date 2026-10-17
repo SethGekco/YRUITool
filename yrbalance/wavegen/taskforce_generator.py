@@ -84,6 +84,7 @@ from pathlib import Path
 from typing import Callable
 
 from .rulesmd_parser import (
+    defense_range_bar,
     RulesMdParser, UnitRecord,
     TIER_DEPTH_CEILING,
     LAND_MIX_GROUP, NAVAL_MIX_GROUP, AIRCRAFT_GROUP, SPECIAL_EXCLUDED,
@@ -942,7 +943,7 @@ def role_score_anti_defenses(rec: UnitRecord, parser: RulesMdParser) -> float:
     """
     targets     = parser._scan_strategic_targets()
     base_ranges = targets.get("base_def_ranges", [])
-    avg_def_rng = sum(base_ranges) / len(base_ranges) if base_ranges else 6.0
+    avg_def_rng = defense_range_bar(base_ranges)
     bld_dps     = _dps_vs(rec, ARMOR_BUILDING)
 
     if rec.weapon_range > avg_def_rng:
@@ -1170,7 +1171,7 @@ def detect_emergent_role(units: list[UnitRecord],
 
     targets     = parser._scan_strategic_targets()
     base_ranges = targets.get("base_def_ranges", [])
-    avg_def_rng = sum(base_ranges) / len(base_ranges) if base_ranges else 6.0
+    avg_def_rng = defense_range_bar(base_ranges)
 
     # AA check
     aa_count = sum(1 for u in units

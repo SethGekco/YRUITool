@@ -67,6 +67,8 @@ from collections import defaultdict
 # Constants
 # ---------------------------------------------------------------------------
 
+from ..engine.weapons import REGULAR_WEAPON_TAGS
+
 ARMOR_NAMES = [
     "none", "flak", "plate",
     "light", "medium", "heavy",
@@ -74,6 +76,445 @@ ARMOR_NAMES = [
     "special", "defense",
 ]
 ARMOR_INDEX    = {name: i for i, name in enumerate(ARMOR_NAMES)}
+# "Out-ranges the base defenses" needs two numbers, not one: the range of a
+# STANDARD high-range defense, and which defenses are unusually long-ranged and
+# have to be handled as special cases instead.
+#
+# Earlier versions used the mean of every defense range (dragged down by
+# pillboxes until mediocre units qualified), then "drop the single highest"
+# (wrong when a mod fields several long-range defenses — and on a small set it
+# discards the one defense that matters most).
+#
+# So: split the distribution with Tukey's fence, Q3 + 1.5*IQR, the textbook
+# boundary for "unusual". Everything above it is an outlier, reported
+# separately; the bar is the upper half of what remains, i.e. the dangerous end
+# of normal. Vanilla YR ground defenses are
+# [5, 5.5, 5.5, 5.5, 7, 7, 8, 15, 20] — the Grand Cannon at 15 and the Paris
+# gun at 20 are exactly the "unusual" cases, and the bar lands at the Prism.
+# A Miner_Killer must be able to actually kill a miner, not merely rank well
+# against the mod's average. spectrum() is RELATIVE: in a mod where nothing hits
+# medium armour hard, the least-bad units still clear the relative bar — the
+# same flaw that let CTECH be suggested for combat roles. So the relative test
+# is now paired with an ABSOLUTE floor.
+#
+# The floor is derived from the mod's own harvesters rather than hardcoded:
+# a unit should be able to solo-kill a TYPICAL (median) harvester inside
+# MINER_KILL_SECONDS. Median rather than weakest, for the same reason as
+# defense_kill_dps_floor: one junk 10 HP entry otherwise sets the bar at zero
+# and the floor stops filtering anything. effective_dps() is per-FRAME
+# (damage*verses/rof, ROF being in frames), hence the 15 fps conversion.
+MINER_KILL_SECONDS = 30.0
+GAME_FPS = 15.0
+DEFENSE_BAR_FALLBACK = 6.0
+TUKEY_K = 1.5
+
+
+def _quantile(sorted_vals, q):
+    """Linear-interpolated quantile; small-sample friendly."""
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = pos - lo
+    return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
+
+
+def defense_range_profile(ranges):
+    """Split defense ranges into standard and unusually-long.
+
+    Returns {"bar", "standard", "outliers", "fence"}:
+      bar       range a unit must EXCEED to out-range standard defenses
+      standard  the non-outlier ranges, sorted
+      outliers  ranges above Tukey's fence — handle these individually
+      fence     the fence value itself, for display
+
+    An outlier is NOT discarded information: a unit that beats `bar` still
+    loses to anything in `outliers`, and the caller should say so rather than
+    silently pretend the Grand Cannon is not there.
+    """
+    vals = []
+    for r in ranges or ():
+        try:
+            v = float(r)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            vals.append(v)
+    if not vals:
+        return {"bar": DEFENSE_BAR_FALLBACK, "standard": [], "outliers": [],
+                "fence": DEFENSE_BAR_FALLBACK}
+    vals.sort()
+    q1, q3 = _quantile(vals, 0.25), _quantile(vals, 0.75)
+    fence = q3 + TUKEY_K * (q3 - q1)
+    standard = [v for v in vals if v <= fence]
+    outliers = [v for v in vals if v > fence]
+    if not standard:                       # degenerate (all equal / tiny set)
+        standard, outliers = vals, []
+    upper = standard[len(standard) // 2:]  # dangerous end of normal
+    return {"bar": sum(upper) / len(upper), "standard": standard,
+            "outliers": outliers, "fence": fence}
+
+
+def dps_vs_weapon(wpn, armor_indices):
+    """Best effective DPS of one analysed weapon against any of `armor_indices`."""
+    verses = wpn.get("verses", [0.0] * 11) if wpn else [0.0] * 11
+    damage = wpn.get("damage", 0.0) if wpn else 0.0
+    rof = wpn.get("rof", 1.0) if wpn else 1.0
+    return max((effective_dps(damage, rof, verses, ai) for ai in armor_indices),
+               default=0.0)
+
+
+def unit_dps_vs(rec, armor_indices):
+    """Primary DPS plus a half-weight secondary bonus, never a penalty.
+
+    Lifted to module level so the role/camp filters score units exactly the
+    way the grading pass does instead of re-deriving it. A secondary whose
+    projectile has AG=no cannot contribute against ground armour (APOC's
+    MammothTusk is air-only); aerial armour indices are the exception.
+    """
+    AERIAL_ARMOR_IDX = {9, 10}
+    armor_indices = set(armor_indices or ())
+    if not armor_indices:
+        return 0.0
+    is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
+    pri = dps_vs_weapon(getattr(rec, "role_weapon", None), armor_indices)
+    sec = 0.0
+    sec_wpn = getattr(rec, "secondary_analysis", None)
+    if sec_wpn and sec_wpn.get("is_combat"):
+        if sec_wpn.get("can_ag", True) or is_aerial_target:
+            sec = dps_vs_weapon(sec_wpn, armor_indices)
+    return max(pri, pri + sec * 0.5)
+
+
+def best_weapon_dps_vs(rec, armor_indices):
+    """DPS of the SINGLE best weapon against `armor_indices`.
+
+    Not unit_dps_vs(): that returns max(pri, pri + sec*0.5), a blend which is
+    right for "how good is this unit overall" but wrong here. A unit fires ONE
+    weapon at a defense — whichever suits the target — so it is graded on that
+    weapon alone (Rex, 2026-10-16). The blend also halved the Magnetron's only
+    building-damaging weapon, because its primary is a locomotor beam that does
+    nothing to structures.
+
+    A secondary whose projectile has AG=no cannot contribute against ground
+    armour; aerial armour indices are the exception.
+    """
+    AERIAL_ARMOR_IDX = {9, 10}
+    armor_indices = set(armor_indices or ())
+    if not armor_indices:
+        return 0.0
+    is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
+    best = 0.0
+    for key in ("role_weapon", "primary_analysis", "secondary_analysis"):
+        w = getattr(rec, key, None)
+        if not w:
+            continue
+        if key == "secondary_analysis" and not w.get("is_combat"):
+            continue
+        if not w.get("can_ag", True) and not is_aerial_target:
+            continue
+        best = max(best, dps_vs_weapon(w, armor_indices))
+    return best
+
+
+# A standoff unit is never in the defense's reach, so it can take as long as it
+# likes — "slow is fine if the range is high" (Rex). The floor is only there to
+# reject units that cannot meaningfully hurt a defense AT ALL: a Sniper needs
+# ~6,750 seconds on the median defense and still fails this, while a Magnetron
+# or Howitzer passes.
+STANDOFF_KILL_SECONDS = 300.0
+
+
+def standoff_kill_dps_floor(defense_strengths):
+    """Relaxed floor for units that out-range what they are shooting."""
+    vals = [s for s in (defense_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return _median(vals) / (STANDOFF_KILL_SECONDS * GAME_FPS)
+
+
+def prereq_chain(unit_id, ini, aliases=None, _seen=None,
+                 faction=None, sides=None):
+    """Every building in a unit's FULL prerequisite chain, aliases expanded.
+
+    Alias tokens must be expanded: vanilla's Attack Dog lists
+    `Prerequisite=Barracks`, which is an alias, not a building, so without
+    expansion its chain is one unknown token and no membership test can work.
+
+    Expansion MUST be faction-filtered where possible. Expanding blind makes
+    every chain identical: `PROC` yields all three refineries, whose own
+    chains drag in every faction's radar and the Soviet battle lab, so a GI, a
+    V3 Launcher and a Sniper all come out carrying
+    {AMRADR, GAAIRC, NAPSIS, NARADR, NATECH} and no membership test can tell
+    them apart. With `faction` supplied, [gdi] Barracks -> GAPILE and
+    [gdi] PROC -> GAREFN, and the chains become meaningful.
+    """
+    _seen = set() if _seen is None else _seen
+    if not unit_id or unit_id in _seen:
+        return set()
+    _seen.add(unit_id)
+    raw = ini.get(unit_id, "Prerequisite", "") or ""
+    out = set()
+    for tok in (x.strip().split(";")[0].strip() for x in raw.split(",")):
+        if not tok or tok.lower() in ("<none>", "none"):
+            continue
+        expanded = None
+        if aliases is not None:
+            try:
+                if faction:
+                    expanded = list(aliases.expand_faction_filtered(
+                        tok, faction, sides) or ())
+                if not expanded:
+                    expanded = list(aliases.expand(tok) or ())
+            except Exception:
+                expanded = None
+        for bid in (expanded or [tok]):
+            out.add(bid)
+            out |= prereq_chain(bid, ini, aliases, _seen, faction, sides)
+    return out
+
+
+# Buildings that produce something. A unit whose prerequisites are a subset of
+# these plus their own prerequisites needs nothing the AI would not already
+# have built to reach the factory — which is what makes it rushable (Rex).
+FACTORY_TAG_VALUES = frozenset({"infantrytype", "unittype", "aircrafttype",
+                                "buildingtype"})
+
+
+def build_prereq_set(unit_id, ini, aliases=None, faction=None, sides=None,
+                     _seen=None):
+    """Minimal set of buildings a player must erect before `unit_id`.
+
+    An alias is an OR, so each alias token contributes its CHEAPEST option, not
+    the union of all of them. Taking the union is what broke the membership
+    approach: vanilla's POWER expands to NAPOWR or NANRCT, and the nuclear
+    reactor requires NATECH, so a battle lab leaked into the Rhino Tank's
+    chain through an OPTIONAL power choice it would never actually make.
+
+    The count is the metric Rex uses to judge rushability: a war factory costs
+    4 buildings, an airfield 3, a radar-gated unit 5 — and 5 is mid-game.
+    """
+    _seen = set() if _seen is None else _seen
+    if not unit_id or unit_id in _seen:
+        return set()
+    _seen = _seen | {unit_id}
+    raw = ini.get(unit_id, "Prerequisite", "") or ""
+    need = set()
+    for tok in (x.strip().split(";")[0].strip() for x in raw.split(",")):
+        if not tok or tok.lower() in ("<none>", "none"):
+            continue
+        options = None
+        if aliases is not None:
+            try:
+                if faction:
+                    options = list(aliases.expand_faction_filtered(
+                        tok, faction, sides) or ())
+                if not options:
+                    options = list(aliases.expand(tok) or ())
+            except Exception:
+                options = None
+        best = None
+        for bid in (options or [tok]):
+            sub = build_prereq_set(bid, ini, aliases, faction, sides, _seen)
+            cand = sub | {bid}
+            if best is None or len(cand) < len(best):
+                best = cand
+        if best:
+            need |= best
+    return need
+
+
+def build_prereq_count(unit_id, ini, aliases=None, faction=None, sides=None):
+    """How many buildings must exist before `unit_id` can be built."""
+    return len(build_prereq_set(unit_id, ini, aliases, faction, sides))
+
+
+def radar_is_early(ini, aliases, radar_ids, lab_ids, faction=None,
+                   sides=None):
+    """Whether radar is reachable with nothing but a yard and power.
+
+    Rex: radar prerequisites are not allowed for a rush UNLESS radar is itself
+    early-accessible. "No lab in its chain" is too weak a test — vanilla's
+    AMRADR needs only GAREFN,GACNST and would pass, re-admitting the V3
+    Launcher to Rush. So the bar is that radar needs no ECONOMY building
+    either: a yard and a power plant, nothing more.
+    """
+    base = set()
+    for tok in ("POWER", "GACNST", "NACNST", "YACNST"):
+        try:
+            base |= set(aliases.expand(tok) or ()) if aliases else {tok}
+        except Exception:
+            base.add(tok)
+    base |= {"POWER"}
+    for rid in radar_ids:
+        if rid in lab_ids or not ini.section(rid):
+            continue
+        chain = prereq_chain(rid, ini, aliases, None, faction, sides)
+        if chain and chain <= base:
+            return True
+    return False
+
+
+def production_allowlist(ini, aliases=None, exclude=()):
+    """{factory IDs} | {everything those factories require}, less `exclude`.
+
+    `exclude` is normally the radar and lab buildings: two vanilla radars
+    (AMRADR, GAAIRC) also carry Factory=, so without excluding them "only
+    factory prerequisites" quietly makes RADAR free and admits the whole
+    mid tier — the Apocalypse, Dreadnought, Kirov and V3 Launcher.
+    """
+    allowed = set()
+    for bid in ini.list_from_section("BuildingTypes"):
+        if not bid or bid.startswith(";"):
+            continue
+        if (ini.section(bid).get("factory", "") or "").lower() \
+                in FACTORY_TAG_VALUES:
+            allowed.add(bid)
+            allowed |= prereq_chain(bid, ini, aliases)
+    return allowed - set(exclude or ())
+
+
+def is_aerial_unit(rec):
+    """Whether this unit is exposed to anti-air fire.
+
+    Module-level twin of the grading pass's is_aerial(): an AircraftType, or
+    anything whose locomotor puts it in the air.
+    """
+    return bool(getattr(rec, "is_aircraft_type", False)
+                or getattr(rec, "mobility", "") in ("Jumpjet", "Aircraft"))
+
+
+# How long a unit may take to kill one target of a class and still count as
+# effective against it. Deliberately GENEROUS: these floors exist to drop the
+# hopeless, not to rank the competent. Vanilla's Allied Tech Centre needs 76s
+# per infantryman, 9 minutes per tank and 12 minutes per structure while being
+# tagged effective against all three.
+INFANTRY_KILL_SECONDS  = 30.0
+VEHICLE_KILL_SECONDS   = 60.0
+STRUCTURE_KILL_SECONDS = 120.0
+
+
+def kill_dps_floor(target_hp, seconds):
+    """Per-frame DPS needed to kill `target_hp` within `seconds`.
+
+    0.0 for a non-positive target HP, which disables the floor rather than
+    gating everything out on data we could not read.
+    """
+    try:
+        hp = float(target_hp or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if hp <= 0 or seconds <= 0:
+        return 0.0
+    return hp / (seconds * GAME_FPS)
+
+
+# Mechanisms whose effect is NOT damage, so a DPS reading says nothing about
+# them. Chrono erasure deletes the target outright, mind control takes it,
+# radiation and chaos and parasites work over time. Vanilla's Chrono
+# Legionnaire reads 0.067 DPS across every armour class and is nonetheless one
+# of the most lethal units in the game.
+_SPECIAL_MECHANISM_FLAGS = (
+    "is_temporal", "is_mind_control", "is_chaos", "is_radiation",
+    "is_parasite", "is_parasite_drone",
+)
+
+
+def dps_is_trustworthy(rec):
+    """False when the unit's damage is delivered by something we did not read.
+
+    A spawner weapon (V3 launcher, Aircraft Carrier, Dreadnought) carries a
+    placeholder warhead — V3Launcher is Damage=1 — and the real damage lives in
+    the spawned missile or plane, which the analyser does not follow. Scoring
+    such a unit on its own weapon would rank the premier defense killers at
+    ~0, so callers must treat their DPS as UNKNOWN and decline to exclude them
+    rather than exclude them wrongly.
+
+    The same applies to units whose effect is not damage at all — chrono
+    erasure, mind control, radiation, chaos, parasites. The codebase already
+    treats those as "special effects not captured by DPS" when grading.
+    """
+    if getattr(rec, "is_spawner", False):
+        return False
+    for flag in _SPECIAL_MECHANISM_FLAGS:
+        if getattr(rec, flag, False):
+            return False
+    for key in ("role_weapon", "primary_analysis", "secondary_analysis"):
+        a = getattr(rec, key, None)
+        if a and a.get("is_spawner_wpn"):
+            return False
+    return True
+
+
+# Defenses are tougher than miners and shoot back, so the allowance is longer.
+# Vanilla defenses are 400-900 HP, all steel armour.
+DEFENSE_KILL_SECONDS = 60.0
+
+
+def _median(vals):
+    s = sorted(vals)
+    n = len(s)
+    if not n:
+        return 0.0
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def defense_kill_dps_floor(defense_strengths):
+    """Minimum DPS vs defense armour to count as a defense killer.
+
+    Uses the MEDIAN defense, not the weakest. "Weakest" is what this started
+    as, and it is fragile: counting every armed building (correctly — an armed
+    building shoots at you the same) pulls in civilian map props, and vanilla's
+    CAMISC06/CAMSC11 at 10 HP dropped the floor to 0.011/frame. At that floor a
+    Virus sniper — 35 MINUTES to kill a pillbox — counted as a defense killer.
+    The median lands on a real defense (vanilla: 810, the Gattling Cannon)
+    while ignoring both the 10 HP props and the 3000 HP ones.
+
+    0.0 when nothing was found, which disables the floor rather than gating
+    everything out.
+    """
+    vals = [s for s in (defense_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return _median(vals) / (DEFENSE_KILL_SECONDS * GAME_FPS)
+
+
+def primary_defense_armor(armor_counts):
+    """The armour a typical defense wears, as {armor_index: count}.
+
+    Scoring against the whole armour SET is wrong here, because
+    dps_vs_weapon() takes the MAX over the set: a unit strong against a wooden
+    map prop would read as a defense killer. Vanilla's armed buildings are
+    steel 12, concrete 6, wood 2, medium 1 — the mode is steel, which is what
+    every real defense wears.
+    """
+    if not armor_counts:
+        return set()
+    best = max(armor_counts.items(), key=lambda kv: (kv[1], -kv[0]))
+    return {best[0]}
+
+
+def miner_kill_dps_floor(miner_strengths):
+    """Minimum per-frame DPS vs miner armour to count as a miner killer.
+
+    0.0 when no harvester was found, which disables the floor rather than
+    gating everything out on a mod we could not read.
+    """
+    vals = [s for s in (miner_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return _median(vals) / (MINER_KILL_SECONDS * GAME_FPS)
+
+
+def defense_range_bar(ranges):
+    """Just the bar from defense_range_profile(); kept for existing callers."""
+    return defense_range_profile(ranges)["bar"]
+
+
 ARMOR_INFANTRY = frozenset({0, 1, 2})
 ARMOR_VEHICLE  = frozenset({3, 4, 5})
 ARMOR_BUILDING = frozenset({6, 7, 8})
@@ -1483,6 +1924,7 @@ class RulesMdParser:
         self._build_pools()
         self._compute_faction_baselines()
         self._compute_unit_grades()
+        self._prune_weak_role_tags()
         self._classify_dps_rank()
         # Build naval_bombarders after grades are computed
         _min_bombard = 10.0
@@ -2594,6 +3036,31 @@ class RulesMdParser:
             for ai in range(11)
         }
 
+    def _weapon_hits_ground(self, weapon):
+        """Whether this weapon can engage a GROUND target.
+
+        Keyed off the projectile's AG flag, which defaults to yes in YR — so an
+        unknown or missing projectile is treated as ground-capable rather than
+        silently dropping a real defense.
+        """
+        if not weapon:
+            return False
+        proj = (self.ini.get(weapon, "Projectile", "") or "").strip()
+        if not proj:
+            return True
+        ag = (self.ini.get(proj, "AG", "yes") or "yes").strip().lower()
+        return ag not in ("no", "false", "0")
+
+    def _weapon_hits_air(self, weapon):
+        """Whether this weapon can engage an AIR target (projectile AA=yes)."""
+        if not weapon:
+            return False
+        proj = (self.ini.get(weapon, "Projectile", "") or "").strip()
+        if not proj:
+            return False            # AA defaults to no, unlike AG
+        aa = (self.ini.get(proj, "AA", "no") or "no").strip().lower()
+        return aa not in ("no", "false", "0")
+
     def _scan_strategic_targets(self):
         """
         Scan rulesmd.ini for strategic target buildings/units and
@@ -2601,22 +3068,33 @@ class RulesMdParser:
 
         Returns:
           miner_armors         : set of armor indices for harvesters
+          miner_strengths      : Strength of each harvester found
           cy_armor             : most common armor index for construction yards
           cy_armors            : set of ALL armor indices for construction yards
                                  (for per-faction CY grading)
           cy_armor_by_faction  : dict faction -> armor index for their CY
           factory_armors       : set of armor indices for factories
           base_def_armors      : set of armor indices for base defenses
-          base_def_ranges      : list of weapon ranges of base defenses
+          base_def_ranges      : ground-capable weapon ranges of ARMED
+                                 buildings (any building with a weapon —
+                                 IsBaseDefense is deliberately ignored)
+          base_def_ranges_air  : the same for air-capable weapons
+          base_def_strengths   : Strength of each armed building
           opentopped_dmg_mult  : OpenToppedDamageMultiplier from [CombatDamage]
           opentopped_rng_bonus : OpenToppedRangeBonus from [CombatDamage]
         """
         miner_armors       = set()
+        miner_strengths    = []
         cy_armors          = set()           # all CY armor types seen
         cy_armor_by_bid    = {}              # bid -> armor_index
+        cy_strengths       = []
+        factory_strengths  = []
         factory_armors     = set()
         base_def_armors    = set()
-        base_def_ranges    = []
+        base_def_armor_counts = {}   # armor_index -> armed buildings
+        base_def_strengths = []      # Strength of each armed building
+        base_def_ranges    = []      # ground-capable building weapons
+        base_def_ranges_air = []     # air-capable building weapons
         service_depots     = []              # buildings that remove parasites (UnitRepair=yes)
         grinders           = []              # buildings that grind/destroy units (Grinding=yes)
 
@@ -2633,6 +3111,12 @@ class RulesMdParser:
                         sec.get("harvester", "no").lower() == "yes"):
                     ai = ARMOR_INDEX.get(sec.get("armor", "none").lower(), 0)
                     miner_armors.add(ai)
+                    try:
+                        st = float(sec.get("strength", "0") or 0)
+                    except ValueError:
+                        st = 0.0
+                    if st > 0:
+                        miner_strengths.append(st)
 
         for uid in self.ini.list_from_section("BuildingTypes"):
             if not uid or uid.startswith(";"):
@@ -2654,21 +3138,68 @@ class RulesMdParser:
             if sec.get("constructionyard", "no").lower() == "yes":
                 cy_armors.add(ai)
                 cy_armor_by_bid[uid] = ai
+                try:
+                    _st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    _st = 0.0
+                if _st > 0:
+                    cy_strengths.append(_st)
 
             if sec.get("factory", "").lower() in factory_tag_values:
                 factory_armors.add(ai)
+                try:
+                    _st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    _st = 0.0
+                if _st > 0:
+                    factory_strengths.append(_st)
+
+            # Defense RANGES are taken from weapon tags only — never from
+            # IsBaseDefense. Per Rex: modders often leave that flag unset, and
+            # a building that is not nominally a defense but carries a weapon
+            # fulfils the same role, so it is treated the same. That pulls in
+            # vanilla's Grand Cannon (GTGCAN, range 15) and Psychic Tower
+            # (YAPSYT, 7), both of which carry NO IsBaseDefense flag and were
+            # therefore invisible to the old flag-gated scan — the Grand Cannon
+            # being the longest-ranged ground defense in the game.
+            #
+            # Ground and air are kept apart: a projectile with AG=no cannot
+            # touch a ground attacker (vanilla NASAM/NAFLAK, range 12), so its
+            # range says nothing about out-ranging the base on the ground, and
+            # mixing them pushed the bar above the Prism Tower.
+            armed = False
+            for wtag in REGULAR_WEAPON_TAGS:
+                wname = (sec.get(wtag.lower(), "") or "").strip()
+                if not wname:
+                    continue
+                armed = True
+                try:
+                    r = float(self.ini.get(wname, "Range", "0"))
+                except ValueError:
+                    continue
+                if r <= 0:
+                    continue
+                if self._weapon_hits_ground(wname):
+                    base_def_ranges.append(r)
+                if self._weapon_hits_air(wname):
+                    base_def_ranges_air.append(r)
+            if armed:
+                # Armour and Strength come from the same armed-building set as
+                # the ranges. base_def_armors used to be flag-gated, which left
+                # it inconsistent with the ranges beside it — and it had no
+                # consumer at all until the defense-killer DPS floor.
+                base_def_armors.add(ai)
+                base_def_armor_counts[ai] = base_def_armor_counts.get(ai, 0) + 1
+                try:
+                    st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    st = 0.0
+                if st > 0:
+                    base_def_strengths.append(st)
 
             if (sec.get("basedefense",   "no").lower() == "yes" or
                     sec.get("isbasedefense", "no").lower() == "yes"):
                 base_def_armors.add(ai)
-                primary = sec.get("weapon1", "") or sec.get("primary", "")
-                if primary:
-                    try:
-                        r = float(self.ini.get(primary, "Range", "0"))
-                        if r > 0:
-                            base_def_ranges.append(r)
-                    except ValueError:
-                        pass
 
         # Most common CY armor (for backward compat / default scoring)
         if cy_armors:
@@ -2707,6 +3238,7 @@ class RulesMdParser:
 
         return {
             "miner_armors":        miner_armors,
+            "miner_strengths":     miner_strengths,
             "cy_armor":            cy_armor,
             "cy_armors":           cy_armors,
             "cy_armor_by_faction": cy_armor_by_faction,
@@ -2714,6 +3246,11 @@ class RulesMdParser:
             "factory_armors":      factory_armors,
             "base_def_armors":     base_def_armors,
             "base_def_ranges":     base_def_ranges,
+            "base_def_ranges_air": base_def_ranges_air,
+            "base_def_strengths":  base_def_strengths,
+            "base_def_armor_counts": base_def_armor_counts,
+            "cy_strengths":        cy_strengths,
+            "factory_strengths":   factory_strengths,
             "service_depots":      service_depots,
             "grinders":            grinders,
             "opentopped_dmg_mult": opentopped_dmg_mult,
@@ -3007,6 +3544,86 @@ class RulesMdParser:
             "aa_capability_bonus": aa_cap_bonus,
         }
 
+    # Role tags are assigned to EVERY unit by WeaponAnalyzer.assign_roles(),
+    # but _compute_unit_grades only iterates self.buildable — so every
+    # refinement and every floor there misses anything outside that pool.
+    # Vanilla's Allied Tech Centre is exactly that case: it carries
+    # AG-Anti_Infantry + AG-Anti_Vehicle + AG-Anti_Building + AG-Multi from
+    # assign_roles and the grading pass never sees it. Hence a pass of its own.
+    _FLOOR_TAGS = (
+        ("AG-Anti_Infantry", "infantry"),
+        ("AG-Anti_Vehicle",  "vehicle"),
+        ("AG-Anti_Building", "structure"),
+        ("CY_Killer",        "cy"),
+        ("Factory_Killer",   "factory"),
+    )
+
+    def _prune_weak_role_tags(self):
+        """Drop target-class role tags the unit cannot actually act on.
+
+        AG-Anti_* comes from warhead Verses >= 50% against that armour class —
+        pure target-type matching, no magnitude at all. CY_Killer and
+        Factory_Killer use spectrum(), which is relative to the mod average, so
+        in a mod where nothing hits hard the least-bad units still qualify.
+
+        Units whose effect is not damage are skipped entirely
+        (dps_is_trustworthy): chrono erasure, mind control, radiation, chaos,
+        parasites, and spawned payloads.
+        """
+        try:
+            targets = self._scan_strategic_targets()
+            threat = self._compute_global_threat_stats()
+        except Exception:
+            return
+        avg_hp = threat.get("avg_hp") or {}
+        armors = {
+            "infantry": set(ARMOR_INFANTRY),
+            "vehicle": set(ARMOR_VEHICLE),
+            "structure": set(ARMOR_BUILDING),
+            "cy": set(targets.get("cy_armors") or ()),
+            "factory": set(targets.get("factory_armors") or ()),
+        }
+        floors = {
+            "infantry": kill_dps_floor(avg_hp.get("Infantry", 0),
+                                       INFANTRY_KILL_SECONDS),
+            "vehicle": kill_dps_floor(avg_hp.get("Vehicle", 0),
+                                      VEHICLE_KILL_SECONDS),
+            "structure": kill_dps_floor(
+                _median(targets.get("base_def_strengths") or []),
+                STRUCTURE_KILL_SECONDS),
+            "cy": kill_dps_floor(_median(targets.get("cy_strengths") or []),
+                                 STRUCTURE_KILL_SECONDS),
+            "factory": kill_dps_floor(
+                _median(targets.get("factory_strengths") or []),
+                STRUCTURE_KILL_SECONDS),
+        }
+        for rec in getattr(self, "units", {}).values():
+            if not dps_is_trustworthy(rec):
+                continue
+            roles = list(getattr(rec, "roles", None) or [])
+            if not roles:
+                continue
+            drop = []
+            for tag, key in self._FLOOR_TAGS:
+                if tag not in roles:
+                    continue
+                floor, arm = floors[key], armors[key]
+                if floor <= 0 or not arm:
+                    continue
+                if best_weapon_dps_vs(rec, arm) < floor:
+                    drop.append(tag)
+            if not drop:
+                continue
+            roles = [r for r in roles if r not in drop]
+            # AG-Multi and GENERALIST both claim breadth across the AG-Anti_*
+            # set, so neither can outlive it.
+            left = sum(1 for r in roles if r.startswith("AG-Anti_"))
+            if left < 2:
+                roles = [r for r in roles if r != "AG-Multi"]
+            if left == 0:
+                roles = [r for r in roles if r != "GENERALIST"]
+            rec.roles = roles
+
     def _compute_unit_grades(self):
         """
         Compute composite grade for every buildable unit.
@@ -3085,15 +3702,14 @@ class RulesMdParser:
         threat      = self._compute_global_threat_stats()
 
         miner_armors        = targets["miner_armors"]
+        miner_dps_floor     = miner_kill_dps_floor(
+            targets.get("miner_strengths"))
         cy_armor            = targets["cy_armor"]
         cy_armors           = targets.get("cy_armors", {cy_armor})
         factory_armors      = targets["factory_armors"]
         base_def_ranges     = targets["base_def_ranges"]
         ot_dmg_mult         = targets["opentopped_dmg_mult"]
-        avg_base_def_range  = (
-            sum(base_def_ranges) / len(base_def_ranges)
-            if base_def_ranges else 6.0
-        )
+        avg_base_def_range  = defense_range_bar(base_def_ranges)
 
         global_avg_hp       = threat["avg_hp"]
         avg_miner_hp        = threat["avg_miner_hp"]
@@ -3173,45 +3789,12 @@ class RulesMdParser:
             base = rec.strength * mult
             return base * 1.25 if rec.self_healing else base
 
-        def dps_vs_weapon(wpn, armor_indices):
-            verses = wpn.get("verses", [0.0] * 11)
-            damage = wpn.get("damage", 0.0)
-            rof    = wpn.get("rof",    1.0)
-            return max(
-                (effective_dps(damage, rof, verses, ai) for ai in armor_indices),
-                default=0.0
-            )
+        dps_vs_weapon = globals()["dps_vs_weapon"]
 
         def dps_vs(rec, armor_indices):
-            """
-            Primary weapon DPS + secondary bonus (only if secondary helps).
-            Secondary never penalizes — only added if it improves the score.
-
-            Key gate: if secondary has can_ag=False (AG=no on projectile),
-            it physically cannot target ground units regardless of its warhead
-            verses. MammothTusk (APOC secondary) has AG=no — it can only
-            target aircraft, so it contributes 0 to any ground DPS calculation.
-
-            Exception: if armor_indices are aerial armor types (index 9),
-            can_ag=False secondaries ARE allowed to contribute.
-            """
-            AERIAL_ARMOR_IDX = {9, 10}  # air and ore/misc (aerial targets)
-            is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
-
-            pri = dps_vs_weapon(rec.role_weapon, armor_indices)
-            sec = 0.0
-            sec_wpn = rec.secondary_analysis
-            if sec_wpn and sec_wpn.get("is_combat"):
-                # Gate: can_ag=False means weapon cannot target ground units
-                can_ag_sec = sec_wpn.get("can_ag", True)
-                if not can_ag_sec and not is_aerial_target:
-                    sec = 0.0  # MammothTusk etc: can't hit ground
-                else:
-                    sec_dps = dps_vs_weapon(sec_wpn, armor_indices)
-                    if sec_dps > 0:
-                        sec = sec_dps
-            # Never let secondary reduce the score below primary alone
-            return max(pri, pri + sec * 0.5)
+            """Module-level unit_dps_vs(); kept as a local name for the many
+            call sites below."""
+            return unit_dps_vs(rec, armor_indices)
 
         def kills_per_hit(rec, armor_indices, target_avg_hp: float) -> float:
             """
@@ -3753,8 +4336,12 @@ class RulesMdParser:
                 # too permissive: GHOST's MP5 does trivial damage to medium
                 # armor but was still passing the threshold, wrongly getting
                 # tagged Miner_Killer.
-                if miner_armors and spectrum(
-                        dps_vs(rec, miner_armors), ac.get("miner", 0)) >= 2:
+                # Relative rank AND an absolute floor: "better than this mod's
+                # average" is not the same as "can actually kill a miner".
+                if (miner_armors
+                        and spectrum(dps_vs(rec, miner_armors),
+                                     ac.get("miner", 0)) >= 2
+                        and dps_vs(rec, miner_armors) >= miner_dps_floor):
                     if "Miner_Killer" not in rec.roles:
                         rec.roles = rec.roles + ["Miner_Killer"]
                 if spectrum(dps_vs(rec, cy_armors), ac.get("cy", 0)) >= 1:
@@ -3967,5 +4554,6 @@ class RulesMdParser:
                 if (bd.get("outranges_def", 0) >= 2 and _arty_bld_dps >= 0.10):
                     if "ARTY" not in rec.roles:
                         rec.roles = rec.roles + ["ARTY"]
+
 
 
