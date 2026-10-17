@@ -773,13 +773,10 @@ class UnitRolesPanel(QWidget):
             QMessageBox.information(self, "Generate",
                                    "Check at least one unit for this role.")
             return
-        from ..wavegen.role_bundles import build_role_entry
+        from ..wavegen.role_bundles import (build_role_entries, QUEUE_LABEL,
+                                            role_one_queue, split_by_queue)
         from ..engine import working_path, target_countries
         from .ai_library_dialog import _PullDialog, _sibling_aimd
-        entry = build_role_entry(
-            role, units,
-            side=self.side_combo.currentData() or 1,
-            condition=self._selected_condition())
 
         container = self.parent()
         while container is not None and not isinstance(container, AiTab):
@@ -788,10 +785,36 @@ class UnitRolesPanel(QWidget):
         sm = getattr(self.mw, "section_map", None)
         countries = target_countries(sm) if sm else None
 
-        if builder is not None and getattr(builder, "_working", False):
-            _PullDialog(self, entry, working_path(), rules_map=sm,
-                        countries=countries).exec()
-        else:
+        # A role flagged one_queue yields one bundle PER FACTORY QUEUE: a rush
+        # mixing infantry, armour and aircraft would trickle out of three build
+        # queues instead of massing. Each bundle is pulled separately so the
+        # user sees and approves each one.
+        entries = build_role_entries(
+            role, units,
+            side=self.side_combo.currentData() or 1,
+            condition=self._selected_condition(),
+            rules_map=sm)
+
+        if len(entries) > 1:
+            qs = ", ".join(f"{QUEUE_LABEL[q]} ({len(m)})"
+                           for q, m in split_by_queue(units, sm))
+            if QMessageBox.question(
+                    self, "Separate by factory queue",
+                    f"“{role}” must not mix factory types, so these units "
+                    f"split into {len(entries)} bundles — {qs}.\n\n"
+                    "Each gets its own TaskForce, Script, TeamType and "
+                    "AITrigger, and is previewed separately. Continue?"
+            ) != QMessageBox.Yes:
+                return
+        elif role_one_queue(role) and not sm:
+            QMessageBox.information(
+                self, "Generate",
+                "No rules are loaded, so factory queues cannot be told apart — "
+                "building one combined bundle. Load the mod's rulesmd to have "
+                f"“{role}” split by factory type.")
+
+        tgt = None
+        if not (builder is not None and getattr(builder, "_working", False)):
             tgt = _sibling_aimd(getattr(self.mw, "source_path", None))
             if not tgt:
                 QMessageBox.information(
@@ -800,7 +823,12 @@ class UnitRolesPanel(QWidget):
                     "Builder first — the generated triggers are pulled into that "
                     "aimd (with a backup).")
                 return
-            _PullDialog(self, entry, tgt, rules_map=sm, countries=countries).exec()
+
+        for entry in entries:
+            dest = working_path() if tgt is None else tgt
+            if _PullDialog(self, entry, dest, rules_map=sm,
+                           countries=countries).exec() != QDialog.Accepted:
+                break          # cancelling one bundle abandons the rest
 
         if builder is not None:
             builder._reload()

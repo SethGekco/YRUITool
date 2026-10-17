@@ -266,6 +266,94 @@ def main():
           f"{'OK' if tags_ok else 'FAIL'}")
     ok = ok and tags_ok
 
+    # ── one bundle per factory queue ───────────────────────────────────────
+    from yrbalance.wavegen.role_bundles import (
+        build_role_entries, split_by_queue, production_queue, role_one_queue,
+        QUEUE_INFANTRY, QUEUE_VEHICLE, QUEUE_NAVAL, QUEUE_AIRCRAFT,
+        QUEUE_OTHER,
+    )
+    from yrbalance.engine import parse_ini_lines, build_section_map
+    import tempfile as _tf
+
+    QRULES = """\
+[InfantryTypes]
+0=GI
+[VehicleTypes]
+0=TANK
+1=BOAT
+[AircraftTypes]
+0=JET
+[GI]
+Cost=200
+[TANK]
+Cost=700
+[BOAT]
+Cost=1000
+Naval=yes
+[JET]
+Cost=1200
+"""
+    with _tf.TemporaryDirectory() as d:
+        rp = os.path.join(d, "r.ini")
+        open(rp, "w").write(QRULES)
+        sm = build_section_map(parse_ini_lines(rp))[0]
+
+        # A naval vehicle comes out of a naval YARD, not the war factory, so it
+        # must not share a rush taskforce with land armour.
+        q_ok = (production_queue("GI", sm) == QUEUE_INFANTRY
+                and production_queue("TANK", sm) == QUEUE_VEHICLE
+                and production_queue("BOAT", sm) == QUEUE_NAVAL
+                and production_queue("JET", sm) == QUEUE_AIRCRAFT
+                and production_queue("NOPE", sm) == QUEUE_OTHER
+                and production_queue("GI", None) == QUEUE_OTHER)
+        print(f"production_queue splits naval off from vehicles: "
+              f"{'OK' if q_ok else 'FAIL'}")
+        ok = ok and q_ok
+
+        units = ["GI", "TANK", "BOAT", "JET"]
+        groups = split_by_queue(units, sm)
+        split_ok = ([q for q, _ in groups] == [QUEUE_INFANTRY, QUEUE_VEHICLE,
+                                               QUEUE_NAVAL, QUEUE_AIRCRAFT]
+                    and all(len(m) == 1 for _q, m in groups))
+        print(f"split_by_queue is ordered and complete: "
+              f"{'OK' if split_ok else 'FAIL'} {[q for q,_ in groups]}")
+        ok = ok and split_ok
+
+        # Rush must not mix queues; a role without the flag is untouched.
+        rush = build_role_entries("Rush", units, rules_map=sm)
+        gen = build_role_entries("General Attack", units, rules_map=sm)
+        names = [e.name for e in rush]
+        tfs = [sorted(v for k, v in e.blocks[0].keys if k.isdigit())
+               for e in rush]
+        bundle_ok = (role_one_queue("Rush")
+                     and not role_one_queue("General Attack")
+                     and len(rush) == 4 and len(gen) == 1
+                     and all(len(x) == 1 for x in tfs)      # no mixing
+                     and any("Infantry" in n for n in names)
+                     and any("Aircraft" in n for n in names))
+        print(f"Rush yields one bundle per queue, labelled: "
+              f"{'OK' if bundle_ok else 'FAIL'} {names}")
+        ok = ok and bundle_ok
+
+        # Each bundle must be independently valid, not just the first.
+        each_ok = all(len(fields(e.trigger_def)["Name"]) <= 47
+                      and fields(e.trigger_def)["Team2"] == "<none>"
+                      and fields(e.trigger_def)["TechLevel"] == "1"
+                      for e in rush)
+        print(f"every queue bundle emits a valid trigger: "
+              f"{'OK' if each_ok else 'FAIL'}")
+        ok = ok and each_ok
+
+        # Without rules the queue is unknowable — one honest combined bundle
+        # beats silently dropping units.
+        fb = build_role_entries("Rush", units, rules_map=None)
+        single = build_role_entries("Rush", ["GI"], rules_map=sm)
+        fb_ok = (len(fb) == 1 and len(fb[0].units) == 4
+                 and len(single) == 1 and "Infantry" not in single[0].name)
+        print(f"no rules -> one combined bundle; single queue -> no suffix: "
+              f"{'OK' if fb_ok else 'FAIL'}")
+        ok = ok and fb_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
