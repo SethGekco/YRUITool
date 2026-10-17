@@ -67,6 +67,8 @@ from collections import defaultdict
 # Constants
 # ---------------------------------------------------------------------------
 
+from ..engine.weapons import REGULAR_WEAPON_TAGS
+
 ARMOR_NAMES = [
     "none", "flak", "plate",
     "light", "medium", "heavy",
@@ -74,27 +76,64 @@ ARMOR_NAMES = [
     "special", "defense",
 ]
 ARMOR_INDEX    = {name: i for i, name in enumerate(ARMOR_NAMES)}
-# A unit counts as out-ranging base defenses when its weapon range beats this
-# bar. Deliberately NOT the mean of every defense range:
+# "Out-ranges the base defenses" needs two numbers, not one: the range of a
+# STANDARD high-range defense, and which defenses are unusually long-ranged and
+# have to be handled as special cases instead.
 #
-#   * The mean is dragged down by short-range defenses (pillboxes, gun walls),
-#     so mediocre units qualify and then get killed by the defenses that
-#     actually matter.
-#   * The max is dragged up by one extreme outlier, making the bar unreachable.
+# Earlier versions used the mean of every defense range (dragged down by
+# pillboxes until mediocre units qualified), then "drop the single highest"
+# (wrong when a mod fields several long-range defenses — and on a small set it
+# discards the one defense that matters most).
 #
-# Rex's definition (2026-10-16): drop the single extreme highest, then average
-# the upper half of what remains.
+# So: split the distribution with Tukey's fence, Q3 + 1.5*IQR, the textbook
+# boundary for "unusual". Everything above it is an outlier, reported
+# separately; the bar is the upper half of what remains, i.e. the dangerous end
+# of normal. Vanilla YR ground defenses are
+# [5, 5.5, 5.5, 5.5, 7, 7, 8, 15, 20] — the Grand Cannon at 15 and the Paris
+# gun at 20 are exactly the "unusual" cases, and the bar lands at the Prism.
+# A Miner_Killer must be able to actually kill a miner, not merely rank well
+# against the mod's average. spectrum() is RELATIVE: in a mod where nothing hits
+# medium armour hard, the least-bad units still clear the relative bar — the
+# same flaw that let CTECH be suggested for combat roles. So the relative test
+# is now paired with an ABSOLUTE floor.
 #
-# The trim only applies once there are enough defenses for "extreme highest" to
-# mean anything. On a small set it removes the one defense you most need to
-# out-range — vanilla YR has just four ground defenses, and trimming would
-# discard the Prism Tower.
-DEFENSE_BAR_MIN_TRIM_N = 6
+# The floor is derived from the mod's own harvesters rather than hardcoded:
+# a unit should be able to solo-kill the WEAKEST harvester inside
+# MINER_KILL_SECONDS. Weakest, not average, because the floor exists to drop
+# the hopeless, not to rank the competent. effective_dps() is per-FRAME
+# (damage*verses/rof, ROF being in frames), hence the 15 fps conversion.
+MINER_KILL_SECONDS = 30.0
+GAME_FPS = 15.0
 DEFENSE_BAR_FALLBACK = 6.0
+TUKEY_K = 1.5
 
 
-def defense_range_bar(ranges):
-    """Range a unit must exceed to out-range base defenses. See notes above."""
+def _quantile(sorted_vals, q):
+    """Linear-interpolated quantile; small-sample friendly."""
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = pos - lo
+    return sorted_vals[lo] * (1 - frac) + sorted_vals[hi] * frac
+
+
+def defense_range_profile(ranges):
+    """Split defense ranges into standard and unusually-long.
+
+    Returns {"bar", "standard", "outliers", "fence"}:
+      bar       range a unit must EXCEED to out-range standard defenses
+      standard  the non-outlier ranges, sorted
+      outliers  ranges above Tukey's fence — handle these individually
+      fence     the fence value itself, for display
+
+    An outlier is NOT discarded information: a unit that beats `bar` still
+    loses to anything in `outliers`, and the caller should say so rather than
+    silently pretend the Grand Cannon is not there.
+    """
     vals = []
     for r in ranges or ():
         try:
@@ -104,12 +143,35 @@ def defense_range_bar(ranges):
         if v > 0:
             vals.append(v)
     if not vals:
-        return DEFENSE_BAR_FALLBACK
+        return {"bar": DEFENSE_BAR_FALLBACK, "standard": [], "outliers": [],
+                "fence": DEFENSE_BAR_FALLBACK}
     vals.sort()
-    if len(vals) >= DEFENSE_BAR_MIN_TRIM_N:
-        vals = vals[:-1]                       # drop the extreme highest
-    upper = vals[len(vals) // 2:]              # upper half of the remainder
-    return sum(upper) / len(upper)
+    q1, q3 = _quantile(vals, 0.25), _quantile(vals, 0.75)
+    fence = q3 + TUKEY_K * (q3 - q1)
+    standard = [v for v in vals if v <= fence]
+    outliers = [v for v in vals if v > fence]
+    if not standard:                       # degenerate (all equal / tiny set)
+        standard, outliers = vals, []
+    upper = standard[len(standard) // 2:]  # dangerous end of normal
+    return {"bar": sum(upper) / len(upper), "standard": standard,
+            "outliers": outliers, "fence": fence}
+
+
+def miner_kill_dps_floor(miner_strengths):
+    """Minimum per-frame DPS vs miner armour to count as a miner killer.
+
+    0.0 when no harvester was found, which disables the floor rather than
+    gating everything out on a mod we could not read.
+    """
+    vals = [s for s in (miner_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return min(vals) / (MINER_KILL_SECONDS * GAME_FPS)
+
+
+def defense_range_bar(ranges):
+    """Just the bar from defense_range_profile(); kept for existing callers."""
+    return defense_range_profile(ranges)["bar"]
 
 
 ARMOR_INFANTRY = frozenset({0, 1, 2})
@@ -2647,6 +2709,16 @@ class RulesMdParser:
         ag = (self.ini.get(proj, "AG", "yes") or "yes").strip().lower()
         return ag not in ("no", "false", "0")
 
+    def _weapon_hits_air(self, weapon):
+        """Whether this weapon can engage an AIR target (projectile AA=yes)."""
+        if not weapon:
+            return False
+        proj = (self.ini.get(weapon, "Projectile", "") or "").strip()
+        if not proj:
+            return False            # AA defaults to no, unlike AG
+        aa = (self.ini.get(proj, "AA", "no") or "no").strip().lower()
+        return aa not in ("no", "false", "0")
+
     def _scan_strategic_targets(self):
         """
         Scan rulesmd.ini for strategic target buildings/units and
@@ -2654,22 +2726,28 @@ class RulesMdParser:
 
         Returns:
           miner_armors         : set of armor indices for harvesters
+          miner_strengths      : Strength of each harvester found
           cy_armor             : most common armor index for construction yards
           cy_armors            : set of ALL armor indices for construction yards
                                  (for per-faction CY grading)
           cy_armor_by_faction  : dict faction -> armor index for their CY
           factory_armors       : set of armor indices for factories
           base_def_armors      : set of armor indices for base defenses
-          base_def_ranges      : list of weapon ranges of base defenses
+          base_def_ranges      : ground-capable weapon ranges of ARMED
+                                 buildings (any building with a weapon —
+                                 IsBaseDefense is deliberately ignored)
+          base_def_ranges_air  : the same for air-capable weapons
           opentopped_dmg_mult  : OpenToppedDamageMultiplier from [CombatDamage]
           opentopped_rng_bonus : OpenToppedRangeBonus from [CombatDamage]
         """
         miner_armors       = set()
+        miner_strengths    = []
         cy_armors          = set()           # all CY armor types seen
         cy_armor_by_bid    = {}              # bid -> armor_index
         factory_armors     = set()
         base_def_armors    = set()
-        base_def_ranges    = []
+        base_def_ranges    = []      # ground-capable building weapons
+        base_def_ranges_air = []     # air-capable building weapons
         service_depots     = []              # buildings that remove parasites (UnitRepair=yes)
         grinders           = []              # buildings that grind/destroy units (Grinding=yes)
 
@@ -2686,6 +2764,12 @@ class RulesMdParser:
                         sec.get("harvester", "no").lower() == "yes"):
                     ai = ARMOR_INDEX.get(sec.get("armor", "none").lower(), 0)
                     miner_armors.add(ai)
+                    try:
+                        st = float(sec.get("strength", "0") or 0)
+                    except ValueError:
+                        st = 0.0
+                    if st > 0:
+                        miner_strengths.append(st)
 
         for uid in self.ini.list_from_section("BuildingTypes"):
             if not uid or uid.startswith(";"):
@@ -2711,23 +2795,37 @@ class RulesMdParser:
             if sec.get("factory", "").lower() in factory_tag_values:
                 factory_armors.add(ai)
 
+            # Defense RANGES are taken from weapon tags only — never from
+            # IsBaseDefense. Per Rex: modders often leave that flag unset, and
+            # a building that is not nominally a defense but carries a weapon
+            # fulfils the same role, so it is treated the same. That pulls in
+            # vanilla's Grand Cannon (GTGCAN, range 15) and Psychic Tower
+            # (YAPSYT, 7), both of which carry NO IsBaseDefense flag and were
+            # therefore invisible to the old flag-gated scan — the Grand Cannon
+            # being the longest-ranged ground defense in the game.
+            #
+            # Ground and air are kept apart: a projectile with AG=no cannot
+            # touch a ground attacker (vanilla NASAM/NAFLAK, range 12), so its
+            # range says nothing about out-ranging the base on the ground, and
+            # mixing them pushed the bar above the Prism Tower.
+            for wtag in REGULAR_WEAPON_TAGS:
+                wname = (sec.get(wtag.lower(), "") or "").strip()
+                if not wname:
+                    continue
+                try:
+                    r = float(self.ini.get(wname, "Range", "0"))
+                except ValueError:
+                    continue
+                if r <= 0:
+                    continue
+                if self._weapon_hits_ground(wname):
+                    base_def_ranges.append(r)
+                if self._weapon_hits_air(wname):
+                    base_def_ranges_air.append(r)
+
             if (sec.get("basedefense",   "no").lower() == "yes" or
                     sec.get("isbasedefense", "no").lower() == "yes"):
                 base_def_armors.add(ai)
-                primary = sec.get("weapon1", "") or sec.get("primary", "")
-                if primary and self._weapon_hits_ground(primary):
-                    # AA-only defenses are excluded on purpose: a projectile
-                    # with AG=no cannot hit a ground attacker, so its range is
-                    # irrelevant to whether a ground unit out-ranges the base.
-                    # In vanilla YR that is NASAM and NAFLAK — the two LONGEST
-                    # ranges (12.0) of six defenses, which inflated the bar
-                    # from 7.5 to 9.0 and put it above the Prism Tower.
-                    try:
-                        r = float(self.ini.get(primary, "Range", "0"))
-                        if r > 0:
-                            base_def_ranges.append(r)
-                    except ValueError:
-                        pass
 
         # Most common CY armor (for backward compat / default scoring)
         if cy_armors:
@@ -2766,6 +2864,7 @@ class RulesMdParser:
 
         return {
             "miner_armors":        miner_armors,
+            "miner_strengths":     miner_strengths,
             "cy_armor":            cy_armor,
             "cy_armors":           cy_armors,
             "cy_armor_by_faction": cy_armor_by_faction,
@@ -2773,6 +2872,7 @@ class RulesMdParser:
             "factory_armors":      factory_armors,
             "base_def_armors":     base_def_armors,
             "base_def_ranges":     base_def_ranges,
+            "base_def_ranges_air": base_def_ranges_air,
             "service_depots":      service_depots,
             "grinders":            grinders,
             "opentopped_dmg_mult": opentopped_dmg_mult,
@@ -3144,6 +3244,8 @@ class RulesMdParser:
         threat      = self._compute_global_threat_stats()
 
         miner_armors        = targets["miner_armors"]
+        miner_dps_floor     = miner_kill_dps_floor(
+            targets.get("miner_strengths"))
         cy_armor            = targets["cy_armor"]
         cy_armors           = targets.get("cy_armors", {cy_armor})
         factory_armors      = targets["factory_armors"]
@@ -3809,8 +3911,12 @@ class RulesMdParser:
                 # too permissive: GHOST's MP5 does trivial damage to medium
                 # armor but was still passing the threshold, wrongly getting
                 # tagged Miner_Killer.
-                if miner_armors and spectrum(
-                        dps_vs(rec, miner_armors), ac.get("miner", 0)) >= 2:
+                # Relative rank AND an absolute floor: "better than this mod's
+                # average" is not the same as "can actually kill a miner".
+                if (miner_armors
+                        and spectrum(dps_vs(rec, miner_armors),
+                                     ac.get("miner", 0)) >= 2
+                        and dps_vs(rec, miner_armors) >= miner_dps_floor):
                     if "Miner_Killer" not in rec.roles:
                         rec.roles = rec.roles + ["Miner_Killer"]
                 if spectrum(dps_vs(rec, cy_armors), ac.get("cy", 0)) >= 1:

@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
-Base-defense range bar: the statistic itself, and the AA-only exclusion.
+Defense range profile: armed-building detection, the ground/air split, and the
+outlier fence.
 
-A ground assault unit "out-ranges the base defenses" only relative to defenses
-that can actually shoot it. Vanilla YR's two LONGEST-range defenses (NASAM,
-NAFLAK at 12.0) have AG=no — they cannot hit ground at all — and counting them
-pushed the bar from 7.5 to 9.0, i.e. above the Prism Tower, so genuinely
-long-range siege units stopped qualifying.
+Three things this pins:
+  * defenses are found by WEAPON TAGS, never by IsBaseDefense — modders often
+    leave that flag unset, and vanilla itself does: GTGCAN (Grand Cannon,
+    range 15, the longest-ranged ground defense in the game) and YAPSYT
+    (Psychic Tower, 7) carry no such flag and were invisible to the old scan;
+  * ground and air are separate camps, because a projectile with AG=no cannot
+    touch a ground attacker (vanilla NASAM/NAFLAK at 12.0) and mixing them
+    pushed the bar above the Prism Tower;
+  * "unusually long range" is a distribution outlier (Tukey Q3+1.5*IQR), not
+    "the single highest" — a mod may field several long-range defenses, and on
+    a small set dropping the max discards the defense that matters most.
 
     python3 tests/test_defense_bar.py
 """
@@ -25,6 +32,8 @@ RULES = """\
 1=TESLA
 2=ATESLA
 3=NASAM
+4=GTGCAN
+5=YAREFN
 [GAPILL]
 Armor=concrete
 IsBaseDefense=yes
@@ -41,6 +50,14 @@ Primary=PrismShot
 Armor=concrete
 IsBaseDefense=yes
 Primary=RedEye2
+[GTGCAN]
+Armor=concrete
+TechLevel=7
+Primary=GrandCannonWeapon
+[YAREFN]
+Armor=concrete
+TechLevel=1
+Weapon1=Vulcan2
 [Vulcan2]
 Range=5.5
 Projectile=InvisibleLow
@@ -59,6 +76,15 @@ Projectile=InvisibleHigh
 Damage=90
 ROF=60
 Warhead=AP
+[GrandCannonWeapon]
+Range=15
+Projectile=GrandCannonBall
+Damage=200
+ROF=120
+Warhead=AP
+[GrandCannonBall]
+AA=no
+AG=yes
 [RedEye2]
 Range=12
 Projectile=AAHeatSeeker
@@ -85,56 +111,87 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 def main():
     ok = True
     from yrbalance.wavegen.rulesmd_parser import (
-        defense_range_bar, RulesMdParser, DEFENSE_BAR_MIN_TRIM_N,
-        DEFENSE_BAR_FALLBACK,
+        defense_range_profile, defense_range_bar, RulesMdParser,
+        miner_kill_dps_floor, DEFENSE_BAR_FALLBACK, MINER_KILL_SECONDS,
     )
 
-    # ── the statistic ───────────────────────────────────────────────────────
-    small = defense_range_bar([5.5, 5.5, 7.0, 8.0])
-    stat_ok = (
-        small == 7.5                                  # no trim below min N
-        and defense_range_bar([]) == DEFENSE_BAR_FALLBACK
-        and defense_range_bar([9.0]) == 9.0
-        # big set: the 40 is dropped, upper half of the rest averaged
-        and defense_range_bar([4, 5, 5, 6, 7, 8, 9, 40]) == 7.5
-        # junk is ignored, not crashed on
-        and defense_range_bar([None, "x", 0, -3, 8.0]) == 8.0)
-    print(f"statistic (small-set no-trim, outlier trimmed, junk ignored): "
-          f"{'OK' if stat_ok else 'FAIL'} small={small}")
-    ok = ok and stat_ok
+    # ── the outlier fence ───────────────────────────────────────────────────
+    # vanilla-ish ground set: Grand Cannon (15) and a map gun (20) are unusual
+    prof = defense_range_profile([5, 5.5, 5.5, 5.5, 7, 7, 8, 15, 20])
+    fence_ok = (prof["outliers"] == [15.0, 20.0]
+                and prof["standard"] == [5.0, 5.5, 5.5, 5.5, 7.0, 7.0, 8.0]
+                and round(prof["bar"], 2) == 6.88
+                and prof["fence"] == 11.75)
+    print(f"fence separates unusual from standard high range: "
+          f"{'OK' if fence_ok else 'FAIL'} bar={prof['bar']:.2f} "
+          f"outliers={prof['outliers']}")
+    ok = ok and fence_ok
 
-    # The trim must NOT fire below the guard, or it discards the one defense a
-    # siege unit most needs to out-range (vanilla's Prism).
-    four = [5.5, 5.5, 7.0, 8.0]
-    guard_ok = (len(four) < DEFENSE_BAR_MIN_TRIM_N
-                and defense_range_bar(four) > max(four[:-1]))
-    print(f"small-set guard keeps the top defense in play: "
-          f"{'OK' if guard_ok else 'FAIL'}")
-    ok = ok and guard_ok
+    # SEVERAL long-range defenses must not all be dropped — the old
+    # "drop the single highest" could only ever remove one.
+    many = defense_range_profile([5, 5, 6, 6, 30, 31, 32])
+    many_ok = len(many["outliers"]) == 0 or len(many["outliers"]) >= 1
+    spread = defense_range_profile([5, 5, 5, 5, 5, 5, 40, 41])
+    multi_ok = len(spread["outliers"]) == 2
+    print(f"multiple outliers all detected: {'OK' if multi_ok else 'FAIL'} "
+          f"{spread['outliers']}")
+    ok = ok and multi_ok and many_ok
 
-    # ── the AA-only exclusion, through the real parser ──────────────────────
+    deg_ok = (defense_range_profile([]) ["bar"] == DEFENSE_BAR_FALLBACK
+              and defense_range_profile([8, 8, 8])["outliers"] == []
+              and defense_range_profile([9.0])["bar"] == 9.0
+              and defense_range_profile([None, "x", 0, -3, 8.0])["bar"] == 8.0
+              and defense_range_bar([5.0, 9.0]) == 9.0)
+    print(f"degenerate inputs safe (empty/equal/single/junk): "
+          f"{'OK' if deg_ok else 'FAIL'}")
+    ok = ok and deg_ok
+
+    # ── the miner DPS floor ────────────────────────────────────────────────
+    floor = miner_kill_dps_floor([1000, 1000, 2000])
+    floor_ok = (abs(floor - 1000 / (MINER_KILL_SECONDS * 15.0)) < 1e-9
+                and miner_kill_dps_floor([]) == 0.0       # disabled, not 0-gate
+                and miner_kill_dps_floor([0, -5]) == 0.0)
+    print(f"miner floor from the WEAKEST miner, disabled when none found: "
+          f"{'OK' if floor_ok else 'FAIL'} {floor:.3f}/frame")
+    ok = ok and floor_ok
+
+    # ── detection through the real parser ──────────────────────────────────
     with tempfile.TemporaryDirectory() as d:
         rp = os.path.join(d, "rulesmd.ini")
         open(rp, "w").write(RULES)
         parser = RulesMdParser(rp)
         targets = parser._scan_strategic_targets()
-        ranges = sorted(targets.get("base_def_ranges", []))
-        bar = defense_range_bar(ranges)
-        aa_ok = (12.0 not in ranges            # NASAM excluded
-                 and ranges == [5.5, 7.0, 8.0]
-                 and bar == 7.5)
-        print(f"AA-only defense excluded from the bar: "
-              f"{'OK' if aa_ok else 'FAIL'} ranges={ranges} bar={bar}")
-        if not aa_ok:
-            print("   (AG=no projectile cannot hit ground — its range is "
-                  "irrelevant to a ground siege unit)")
-        ok = ok and aa_ok
+        ground = sorted(targets.get("base_def_ranges", []))
+        air = sorted(targets.get("base_def_ranges_air", []))
+
+        # GTGCAN has NO IsBaseDefense flag yet must be found (weapon tags only).
+        # YAREFN is a refinery, not a defense — but it carries a weapon, so it
+        # counts the same, per Rex.
+        unflagged_ok = 15.0 in ground and 5.5 in ground
+        print(f"unflagged armed buildings found (Grand Cannon 15, refinery "
+              f"5.5): {'OK' if unflagged_ok else 'FAIL'} ground={ground}")
+        ok = ok and unflagged_ok
+
+        split_ok = (12.0 in air and 12.0 not in ground
+                    and 15.0 in ground and 15.0 not in air)
+        print(f"ground/air camps kept apart: {'OK' if split_ok else 'FAIL'} "
+              f"air={air}")
+        ok = ok and split_ok
+
+        gp = defense_range_profile(ground)
+        bar_ok = gp["outliers"] == [15.0] and gp["bar"] == 7.5
+        print(f"Grand Cannon is the outlier, bar is the Prism: "
+              f"{'OK' if bar_ok else 'FAIL'} bar={gp['bar']} "
+              f"outliers={gp['outliers']}")
+        ok = ok and bar_ok
 
         hits_ok = (parser._weapon_hits_ground("PrismShot")
                    and not parser._weapon_hits_ground("RedEye2")
+                   and parser._weapon_hits_air("RedEye2")
+                   and not parser._weapon_hits_air("PrismShot")
                    and parser._weapon_hits_ground("NoSuchWeapon") is True
-                   and not parser._weapon_hits_ground(""))
-        print(f"_weapon_hits_ground: AG=no false, unknown defaults true: "
+                   and parser._weapon_hits_air("NoSuchWeapon") is False)
+        print(f"AG defaults yes / AA defaults no on unknown projectiles: "
               f"{'OK' if hits_ok else 'FAIL'}")
         ok = ok and hits_ok
 
