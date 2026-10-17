@@ -24,8 +24,27 @@ from .team_generator import FIXED_FLAGS, ROLE_FLAGS
 
 # Display role → canonical generator key + role-detector tags for auto-suggest.
 ROLE_MAP = {
+    # Rush is gated on PREREQUISITE TIER, not TechLevel. Per Rex: TechLevel
+    # correlates with tech tier but is not the proper instrument; prerequisites
+    # are. rec.tier already encodes exactly that — tier_from_prereq_chain walks
+    # the unit's full prerequisite chain and asks whether it contains a radar
+    # (Mid) or a lab (Late). Vanilla: GI/Conscript/Dog/Guardian GI/Flak
+    # Trooper/Brute/Grizzly are Early, while the Chrono Legionnaire is Late
+    # (GAPILE,TECH) — which is the unit that prompted this.
+    #
+    # Raw prerequisite DEPTH does not work: vanilla's tree is shallow, so CLEG
+    # and GI both come out at depth 2. Chain membership is the signal.
     "Rush":           {"key": "RUSH",
-                       "tags": ["AG-Anti_Infantry", "GENERALIST", "AG-Multi"]},
+                       "tags": ["AG-Anti_Infantry", "GENERALIST", "AG-Multi"],
+                       "tiers": ("Early",),
+                       # tier_from_prereq_chain returns "Early" when the chain
+                       # contains no radar and no lab — which is also true of a
+                       # chain that is EMPTY. So campaign and civilian units
+                       # (ALL, JOSH, MUMY, POLARB, the dinosaurs) read as Early
+                       # and flooded the list. Rush therefore also requires the
+                       # unit to be in the parser's buildable pool: 42 -> the
+                       # units a player could actually open with.
+                       "buildable_only": True},
     "General Attack": {"key": "GENERAL_ATTACK",
                        "tags": ["GENERALIST", "AG-Multi", "HIGH_DPS"]},
     "Anti-Infantry":  {"key": "ANTI_INF", "tags": ["AG-Anti_Infantry"]},
@@ -138,6 +157,30 @@ LEGACY_ROLE_NAMES = {
 
 def available_roles():
     return list(ROLE_MAP.keys())
+
+
+# UnitRecord.tier defaults to the literal string "Rush" (see rulesmd_parser),
+# which is NOT a tier — it is "never computed", and it sits on 418 of vanilla's
+# 559 units, nearly all unbuildable props. A tier gate must therefore name the
+# tiers it wants rather than exclude the ones it does not.
+UNCOMPUTED_TIER = "Rush"
+
+
+def _spec_of(display_role):
+    spec = ROLE_MAP.get(display_role)
+    if spec is None and display_role in LEGACY_ROLE_NAMES:
+        spec = ROLE_MAP.get(LEGACY_ROLE_NAMES[display_role])
+    return spec or {}
+
+
+def role_tiers(display_role):
+    """Prerequisite tiers a role accepts, or () for no tier restriction."""
+    return tuple(_spec_of(display_role).get("tiers") or ())
+
+
+def role_buildable_only(display_role):
+    """Whether the role rejects units the player cannot actually build."""
+    return bool(_spec_of(display_role).get("buildable_only"))
 
 
 def _resolve(display_role):
@@ -330,10 +373,21 @@ def suggest_units_for_role(display_role, rules_path):
         except Exception:
             camp = None                    # fall back to tags only
 
+    tiers = role_tiers(display_role)
+    buildable = None
+    if role_buildable_only(display_role):
+        try:
+            buildable = {r.unit_id for r in getattr(parser, "buildable", ())}
+        except Exception:
+            buildable = None
     cands = []
     for uid, rec in getattr(parser, "units", {}).items():
         rr = {str(r).lower() for r in (getattr(rec, "roles", None) or [])}
         if not (rr & want):
+            continue
+        if tiers and str(getattr(rec, "tier", UNCOMPUTED_TIER)) not in tiers:
+            continue
+        if buildable is not None and uid not in buildable:
             continue
         if camp is None:
             cands.append((uid, rec))

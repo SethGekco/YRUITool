@@ -149,6 +149,36 @@ def main():
           f"{'OK' if airtrig_ok else 'FAIL'}")
     ok = ok and airtrig_ok
 
+    # ── Rush is gated on PREREQUISITE tier, never TechLevel ────────────────
+    from yrbalance.wavegen.role_bundles import (
+        role_tiers, role_buildable_only, UNCOMPUTED_TIER, ROLE_MAP,
+    )
+    tier_ok = (role_tiers("Rush") == ("Early",)
+               and role_buildable_only("Rush")
+               and role_tiers("General Attack") == ()
+               and not role_buildable_only("General Attack")
+               and role_tiers("Anti-Defenses (Standoff)") == ())
+    print(f"Rush gated on Early tier + buildable, others ungated: "
+          f"{'OK' if tier_ok else 'FAIL'}")
+    ok = ok and tier_ok
+
+    # UnitRecord.tier DEFAULTS to the literal string "Rush", which is not a
+    # tier — it means "never computed", and it sits on 418 of vanilla's 559
+    # units, nearly all unbuildable props. A gate that excluded tiers instead
+    # of naming them would therefore admit all of that junk.
+    sentinel_ok = (UNCOMPUTED_TIER == "Rush"
+                   and UNCOMPUTED_TIER not in role_tiers("Rush"))
+    print(f"uncomputed-tier sentinel is not an accepted tier: "
+          f"{'OK' if sentinel_ok else 'FAIL'}")
+    ok = ok and sentinel_ok
+
+    # No role may use TechLevel as a gate — it correlates with tech tier but is
+    # not the proper instrument (Rex); prerequisites are.
+    no_tl = all("techlevel" not in str(k).lower()
+                for spec in ROLE_MAP.values() for k in spec)
+    print(f"no role spec gates on TechLevel: {'OK' if no_tl else 'FAIL'}")
+    ok = ok and no_tl
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
