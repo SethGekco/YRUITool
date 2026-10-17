@@ -210,6 +210,13 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, AiCollection, PullPlan, PullItem,
 )
+from .addons import (
+    validate_spec, scan_addon, spec_summary, addons_path,
+    load_addons, save_addons, add_addon, remove_addon,
+    AddonSpec, AddonColumn, AddonRow,
+    ALL_SOURCES, SRC_TYPELIST, SRC_TECHNOS, SRC_SECTIONS,
+    MAX_COLUMNS, MAX_ROWS, ADDON_VERSION,
+)
 from .aiwork import (
     working_path, working_exists, resolve_vanilla_aimd, knowledge_vanilla_aimd,
     new_blank, new_from_vanilla, new_from_file, load_working, export_working,
@@ -328,6 +335,12 @@ __all__ = [
     "ai_remove_from_collection",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "AiCollection", "PullPlan", "PullItem",
+    # addons (Eva-authored Library tabs)
+    "validate_spec", "scan_addon", "spec_summary", "addons_path",
+    "load_addons", "save_addons", "add_addon", "remove_addon",
+    "AddonSpec", "AddonColumn", "AddonRow",
+    "ALL_SOURCES", "SRC_TYPELIST", "SRC_TECHNOS", "SRC_SECTIONS",
+    "MAX_COLUMNS", "MAX_ROWS", "ADDON_VERSION",
     # aiwork (AI Builder working file)
     "working_path", "working_exists", "resolve_vanilla_aimd",
     "knowledge_vanilla_aimd", "new_blank", "new_from_vanilla", "new_from_file",
