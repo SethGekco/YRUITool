@@ -251,14 +251,52 @@ rather than something to discover by testing:
 So "Kratos + Phobos" is not a yes/no question — it is a per-feature matrix the
 converter should consult, and the manual is the source of truth for it.
 
-**Kratos ↔ Ares** is the looser relationship. Kratos' AE system is described as
-`同Ares的AttachEffect` — *"same as Ares' AttachEffect"* — but **registry-free**
-(`不需要注册表，直接写AE类型`, "no registry needed, write the AE type
-directly"), and Kratos annotates settings it inherits from Ares with a literal
-`(Ares)` marker (e.g. `Damage.Delay`, `Weapon=NukePayload`). The user's read is
-that Kratos overwrites Ares in order to extend it; that is **plausible and
-unverified** — the manual says "equivalent to", which is not the same claim as
-"hooks over". Do not encode it as fact.
+**Kratos does NOT override Ares.** Checked against the KratosPP source
+2026-10-16; the earlier "overwrites Ares to extend it" reading is wrong.
+
+- It calls itself one: `src/Version.h` → `FILE_DESCRIPTION "Kratos, Ares-like
+  YR engine extension"`. A *parallel* extension, not a layer over Ares.
+- What it takes from Ares is **source, at compile time, under licence**:
+  `Utilities/{INIParser,Parser,Helpers.Alex,Constructs}.h` each carry
+  `#pragma region Ares Copyrights` / "Copyright (c) 2008+, All Ares
+  Contributors". Borrowed code, not a hijacked DLL.
+- It **deliberately partitions hook addresses away from** Ares and Phobos. Its
+  own design note records moving off `0x424CB0` (Phobos' 6-byte hook) to
+  `0x424CCA..0x424CCF`, chosen because it overlaps none of the three — the first
+  version hooked `0x424CB0` directly and would have silently killed Phobos'
+  `Layer_UseObjectLayer`.
+- It enforces non-interference explicitly: the command-registration hook at
+  `0x533066` **always returns 0** so "Ares/Phobos commands register as normal",
+  and command IDs are partitioned — vanilla `0x00-0x2F`, CnCNet `0x30-0x3F`,
+  Phobos `0x40-0x41`, Ares `0x60-0x61`, Kratos taking **only** `0x50-0x51`.
+- Takeover is opt-in. Design doc §7 (兼容性) gates it behind switches
+  (`AllowTakeoverPhobosShadowMaker`, `AllowAnimDamageTakeOverByKratos`)
+  precisely to avoid forcing it when Ares/Phobos are present.
+- Only **4** `DEFINE_JUMP` (unconditional overwrite) against 456 hooks — it is
+  ~99% chain-friendly `DEFINE_HOOK`.
+- It uses the Antares reverse-engineered source read-only, as a reference for
+  checking Ares-side addresses.
+
+### Shared hook addresses are NOT a conflict — return discipline is
+
+Measured by intersecting `DEFINE_HOOK/JUMP` addresses across the three sources:
+
+```
+Kratos  456 hooks     Kratos  n Antares : 108 shared addresses
+Antares 1506 hooks    Kratos  n Phobos  : 210
+Phobos  1634 hooks    Antares n Phobos  : 171
+```
+
+Ares and Phobos share **171 hook addresses** and still coexist cleanly, which is
+exactly the user's point that they never cross paths. Syringe *chains* hooks at
+one address; sharing is routine. The thing that breaks a chain is a hook
+**returning non-zero**, which jumps immediately and skips both the remaining
+hooks and the original instruction replay.
+
+So the question is never "do two extensions hook the same address" — it is
+"does any hook in the chain return non-zero". That also applies to our own
+feature DLLs: hooking a popular address and returning non-zero will silently
+disable whatever Ares/Phobos/Kratos had downstream, with no crash to point at.
 
 Consequence for the Upgrade→AttachEffect conversion: there are now **three**
 viable targets with different shapes — Ares (warhead + GenericWarhead SW
