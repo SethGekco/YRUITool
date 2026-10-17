@@ -39,6 +39,8 @@ from ..engine import (
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
     parse_vpl, parse_hva, find_in_mixes, mix_id,
+    load_addons, add_addon, remove_addon, scan_addon,
+    spec_summary,
     extract_voice_set, store_samples, add_set, load_sets, idx_name_ok,
     entry_sample_names as _entry_sample_names,
 )
@@ -190,8 +192,39 @@ class LibraryTab(QWidget):
             self._tables[kind] = (tbl, [])
         self.ktabs.currentChanged.connect(self._on_tab_changed)
         center.addWidget(self.ktabs)
+
+        # ── addon tabs: user-declared views Eva authored ─────────────────────
+        # Its own strip rather than extra entries in ktabs: scan_source coerces
+        # any unknown kind to "other", so an addon masquerading as a
+        # TechnoType kind would have to change the predicates every existing
+        # tab depends on. The header stays visible with no addons so the entry
+        # point is discoverable.
+        addon_box = QWidget()
+        abl = QVBoxLayout(addon_box)
+        abl.setContentsMargins(0, 4, 0, 0)
+        ahdr = QHBoxLayout()
+        ahdr.addWidget(QLabel("<b>Addon tabs</b>"))
+        self.addon_new_btn = QPushButton("New tab from Eva…")
+        self.addon_new_btn.setToolTip(
+            "Describe a tab in plain English — e.g. a tab for detecting "
+            "AttachmentTypes. Eva proposes it; you approve before it appears.")
+        self.addon_new_btn.clicked.connect(self._new_addon)
+        ahdr.addWidget(self.addon_new_btn)
+        self.addon_del_btn = QPushButton("Remove tab")
+        self.addon_del_btn.clicked.connect(self._remove_addon)
+        ahdr.addWidget(self.addon_del_btn)
+        self.addon_hint = QLabel("")
+        self.addon_hint.setWordWrap(True)
+        self.addon_hint.setStyleSheet("color:#888;")
+        ahdr.addWidget(self.addon_hint, 1)
+        abl.addLayout(ahdr)
+        self.atabs = QTabWidget()
+        self._addon_tables = {}            # addon name -> QTableWidget
+        abl.addWidget(self.atabs, 1)
+        center.addWidget(addon_box)
+
         center.addWidget(self._build_detail())
-        center.setSizes([360, 260])
+        center.setSizes([330, 190, 250])
 
         # ── balance culture (stacked under collections in the left column) ────
         bal_box = QGroupBox("Balance culture")
@@ -221,6 +254,7 @@ class LibraryTab(QWidget):
         # defer the (potentially slow) source scan until the tab is first shown,
         # so adding large mods never slows app startup
         self._loaded = False
+        self._rebuild_addon_tabs()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1057,6 +1091,90 @@ class LibraryTab(QWidget):
         except Exception as e:
             self.status.setText(f"Export failed: {type(e).__name__}: {e}")
 
+    # ── addon tabs ─────────────────────────────────────────────────────────
+    def _addon_rules_maps(self):
+        """[(mod label, rules section_map)] for every scanned source."""
+        out = []
+        scans = getattr(self, "_scan_by_source", None) or {}
+        for sid, scan in scans.items():
+            idx = getattr(scan, "index", None)
+            rmap = getattr(idx, "rules_map", None) if idx else None
+            if rmap:
+                out.append((self._source_label(sid), rmap))
+        return out
+
+    def _rebuild_addon_tabs(self):
+        """One tab per stored addon, aggregated across every scanned mod."""
+        self.atabs.clear()
+        self._addon_tables = {}
+        specs = load_addons()
+        self.atabs.setVisible(bool(specs))
+        self.addon_del_btn.setEnabled(bool(specs))
+        if not specs:
+            self.addon_hint.setText(
+                "none yet — describe one and Eva will build it")
+            return
+        maps = self._addon_rules_maps()
+        for spec in specs:
+            tbl = QTableWidget(0, 0)
+            tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
+            tbl.verticalHeader().setVisible(False)
+            tbl.setToolTip(spec.notes or spec_summary(spec))
+            self._fill_addon_table(spec, tbl, maps)
+            self.atabs.addTab(tbl, spec.name)
+            self._addon_tables[spec.name] = tbl
+        self.addon_hint.setText(f"{len(specs)} addon tab(s)")
+
+    def _fill_addon_table(self, spec, tbl, maps):
+        headers = ["Name", "Source"] + [c.label for c in spec.columns]
+        tbl.setColumnCount(len(headers))
+        tbl.setHorizontalHeaderLabels(headers)
+        rows = []
+        for label, rmap in maps:
+            for r in scan_addon(spec, rmap):
+                rows.append((label, r))
+        if spec.group_by:
+            rows.sort(key=lambda lr: (lr[1].group, lr[1].name))
+        tbl.setRowCount(len(rows))
+        for i, (label, r) in enumerate(rows):
+            tbl.setItem(i, 0, QTableWidgetItem(r.name))
+            tbl.setItem(i, 1, QTableWidgetItem(label))
+            for j, c in enumerate(spec.columns):
+                tbl.setItem(i, 2 + j,
+                            QTableWidgetItem(r.values.get(c.label, "")))
+        h = tbl.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.Interactive)
+        for j in range(1, len(headers)):
+            h.setSectionResizeMode(j, QHeaderView.Interactive)
+        h.setStretchLastSection(True)
+
+    def _new_addon(self):
+        from .addon_dialog import AddonRequestDialog
+        dlg = AddonRequestDialog(self, self._addon_rules_maps())
+        if dlg.exec() == QDialog.Accepted and dlg.spec is not None:
+            add_addon(dlg.spec)
+            self._rebuild_addon_tabs()
+            idx = self.atabs.count() - 1
+            for i in range(self.atabs.count()):
+                if self.atabs.tabText(i) == dlg.spec.name:
+                    idx = i
+            self.atabs.setCurrentIndex(max(idx, 0))
+            self.status.setText(f"Added the “{dlg.spec.name}” addon tab.")
+
+    def _remove_addon(self):
+        i = self.atabs.currentIndex()
+        if i < 0:
+            return
+        name = self.atabs.tabText(i)
+        if QMessageBox.question(
+                self, "Remove addon tab",
+                f"Remove the “{name}” tab? The addon is deleted from your "
+                "library; your mod is not touched.") != QMessageBox.Yes:
+            return
+        remove_addon(name)
+        self._rebuild_addon_tabs()
+        self.status.setText(f"Removed the “{name}” addon tab.")
     # ── voices ─────────────────────────────────────────────────────────────
     def _clear_voices(self):
         self.voice_tree.clear()
@@ -1255,6 +1373,7 @@ class LibraryTab(QWidget):
         self._rebuild_tables()
         self._refresh_tag_combo()
         self._apply_filter()
+        self._rebuild_addon_tabs()
 
     def _item_tags(self, item):
         return self._tags_by_source.get(item.source_id, {}).get(

@@ -212,6 +212,13 @@ from .ailib import (
     library_path, extract_block, extract_bundle, build_pull_plan, apply_pull,
     LibEntry, LibBlock, AiCollection, PullPlan, PullItem,
 )
+from .addons import (
+    validate_spec, scan_addon, spec_summary, addons_path,
+    load_addons, save_addons, add_addon, remove_addon,
+    AddonSpec, AddonColumn, AddonRow,
+    ALL_SOURCES, SRC_TYPELIST, SRC_TECHNOS, SRC_SECTIONS,
+    MAX_COLUMNS, MAX_ROWS, ADDON_VERSION,
+)
 from .voicelib import (
     voicelib_path, samples_dir, idx_name_ok, parse_sound_tokens,
     entry_sample_names, voice_tags, extract_voice_set, store_samples,
@@ -344,6 +351,12 @@ __all__ = [
     "ai_remove_from_collection",
     "library_path", "extract_block", "extract_bundle", "build_pull_plan",
     "apply_pull", "LibEntry", "LibBlock", "AiCollection", "PullPlan", "PullItem",
+    # addons (Eva-authored Library tabs)
+    "validate_spec", "scan_addon", "spec_summary", "addons_path",
+    "load_addons", "save_addons", "add_addon", "remove_addon",
+    "AddonSpec", "AddonColumn", "AddonRow",
+    "ALL_SOURCES", "SRC_TYPELIST", "SRC_TECHNOS", "SRC_SECTIONS",
+    "MAX_COLUMNS", "MAX_ROWS", "ADDON_VERSION",
     # voicelib (voice sets)
     "voicelib_path", "samples_dir", "idx_name_ok", "parse_sound_tokens",
     "entry_sample_names", "voice_tags", "extract_voice_set", "store_samples",

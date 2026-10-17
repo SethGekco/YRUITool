@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from ..engine import (
     build_category_lists, get_val, parse_script, ScriptError, ModConfig,
+    validate_spec, ALL_SOURCES, MAX_COLUMNS,
 )
 
 DSL_REFERENCE = """\
@@ -125,6 +126,69 @@ def plan_tags(client, model, request, kinds, obtain_classes, existing_tags,
     if not plan.tag:
         plan.error = "Eva didn't name a tag to apply."
     return plan
+
+
+_ADDON_SYS = """You design ONE extra tab for a Red Alert 2 / Yuri's Revenge mod \
+library. The tab collects INI sections and shows chosen tags as columns.
+Output ONLY a JSON object, no prose:
+{{
+  "name": "<short tab title>",
+  "source": "<one of: {sources}>",
+  "list_section": "<index section to enumerate, e.g. AttachmentTypes — only for source 'typelist'>",
+  "section_prefix": "<section-name prefix — only for source 'sections'>",
+  "require_tags": ["<tag a row MUST set>", "..."],
+  "any_tags": ["<row must set at least one of these>", "..."],
+  "columns": [{{"label": "<header>", "tag": "<INI tag to read>"}}],
+  "group_by": "<one of your own column labels, or empty>",
+  "notes": "<1-3 sentences: what this collects and why>"
+}}
+
+Rules:
+- "typelist" enumerates one index section (the usual choice when the feature
+  declares its own list, e.g. [AttachmentTypes]). "technos" walks all
+  Infantry/Vehicle/Aircraft/BuildingTypes — use it when the feature is a tag
+  applied TO units. "sections" matches section names by prefix.
+- Use require_tags/any_tags to keep out rows that merely exist; prefer any_tags
+  when a feature spreads over several alternative tags.
+- At most {maxcols} columns. Pick the tags a modder would actually compare.
+- Names must be plain INI names: no brackets, '=' or quotes.
+- Invent nothing. Use only section and tag names given in the request or the
+  reference material. If the request names no usable tags, return
+  {{"error": "<what you need from the user>"}}."""
+
+
+def plan_addon(client, model, request, reference="", num_ctx=None):
+    """Turn a plain-English "I want a tab for X" into a validated AddonSpec.
+
+    `reference` is whatever the user pasted to explain the feature — a types
+    list, example unit lines, a tag table. Eva is told to invent nothing beyond
+    it, because a hallucinated tag name produces a tab that silently finds
+    nothing.
+
+    Returns (spec, errors, raw). `spec` is already validated by the engine, so
+    the caller never sees an unchecked model field; `errors` is non-empty when
+    the spec is unusable.
+    """
+    sys_prompt = _ADDON_SYS.format(sources=", ".join(ALL_SOURCES),
+                                   maxcols=MAX_COLUMNS)
+    user = request if not reference else (
+        f"{request}\n\nReference material from the user "
+        f"(authoritative — prefer these names):\n{reference[:8000]}")
+    messages = [{"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user}]
+    try:
+        content = client.chat(messages, model, num_ctx=num_ctx)
+    except Exception as e:
+        return None, [f"{type(e).__name__}: {e}"], ""
+    data = _json_block(content)
+    if not isinstance(data, dict):
+        return None, ["Eva didn't return a usable addon spec."], content
+    if data.get("error") and not data.get("name"):
+        return None, [str(data["error"])[:500]], content
+    spec, errors = validate_spec(data)
+    if not spec.columns and "columns: expected a list" not in errors:
+        errors.append("columns: Eva chose no tags to show")
+    return spec, errors, content
 
 
 def summarize_balance(client, model, label, balance, num_ctx=None):
