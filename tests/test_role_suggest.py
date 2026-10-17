@@ -55,16 +55,32 @@ def main():
         picks, rej = suggest_units_for_role("Anti-Infantry", "x",
                                             with_reasons=True)
         why = dict(rej)
-        d_ok = (set(picks) == {"GOODGUY", "LOWDPSONLY"}
-                and set(why) == {"WEAKTAG", "GARBAGE"}
-                and "LOW_DPS" in why["WEAKTAG"]
+        # LOW_DPS is NOT a default exclusion any more: it is the bottom-
+        # QUARTILE marker, i.e. relative to the mod, and on vanilla it rejects
+        # the GI — a unit that clears every absolute floor it is measured
+        # against. UNDESIRABLE stays, being the parser's flat-grade verdict.
+        d_ok = (set(picks) == {"GOODGUY", "LOWDPSONLY", "WEAKTAG"}
+                and set(why) == {"GARBAGE"}
                 and "UNDESIRABLE" in why["GARBAGE"])
-        print(f"default gates drop LOW_DPS + UNDESIRABLE: "
+        print(f"default drops UNDESIRABLE but KEEPS the LOW_DPS unit: "
               f"{'OK' if d_ok else 'FAIL'} picks={sorted(picks)}")
         ok = ok and d_ok
 
+        # Relative ranking is still available to a caller that wants it.
+        picks_lo, rej_lo = suggest_units_for_role(
+            "Anti-Infantry", "x",
+            exclude_tags=("UNDESIRABLE", "LOW_DPS"), with_reasons=True)
+        why_lo = dict(rej_lo)
+        # WEAKTAG is the LOW_DPS-tagged unit; LOWDPSONLY merely has a low
+        # dps_score and no tag, so only the former is affected.
+        lo_ok = ("WEAKTAG" not in picks_lo
+                 and "LOW_DPS" in why_lo.get("WEAKTAG", ""))
+        print(f"LOW_DPS still opt-in via exclude_tags: "
+              f"{'OK' if lo_ok else 'FAIL'} {sorted(picks_lo)}")
+        ok = ok and lo_ok
+
         # A unit that matched but was gated must be REPORTED, not vanish.
-        rep_ok = len(rej) == 2 and all(isinstance(r, tuple) for r in rej)
+        rep_ok = len(rej) == 1 and all(isinstance(r, tuple) for r in rej)
         print(f"rejections carry a reason: {'OK' if rep_ok else 'FAIL'}")
         ok = ok and rep_ok
 
@@ -94,8 +110,8 @@ def main():
 
         # Old two-arg call still returns a plain list (ai_tab used to call this).
         legacy = suggest_units_for_role("Anti-Infantry", "x")
-        l_ok = isinstance(legacy, list) and set(legacy) == {"GOODGUY",
-                                                            "LOWDPSONLY"}
+        l_ok = isinstance(legacy, list) and set(legacy) == {
+            "GOODGUY", "LOWDPSONLY", "WEAKTAG"}
         print(f"two-arg call still returns a plain list: "
               f"{'OK' if l_ok else 'FAIL'}")
         ok = ok and l_ok
