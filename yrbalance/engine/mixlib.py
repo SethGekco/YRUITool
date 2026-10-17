@@ -396,6 +396,70 @@ def read_audio_sample(bag_path, entry):
         return f.read(size)
 
 
+AUDIO_NAME_MAX = 16             # the idx's fixed <16s name field
+
+
+def write_audio_idx(idx_path, entries, two=2):
+    """Write an audio .idx from {NAME: (offset, size, samplerate, flags,
+    chunk_size)}. `two` is the second header int, preserved from the source idx
+    when rewriting one (stock files carry 2)."""
+    out = bytearray(_AUDIO_IDX_ID + struct.pack("<ii", two, len(entries)))
+    for name, (off, size, sr, fl, cs) in entries.items():
+        raw = name.upper().encode("latin-1")
+        if len(raw) > AUDIO_NAME_MAX:
+            raise MixError(f"sample name {name!r} exceeds {AUDIO_NAME_MAX} bytes")
+        out += struct.pack("<16siiiii", raw, off, size, sr, fl, cs)
+    with open(idx_path, "wb") as f:
+        f.write(bytes(out))
+
+
+def inject_audio_samples(bag_path, idx_path, samples):
+    """Add samples to an audio .bag/.idx pair, creating the pair if absent.
+
+    `samples` is [(name, raw_bytes, sample_rate, flags, chunk_size)] where
+    raw_bytes are in the bag's own encoding (Westwood IMA-ADPCM) — this writes
+    bytes through untouched and does NOT encode, so callers must pass data that
+    came out of a bag in the first place.
+
+    New bytes are APPENDED and only the .idx is rewritten: existing samples
+    never move, so every offset already in the idx stays valid. A sample that
+    replaces one of the same name is appended too and its idx entry repointed,
+    which orphans the old bytes inside the bag — harmless (nothing indexes
+    them) and far safer than rewriting a multi-megabyte archive in place.
+
+    Returns (added, replaced).
+    """
+    for name, _raw, _sr, _fl, _cs in samples:
+        if len(name.upper().encode("latin-1")) > AUDIO_NAME_MAX:
+            raise MixError(f"sample name {name!r} exceeds {AUDIO_NAME_MAX} bytes")
+
+    entries, two = {}, 2
+    if os.path.isfile(idx_path):
+        try:
+            with open(idx_path, "rb") as f:
+                head = f.read(12)
+            if len(head) >= 8 and head[:4] == _AUDIO_IDX_ID:
+                two = struct.unpack_from("<i", head, 4)[0]
+        except OSError:
+            pass
+        entries = dict(parse_audio_idx(idx_path))
+
+    off = os.path.getsize(bag_path) if os.path.isfile(bag_path) else 0
+    added = replaced = 0
+    with open(bag_path, "ab" if off else "wb") as f:
+        for name, raw, sr, fl, cs in samples:
+            key = name.upper()
+            if key in entries:
+                replaced += 1
+            else:
+                added += 1
+            f.write(raw)
+            entries[key] = (off, len(raw), sr, fl, cs)
+            off += len(raw)
+    write_audio_idx(idx_path, entries, two)
+    return added, replaced
+
+
 # ── media cataloguing + transfer ────────────────────────────────────────────
 _MEDIA_EXTS = {".vxl", ".hva", ".shp", ".wav", ".pal", ".pcx", ".aud",
                ".tem", ".sno", ".urb", ".des", ".lun"}
