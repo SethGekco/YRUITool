@@ -236,6 +236,147 @@ def standoff_kill_dps_floor(defense_strengths):
     return _median(vals) / (STANDOFF_KILL_SECONDS * GAME_FPS)
 
 
+def prereq_chain(unit_id, ini, aliases=None, _seen=None,
+                 faction=None, sides=None):
+    """Every building in a unit's FULL prerequisite chain, aliases expanded.
+
+    Alias tokens must be expanded: vanilla's Attack Dog lists
+    `Prerequisite=Barracks`, which is an alias, not a building, so without
+    expansion its chain is one unknown token and no membership test can work.
+
+    Expansion MUST be faction-filtered where possible. Expanding blind makes
+    every chain identical: `PROC` yields all three refineries, whose own
+    chains drag in every faction's radar and the Soviet battle lab, so a GI, a
+    V3 Launcher and a Sniper all come out carrying
+    {AMRADR, GAAIRC, NAPSIS, NARADR, NATECH} and no membership test can tell
+    them apart. With `faction` supplied, [gdi] Barracks -> GAPILE and
+    [gdi] PROC -> GAREFN, and the chains become meaningful.
+    """
+    _seen = set() if _seen is None else _seen
+    if not unit_id or unit_id in _seen:
+        return set()
+    _seen.add(unit_id)
+    raw = ini.get(unit_id, "Prerequisite", "") or ""
+    out = set()
+    for tok in (x.strip().split(";")[0].strip() for x in raw.split(",")):
+        if not tok or tok.lower() in ("<none>", "none"):
+            continue
+        expanded = None
+        if aliases is not None:
+            try:
+                if faction:
+                    expanded = list(aliases.expand_faction_filtered(
+                        tok, faction, sides) or ())
+                if not expanded:
+                    expanded = list(aliases.expand(tok) or ())
+            except Exception:
+                expanded = None
+        for bid in (expanded or [tok]):
+            out.add(bid)
+            out |= prereq_chain(bid, ini, aliases, _seen, faction, sides)
+    return out
+
+
+# Buildings that produce something. A unit whose prerequisites are a subset of
+# these plus their own prerequisites needs nothing the AI would not already
+# have built to reach the factory — which is what makes it rushable (Rex).
+FACTORY_TAG_VALUES = frozenset({"infantrytype", "unittype", "aircrafttype",
+                                "buildingtype"})
+
+
+def build_prereq_set(unit_id, ini, aliases=None, faction=None, sides=None,
+                     _seen=None):
+    """Minimal set of buildings a player must erect before `unit_id`.
+
+    An alias is an OR, so each alias token contributes its CHEAPEST option, not
+    the union of all of them. Taking the union is what broke the membership
+    approach: vanilla's POWER expands to NAPOWR or NANRCT, and the nuclear
+    reactor requires NATECH, so a battle lab leaked into the Rhino Tank's
+    chain through an OPTIONAL power choice it would never actually make.
+
+    The count is the metric Rex uses to judge rushability: a war factory costs
+    4 buildings, an airfield 3, a radar-gated unit 5 — and 5 is mid-game.
+    """
+    _seen = set() if _seen is None else _seen
+    if not unit_id or unit_id in _seen:
+        return set()
+    _seen = _seen | {unit_id}
+    raw = ini.get(unit_id, "Prerequisite", "") or ""
+    need = set()
+    for tok in (x.strip().split(";")[0].strip() for x in raw.split(",")):
+        if not tok or tok.lower() in ("<none>", "none"):
+            continue
+        options = None
+        if aliases is not None:
+            try:
+                if faction:
+                    options = list(aliases.expand_faction_filtered(
+                        tok, faction, sides) or ())
+                if not options:
+                    options = list(aliases.expand(tok) or ())
+            except Exception:
+                options = None
+        best = None
+        for bid in (options or [tok]):
+            sub = build_prereq_set(bid, ini, aliases, faction, sides, _seen)
+            cand = sub | {bid}
+            if best is None or len(cand) < len(best):
+                best = cand
+        if best:
+            need |= best
+    return need
+
+
+def build_prereq_count(unit_id, ini, aliases=None, faction=None, sides=None):
+    """How many buildings must exist before `unit_id` can be built."""
+    return len(build_prereq_set(unit_id, ini, aliases, faction, sides))
+
+
+def radar_is_early(ini, aliases, radar_ids, lab_ids, faction=None,
+                   sides=None):
+    """Whether radar is reachable with nothing but a yard and power.
+
+    Rex: radar prerequisites are not allowed for a rush UNLESS radar is itself
+    early-accessible. "No lab in its chain" is too weak a test — vanilla's
+    AMRADR needs only GAREFN,GACNST and would pass, re-admitting the V3
+    Launcher to Rush. So the bar is that radar needs no ECONOMY building
+    either: a yard and a power plant, nothing more.
+    """
+    base = set()
+    for tok in ("POWER", "GACNST", "NACNST", "YACNST"):
+        try:
+            base |= set(aliases.expand(tok) or ()) if aliases else {tok}
+        except Exception:
+            base.add(tok)
+    base |= {"POWER"}
+    for rid in radar_ids:
+        if rid in lab_ids or not ini.section(rid):
+            continue
+        chain = prereq_chain(rid, ini, aliases, None, faction, sides)
+        if chain and chain <= base:
+            return True
+    return False
+
+
+def production_allowlist(ini, aliases=None, exclude=()):
+    """{factory IDs} | {everything those factories require}, less `exclude`.
+
+    `exclude` is normally the radar and lab buildings: two vanilla radars
+    (AMRADR, GAAIRC) also carry Factory=, so without excluding them "only
+    factory prerequisites" quietly makes RADAR free and admits the whole
+    mid tier — the Apocalypse, Dreadnought, Kirov and V3 Launcher.
+    """
+    allowed = set()
+    for bid in ini.list_from_section("BuildingTypes"):
+        if not bid or bid.startswith(";"):
+            continue
+        if (ini.section(bid).get("factory", "") or "").lower() \
+                in FACTORY_TAG_VALUES:
+            allowed.add(bid)
+            allowed |= prereq_chain(bid, ini, aliases)
+    return allowed - set(exclude or ())
+
+
 def is_aerial_unit(rec):
     """Whether this unit is exposed to anti-air fire.
 

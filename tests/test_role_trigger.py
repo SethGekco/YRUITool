@@ -153,12 +153,11 @@ def main():
     from yrbalance.wavegen.role_bundles import (
         role_tiers, role_buildable_only, UNCOMPUTED_TIER, ROLE_MAP,
     )
-    tier_ok = (role_tiers("Rush") == ("Early",)
-               and role_buildable_only("Rush")
+    tier_ok = (role_buildable_only("Rush")
                and role_tiers("General Attack") == ()
                and not role_buildable_only("General Attack")
                and role_tiers("Anti-Defenses (Standoff)") == ())
-    print(f"Rush gated on Early tier + buildable, others ungated: "
+    print(f"Rush gated on build-count + buildable, others ungated: "
           f"{'OK' if tier_ok else 'FAIL'}")
     ok = ok and tier_ok
 
@@ -167,8 +166,9 @@ def main():
     # units, nearly all unbuildable props. A gate that excluded tiers instead
     # of naming them would therefore admit all of that junk.
     sentinel_ok = (UNCOMPUTED_TIER == "Rush"
-                   and UNCOMPUTED_TIER not in role_tiers("Rush"))
-    print(f"uncomputed-tier sentinel is not an accepted tier: "
+                   and UNCOMPUTED_TIER not in role_tiers("Rush")
+                   and ROLE_MAP["Rush"]["max_build_count"] == 4)
+    print(f"build-count ceiling is 4 (war factory), sentinel unused: "
           f"{'OK' if sentinel_ok else 'FAIL'}")
     ok = ok and sentinel_ok
 
@@ -178,6 +178,93 @@ def main():
                 for spec in ROLE_MAP.values() for k in spec)
     print(f"no role spec gates on TechLevel: {'OK' if no_tl else 'FAIL'}")
     ok = ok and no_tl
+
+    # ── Rush prerequisite allowlist + building DPS ─────────────────────────
+    from yrbalance.wavegen.rulesmd_parser import (
+        prereq_chain, production_allowlist, FACTORY_TAG_VALUES,
+    )
+    from yrbalance.wavegen.role_bundles import role_any_tags
+
+    class _Ini:
+        """Minimal INI stand-in: a barracks behind power, plus a lab."""
+        SEC = {
+            "GACNST": {}, "GAPOWR": {"prerequisite": "GACNST"},
+            "GAPILE": {"prerequisite": "GAPOWR", "factory": "InfantryType"},
+            "GAWEAP": {"prerequisite": "GAPILE", "factory": "UnitType"},
+            "GATECH": {"prerequisite": "GAWEAP"},
+            "E1":     {"prerequisite": "GAPILE"},
+            "CLEG":   {"prerequisite": "GAPILE,GATECH"},
+            "DOG":    {"prerequisite": "Barracks"},
+            "FREE":   {},
+        }
+
+        def get(self, sec, key, default=""):
+            return self.SEC.get(sec, {}).get(key.lower(), default)
+
+        def section(self, sec):
+            return self.SEC.get(sec, {})
+
+        def list_from_section(self, _name):
+            return list(self.SEC)
+
+    class _Al:
+        def expand(self, tok):
+            return ["GAPILE"] if tok == "Barracks" else [tok]
+
+    ini, al = _Ini(), _Al()
+    # An alias must expand or the chain is one unknown token and no membership
+    # test can work — vanilla's Attack Dog lists Prerequisite=Barracks.
+    dog = prereq_chain("DOG", ini, al)
+    alias_ok = ("GAPILE" in dog and "Barracks" not in dog
+                and "GAPOWR" in dog            # and it recurses past the alias
+                and prereq_chain("FREE", ini, al) == set()
+                and prereq_chain("", ini, al) == set())
+    print(f"prereq_chain expands aliases and recurses: "
+          f"{'OK' if alias_ok else 'FAIL'} DOG={sorted(dog)}")
+    ok = ok and alias_ok
+
+    # An alias is an OR, so a build COUNT must take the cheapest option per
+    # alias. Taking the union is what broke the earlier membership test: in
+    # vanilla, POWER expands to NAPOWR or NANRCT, and the nuclear reactor
+    # requires NATECH, so a battle lab leaked into the Rhino Tank's chain
+    # through a power plant it would never choose.
+    from yrbalance.wavegen.rulesmd_parser import (
+        build_prereq_count, build_prereq_set,
+    )
+
+    class _Ini2(_Ini):
+        SEC = dict(_Ini.SEC)
+        SEC["CHEAP"] = {"prerequisite": "GACNST"}
+        SEC["DEAR"] = {"prerequisite": "GATECH"}
+        SEC["EITHER"] = {"prerequisite": "AnyOf"}
+
+    class _Al2:
+        def expand(self, tok):
+            if tok == "AnyOf":
+                return ["DEAR", "CHEAP"]      # deliberately dearest-first
+            if tok == "Barracks":
+                return ["GAPILE"]
+            return [tok]
+
+    ini2, al2 = _Ini2(), _Al2()
+    # Transitive: GAPILE never lists GACNST, but reaching it requires one.
+    e1_set = build_prereq_set("E1", ini2, al2)
+    cheapest = build_prereq_set("EITHER", ini2, al2)
+    count_ok = (e1_set == {"GAPILE", "GAPOWR", "GACNST"}
+                and build_prereq_count("E1", ini2, al2) == 3
+                and "CHEAP" in cheapest and "DEAR" not in cheapest
+                and build_prereq_count("FREE", ini2, al2) == 0)
+    print(f"build count is transitive and takes the cheapest alias option: "
+          f"{'OK' if count_ok else 'FAIL'} E1={sorted(e1_set)} "
+          f"either={sorted(cheapest)}")
+    ok = ok and count_ok
+
+    # Requiring BOTH production-killer tags was rejected: on vanilla it drops
+    # the GI and the Initiate and leaves a Rhino and a Destroyer.
+    tags_ok = set(role_any_tags("Rush")) == {"CY_Killer", "Factory_Killer"}
+    print(f"Rush needs ANY production-killer tag, not both: "
+          f"{'OK' if tags_ok else 'FAIL'}")
+    ok = ok and tags_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

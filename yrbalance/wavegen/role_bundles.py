@@ -36,7 +36,32 @@ ROLE_MAP = {
     # and GI both come out at depth 2. Chain membership is the signal.
     "Rush":           {"key": "RUSH",
                        "tags": ["AG-Anti_Infantry", "GENERALIST", "AG-Multi"],
-                       "tiers": ("Early",),
+                       # HOW MANY BUILDINGS the player must erect first (Rex).
+                       # Calibrated against vanilla: a war factory costs 4, an
+                       # airfield 3, and a radar-gated unit 5 — "5 is not
+                       # rushing, 5 is mid game". So the ceiling is 4.
+                       #
+                       # This replaced both a TechLevel gate (wrong instrument)
+                       # and a prereq-membership test. Membership could not
+                       # work: an alias is an OR, and taking the union of its
+                       # options dragged a battle lab into the Rhino Tank's
+                       # chain through NANRCT, an OPTIONAL power plant it would
+                       # never choose. Counting takes the cheapest option per
+                       # alias instead.
+                       "max_build_count": 4,
+                       # A rush exists to wreck the enemy's base, so it needs
+                       # real building DPS — enough to kill the median
+                       # structure inside RUSH_STRUCTURE_KILL_SECONDS. This is
+                       # what drops the Attack Dog, which does 0.000 to
+                       # buildings.
+                       "building_dps_seconds": 60.0,
+                       # Requiring BOTH CY_Killer and Factory_Killer was
+                       # considered and rejected: on vanilla it drops the GI
+                       # and the Initiate, i.e. the archetypal infantry
+                       # rushers, leaving only a Rhino and a Destroyer.
+                       # "any of" is a no-op on vanilla but guards a mod whose
+                       # early units cannot touch production at all.
+                       "any_tags": ("CY_Killer", "Factory_Killer"),
                        # tier_from_prereq_chain returns "Early" when the chain
                        # contains no radar and no lab — which is also true of a
                        # chain that is EMPTY. So campaign and civilian units
@@ -181,6 +206,11 @@ def role_tiers(display_role):
 def role_buildable_only(display_role):
     """Whether the role rejects units the player cannot actually build."""
     return bool(_spec_of(display_role).get("buildable_only"))
+
+
+def role_any_tags(display_role):
+    """Tags of which the unit must carry at least one, or () for no such test."""
+    return tuple(_spec_of(display_role).get("any_tags") or ())
 
 
 def _resolve(display_role):
@@ -338,6 +368,7 @@ def suggest_units_for_role(display_role, rules_path):
             RulesMdParser, defense_range_profile, defense_kill_dps_floor,
             standoff_kill_dps_floor, primary_defense_armor,
             best_weapon_dps_vs, dps_is_trustworthy, is_aerial_unit,
+            kill_dps_floor, _median,
         )
         parser = RulesMdParser(rules_path)
         parser.parse()
@@ -374,6 +405,20 @@ def suggest_units_for_role(display_role, rules_path):
             camp = None                    # fall back to tags only
 
     tiers = role_tiers(display_role)
+    spec = _spec_of(display_role)
+    any_tags = {x.lower() for x in role_any_tags(display_role)}
+    max_build = spec.get("max_build_count")
+    bld_floor = 0.0
+    if max_build or spec.get("building_dps_seconds"):
+        try:
+            from .rulesmd_parser import build_prereq_count, ARMOR_BUILDING
+            secs = spec.get("building_dps_seconds")
+            if secs:
+                _t = parser._scan_strategic_targets()
+                bld_floor = kill_dps_floor(
+                    _median(_t.get("base_def_strengths") or []), secs)
+        except Exception:
+            max_build, bld_floor = None, 0.0
     buildable = None
     if role_buildable_only(display_role):
         try:
@@ -389,6 +434,19 @@ def suggest_units_for_role(display_role, rules_path):
             continue
         if buildable is not None and uid not in buildable:
             continue
+        if any_tags and not (rr & any_tags):
+            continue
+        if max_build:
+            try:
+                if build_prereq_count(uid, parser.ini, parser.aliases,
+                                      getattr(rec, "faction", None),
+                                      getattr(parser, "sides", None)) > max_build:
+                    continue
+            except Exception:
+                continue
+        if bld_floor > 0 and dps_is_trustworthy(rec):
+            if best_weapon_dps_vs(rec, ARMOR_BUILDING) < bld_floor:
+                continue
         if camp is None:
             cands.append((uid, rec))
             continue
