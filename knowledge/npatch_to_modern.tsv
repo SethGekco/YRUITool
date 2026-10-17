@@ -1,5 +1,5 @@
 npatch_tag	tier	target_ext	target_tag	how	note	pages
-AACombat	T?-research	UNMAPPED				Reference; Using AACombat tag
+AACombat	T1-drop	drop		drop	Ares fixes the underlying bug — AA weapons (projectile AA=yes) now work on AircraftTypes. 'No additional flags are required', so DELETE the tag; emitting anything is wrong.	Reference; Using AACombat tag
 AIBuildThis	-	vanilla		stock		Using the new AI PS
 AIDefendAgainst	-	vanilla		stock		Adding a new Lightning Storm; Adding a new Psychic Dominator
 AITargetingType	T1-reencode	antares	SW.AITargeting	semantic		Common SW tags; Making the AI use custom SuperWeapons
@@ -14,7 +14,7 @@ AlternatePrerequisite	T1-reencode	antares	Prerequisite.Lists	semantic	becomes an
 AnimList	-	vanilla		stock		Using IsPermaControlled tag
 Animation	T0-rename	phobos	Animation	exact		Reference; Using the new Animation SW
 Armor	-	vanilla		stock		Add new armor type; Using the HunterSeeker SW
-AscentSpeed	T?-research	UNMAPPED				Adding a non helicopter plane
+AscentSpeed	T1-reencode	antares	HunterSeeker.AscentSpeed	semantic	HunterSeeker SW tag, not generic flight	Adding a non helicopter plane
 AutoFire	T0-rename	phobos	AutoFire	exact		Common SW tags; Reference
 Background	T3-ui	UNMAPPED				NewMenus
 BaseDefenseCounts	T1-reencode	antares	AI.BaseDefenseCounts	semantic		Adding a new Side
@@ -38,10 +38,10 @@ Crewed	-	vanilla		stock		Pilot from destroyed aircraft
 Cursor	T0-rename	antares	Cursor	exact		Add Custom Cursor for Weapon
 Damage	-	vanilla		stock		Custom beams; Laser Improvements
 DeathWeapon	-	vanilla		stock		Using the HunterSeeker SW
-DescendProximity	T?-research	UNMAPPED				Adding a non helicopter plane
+DescendProximity	T1-reencode	antares	HunterSeeker.DescendProximity	semantic	HunterSeeker SW tag	Adding a non helicopter plane
 DisableLoadScreenText	T3-ui	UNMAPPED				Misc; Reference
 DisableableFromShell	-	vanilla		stock		Adding a new DropPod SW; Adding a new Lightning Storm
-Disguise	T?-research	UNMAPPED				Adding a new Side
+Disguise	T1-reencode	antares	DefaultDisguise	semantic	Phobos	Adding a new Side
 DomCapture	T0-rename	antares	Dominator.Capture	family		Adding a new Psychic Dominator; Reference
 DomCaptureAll	T1-reencode	antares	Dominator.Capture	semantic		Adding a new Psychic Dominator
 DomCaptureBuildings	T1-reencode	antares	Dominator.Capture	semantic		Adding a new Psychic Dominator
@@ -51,7 +51,7 @@ DomFireAtPercentage	T0-rename	antares	Dominator.FireAtPercentage	family		Adding 
 DomFirstAnim	T0-rename	antares	Dominator.FirstAnim	family		Adding a new Psychic Dominator; Reference
 DomSecondAnim	T0-rename	antares	Dominator.SecondAnim	family		Adding a new Psychic Dominator; Reference
 DomWarhead	T1-reencode	antares	Dominator.Capture	semantic	warhead lives on the SW weapon	Reference
-DontSayUnitLost	T?-research	UNMAPPED				Reference
+DontSayUnitLost	T1-reencode	antares	EVA.Lost	semantic	VALUE TRANSFORM: DontSayUnitLost=yes becomes EVA.Lost=none (evamd entry). Already implied by DontScore/Insignificant/Spawned=yes	Reference
 DropInf	T1-reencode	antares	DropPod.Types	semantic		Adding a new DropPod SW; Adding a new ParaDrop
 DropInfNum	T1-reencode	antares	DropPod.Maximum	semantic		Adding a new DropPod SW; Adding a new ParaDrop
 DropPodBay	T3-factory	UNMAPPED				Using a new factory type
@@ -76,7 +76,7 @@ Explosion	-	vanilla		stock		Using the HunterSeeker SW
 Factory	-	vanilla		stock		Pilot from destroyed aircraft
 Fighter	-	vanilla		stock		Reference; Using AACombat tag
 Firepower	-	vanilla		stock		Using the new Upgrade SW
-FirstAnim	T?-research	UNMAPPED				Reference
+FirstAnim	T1-reencode	antares	Dominator.FirstAnim	semantic	SW-CONTEXT: resolve per superweapon (Dominator./Nuke.) — the bare tag is ambiguous	Reference
 FlashSidebarTabFrames	-	vanilla		stock		Adding a new SpyPlane
 FlightLevel	-	vanilla		stock		Adding a non helicopter plane; Using the HunterSeeker SW
 FourthBaseDefenseCounts	T1-reencode	antares	AI.BaseDefenseCounts	semantic	per-side	Reference
@@ -102,7 +102,7 @@ ImmunityType	T2-structural	antares	Verses	semantic	STRUCTURAL: immunity class ->
 InfDeathAnim	T0-rename	antares	InfDeathAnim	exact		Adding new infantry death animations; Reference
 Insignificant	-	vanilla		stock		Using the HunterSeeker SW
 IronCurtain	T1-reencode	phobos	IronCurtain.Effect	semantic	warhead IC behaviour becomes an explicit effect	WarheadTags
-IsAirstrike	T?-research	UNMAPPED				Adding a new SpyPlane
+IsAirstrike	T1-reencode	phobos	AllowAirstrike	semantic	Phobos; Ares' airstrike page covers voices only	Adding a new SpyPlane
 IsBeam	T2-structural	antares	Beam.Duration	semantic	STRUCTURAL: NPatch beam bool -> Ares/Phobos Beam.* parameter set	Custom beams
 IsBigLaser	-	vanilla		stock		Laser Improvements
 IsCow	T0-rename	antares	IsCow	exact		Misc; Reference
@@ -111,9 +111,9 @@ IsCustomMissile	T1-reencode	antares	Missile.TakeOffAnim	semantic	check: missile 
 IsDesolator	T0-rename	antares	IsDesolator	exact		Misc; Reference
 IsElectricBolt	-	vanilla		stock		Coloring ElectricBolts
 IsHouseColor	-	vanilla		stock		Laser Improvements
-IsIFV	T?-research	UNMAPPED				Misc; Reference
+IsIFV	T2-structural	antares	PassengerTurret	semantic	STRUCTURAL: Ares generalises the hardcoded [FV] checks — bool becomes PassengerTurret plus per-weapon WeaponTurretIndexX/WeaponUINameX	Misc; Reference
 IsLaser	-	vanilla		stock		Laser Improvements
-IsNormalPlane	T?-research	UNMAPPED				Adding a non helicopter plane
+IsNormalPlane	T3-aircraft	UNMAPPED				Adding a non helicopter plane
 IsPermaControlled	T1-reencode	antares	Dominator.PermanentCapture	semantic	permanent mind control	Reference; Using IsPermaControlled tag
 IsPowered	-	vanilla		stock		Adding a new DropPod SW; Adding a new Lightning Storm
 IsRadBeam	-	vanilla		stock		Coloring RadBeams and RadEruptions
@@ -207,10 +207,10 @@ NegativePrerequisite	T1-reencode	antares	Prerequisite.Negative	semantic		New Pre
 NewActionName	T3-ui	UNMAPPED				Using MouseCursors
 NewPara	T3-ui	UNMAPPED				Using MouseCursors
 NewPlayableCountries	T2-sides	UNMAPPED				Adding new playable Countries; Reference
-NewTheater	T?-research	UNMAPPED				Anims Palettes
-NextStage	T?-research	UNMAPPED				Reference; Using the new Upgrade System
-NoAction	T?-research	UNMAPPED				Using the new EMPulse SW
-NoRepairButToggle	T?-research	UNMAPPED				TogglePower
+NewTheater	T1-reencode	antares	AlternateTheaterArt	semantic		Anims Palettes
+NextStage	T2-structural	phobos	AttachEffect.AttachTypes	semantic	STRUCTURAL: Upgrade-system stage chain folds into the AttachEffect type registry	Reference; Using the new Upgrade System
+NoAction	T1-reencode	antares	Cursor	semantic	Ares exposes a Cursor.No* family; pick the matching No* cursor	Using the new EMPulse SW
+NoRepairButToggle	T1-reencode	antares	TogglePower	semantic	VERIFY IN GAME: Ares makes toggle-power a capability; the repair-button-vs-toggle distinction may have no equivalent	TogglePower
 Nod	-	vanilla		stock		Adding a new Side
 Normalized	-	vanilla		stock		Anims Palettes
 NukeDamage	T1-reencode	antares	Nuke.Payload	semantic	damage lives on the payload weapon	Adding a new Nuke
@@ -301,9 +301,9 @@ UpgradeType	T2-structural	phobos	AttachEffect.AttachTypes	semantic	STRUCTURAL: N
 UpgradeValue	T2-structural	phobos	AttachEffect.AttachTypes	semantic	STRUCTURAL: magnitude moves onto the effect type	Using the new Upgrade SW
 UseDropDownColors	T3-ui	UNMAPPED				Customizing the Dropdown Colors
 UseNewMainMenu	T3-ui	UNMAPPED				NewMenus
-UseNewUpgradeSystem	T1-switch	none		switch-only	switch tag: no target, the system is always on	Reference; Using the new Upgrade System
+UseNewUpgradeSystem	T1-drop	drop		drop	switch for a system that is always on in the target; delete.	Reference; Using the new Upgrade System
 UseSpecialThirdUI	T3-ui	UNMAPPED				Use UISettings; Using sidec03.mix for Yuri's GUI
-UseTogglePower	T?-research	UNMAPPED				TogglePower
+UseTogglePower	T1-reencode	antares	TogglePowerAllowed	semantic	global enable moves to [General]	TogglePower
 Verses	-	vanilla		stock		Add new armor type; Using IsPermaControlled tag
 VeteranBounty	T1-reencode	antares	Bounty.VeteranValue	semantic		Bounty; Reference
 VeteranBountyCostMult	T1-reencode	antares	Bounty.VeteranValue	semantic		Bounty; Reference

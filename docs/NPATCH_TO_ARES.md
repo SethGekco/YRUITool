@@ -75,48 +75,66 @@ On record now:
 ```
 321 candidate tags from the CHM
 -126 vanilla      a tag in stock rulesmd is a doc EXAMPLE, not an NPatch addition
- 195 real NPatch tags, adjudicated:
+ 195 real NPatch tags, fully adjudicated — nothing unresolved:
 
   T0-rename        37   verified 1:1 target name
-  T1-reencode      85   verified target, different spelling/shape
-  T1-switch         1   on/off tag with no target (the system is always on)
-  T2-structural    12   verified target but the semantics move (see note column)
-  T2-sides          6   Ares has 16 sides, but as definitions not per-side tags
+  T1-reencode      95   verified target, different spelling/shape/value
+  T1-drop           2   correct output is DELETING the tag (see below)
+  T2-structural    14   verified target but the semantics move
+  T2-sides          6   Ares has 16 sides, as definitions not per-side tags
   T3-ui            31   NPatch's bespoke menu/shell system — unportable
   T3-factory        4   Chrono/DropPod/ParaDrop bays — deferred work item
   T3-missile        5   custom-missile params; only Missile.TakeOffAnim exists
-  T?-research      14   genuinely unresolved
+  T3-aircraft       1   IsNormalPlane — non-VTOL aircraft, unportable
 ```
 
-**123 of 195 (63%) now have a verified target.** Only 14 are unresolved.
+**154 of 195 (79%) have a defined conversion.** The remaining 41 are unportable
+and categorised, not unknown.
 
-Three rules make this trustworthy:
+#### T1-drop: a conversion whose output is deletion
+
+`AACombat` has no target *by design*. Ares fixed the underlying bug — anti-air
+weapons (projectile `AA=yes`) now work on `AircraftTypes`, and the docs state
+plainly that **"No additional flags are required."** So the converter must
+**delete** the tag. Emitting any replacement would be wrong. `UseNewUpgradeSystem`
+is the same shape: a switch for a system that is simply always on.
+
+This class matters more than its count: a converter that only ever renames will
+silently carry dead NPatch tags into a modern mod.
+
+#### Rules that keep it trustworthy
 
 1. **Vanilla wins outright.** An early pass labelled `Damage`, `Speed`,
-   `Strength` and `Warhead` as "Phobos tags" purely because Phobos' docs also
-   mention them. Any tag present in stock rulesmd is excluded regardless.
-2. **A proposed target is emitted only if it exists** in that extension's own
-   key set. Hand-authored semantic mappings and family rules both produce
-   *candidates*; a candidate matching nothing real yields nothing. So the table
-   cannot contain an invented tag. Four of my own candidates failed this way
-   (the sides family) and are recorded as unmapped rather than asserted.
-3. **Key sets come from source, not docs.** Antares `src/**` yields 866 keys
-   against the 408 of the ModENC-derived list; Phobos `src/**` yields 1,694
-   against 261 from its docs — which omit `AttachEffect.AttachTypes` and
-   `LaserThickness`, both demonstrably read by the source. Keys the source
-   builds by substitution (`Bounty.%sValue`) are expanded over the veterancy
-   prefixes.
+   `Strength` and `Warhead` as "Phobos tags" purely because Phobos' docs mention
+   them. Any tag in stock rulesmd is excluded regardless.
+2. **A target is emitted only if it exists** in that extension's own key set.
+   Semantic mappings and family rules produce *candidates*; a candidate matching
+   nothing real yields nothing, so the table cannot contain an invented tag.
+   Four of my own candidates failed this way (the sides family) and are recorded
+   as unmapped rather than asserted.
+3. **Key sets from source, not docs.** Antares `src/**` → 866 keys vs 408 in the
+   ModENC list; Phobos `src/**` → 1,694 vs 261 from its docs, which omit
+   `AttachEffect.AttachTypes` and `LaserThickness`. Keys built by substitution
+   (`Bounty.%sValue`) are expanded over the veterancy prefixes.
 
-Corrections this produced to earlier guesses in this file:
-- the lightning family is **`Lightning.*`**, not `LightningStorm.*`
-- Ares spells them **`Prerequisite.StolenTechs`** and
-  **`Prerequisite.RequiredTheaters`** (plural)
-- `SurvivorDivisor` exists in Antares **verbatim**; no transform needed
-- per-side load screens map to **`File.LoadScreen`**, and `MPC01`-`MPC16`
-  to Ares `Color` entries
+#### Guesses this process corrected
+
+| Assumed | Verified |
+|---|---|
+| `LightningStorm.*` | **`Lightning.*`** |
+| `Prerequisite.StolenTech` / `RequiredTheater` | **plural** — `...StolenTechs` / `...RequiredTheaters` |
+| `SurvivorDivisor` needs a transform | exists in Antares **verbatim** |
+| `AscentSpeed` / `DescendProximity` are flight tags | **`HunterSeeker.*`** — the whole family exists |
+| `DontSayUnitLost` is a boolean rename | **`EVA.Lost=none`** — a value transform |
+| `IsAirstrike` is an Ares tag | **Phobos `AllowAirstrike`**; Ares' airstrike page covers voices only |
+| `IsIFV` is a boolean | **`PassengerTurret`** plus per-weapon `WeaponTurretIndexX`/`WeaponUINameX` |
+| per-side load screens unmapped | **`File.LoadScreen`**; `MPC01-16` → Ares `Color` |
+
+Every one of those would have produced silently wrong output on name
+resemblance — the `AlternateFLHX` failure mode.
 
 `knowledge/npatch_to_modern.tsv` carries tier, target extension, target tag,
-how it was derived, and a note for every non-mechanical case.
+derivation and a note for every non-mechanical case.
 
 ## Tier 1 — same feature, different encoding
 
