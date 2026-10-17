@@ -49,22 +49,59 @@ claims**.
 
 ## Tier 0 — plain renames
 
-**Empty, and it is the bulk of the work.** Blocked: there is no NPatch flag list
-anywhere online. ModENC has no NPatch tag pages (only passing mentions under
-`AttachEffect`, `EMPulseWarhead`, `RockPatch`) and the NPatch site is three
-pages with no documentation.
-
-The authoritative list is inside the MDK, and the MDKs are Win32 `.exe`
-installers:
+**UNBLOCKED 2026-10-16.** The MDK was fetched and extracted; the tag list now
+exists on record.
 
 ```
-http://vk.cncguild.net/NPATCH/DATA/NP_AE_MDK.exe   <- latest; covers 1.00 + SE
-http://vk.cncguild.net/NPATCH/DATA/NP_SE_MDK.exe
-http://vk.cncguild.net/NPATCH/DATA/NP_1_00_MDK.exe
+NP_AE_MDK.exe (1,084,681 bytes)  RAR self-extracting archive
+  -> NPatch.chm (400,113 bytes)  69 HTML doc pages
 ```
 
-Unpack without executing: `7z x NP_AE_MDK.exe` (or `innoextract`), then point
-the work at the extracted docs.
+Extraction notes, because this cost two false starts:
+- `7z` **lists** the SFX correctly but extracts every file as 0 bytes —
+  "Unsupported Method", i.e. no non-free RAR codec. Use `unrar x`. Redirecting
+  stderr to /dev/null hides this and leaves a directory of plausible-looking
+  empty files.
+- The CHM itself extracts fine with `7z`.
+- Nothing had to be executed; the installer is just an SFX.
+
+On record now:
+- `knowledge/npatch_tags_by_page.txt` — 321 candidate tags across 55 doc pages,
+  grouped by the page that documents them. `Reference` alone carries 107.
+- `knowledge/npatch_to_modern.tsv` — the mapping table.
+
+### Method, and why the numbers are what they are
+
+```
+321 candidates
+-126 vanilla     a tag in stock rulesmd is a doc EXAMPLE, not an NPatch addition
+  17 mapped      verified against the target extension's own flag list
+ 178 unmapped    no verified target in the reference sets we hold
+```
+
+Two rules make this trustworthy:
+
+1. **Vanilla wins outright.** An early pass labelled `Damage`, `Speed`,
+   `Strength` and `Warhead` as "Phobos tags" purely because Phobos' docs also
+   mention them. Any tag present in stock rulesmd is excluded regardless.
+2. **A proposed target is only accepted if it exists** in that extension's own
+   flag set. Family rules (NPatch abbreviates where Ares spells out:
+   `Dom*` → `Dominator.*`, `Nuke*` → `Nuke.*`, `EBolt*` → `Bolt.*`) generate
+   *candidates*; a candidate that matches nothing real yields nothing. So the
+   table cannot contain an invented tag.
+
+**178 unmapped does NOT mean 178 unportable.** It means no verified target was
+found in the sets we hold, and those sets are known-incomplete:
+`09_ares_flags.md` is ModENC-derived and lacks e.g. `LightningStorm.Duration`
+and `ParaDrop.Types`, both of which plainly should exist. The remainder needs
+semantic adjudication, not more string matching — `Prerequisite2` /
+`AlternatePrerequisite` → `Prerequisite.Lists`, `ImmuneTo` → `Verses`
+defaulting, `Fourth*` / `Third*` / `S0xLoad` / `MPC01-16` → Ares' unlimited
+sides. That is the next work item.
+
+Phobos' tag set must come from **source, not docs**: the docs yield 261 keys and
+omit `AttachEffect.AttachTypes` and `LaserThickness`, which `src/**` demonstrably
+reads. Scanning `Read(..., "Key")` literals yields 1,546.
 
 ## Tier 1 — same feature, different encoding
 

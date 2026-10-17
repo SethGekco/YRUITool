@@ -1,0 +1,322 @@
+npatch_tag	target_ext	target_tag	how	pages
+AACombat	UNMAPPED		needs adjudication	Reference; Using AACombat tag
+AIBuildThis	vanilla		(stock YR tag — doc example)	Using the new AI PS
+AIDefendAgainst	vanilla		(stock YR tag — doc example)	Adding a new Lightning Storm; Adding a new Psychic Dominator
+AITargetingType	UNMAPPED		needs adjudication	Common SW tags; Making the AI use custom SuperWeapons
+Action	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+ActivateSound	vanilla		(stock YR tag — doc example)	Adding a new Nuke; Adding a new Psychic Dominator
+ActiveRect	UNMAPPED		needs adjudication	NewMenus
+Allied	UNMAPPED		needs adjudication	Adding a new Side
+AlliedCrew	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+AlliedLoad	vanilla		(stock YR tag — doc example)	Adding a new Side
+AllowedToStartInMultiplayer	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+AlternatePrerequisite	UNMAPPED		needs adjudication	New Prerequisite System
+AnimList	vanilla		(stock YR tag — doc example)	Using IsPermaControlled tag
+Animation	phobos	Animation	exact	Reference; Using the new Animation SW
+Armor	vanilla		(stock YR tag — doc example)	Add new armor type; Using the HunterSeeker SW
+AscentSpeed	UNMAPPED		needs adjudication	Adding a non helicopter plane
+AutoFire	phobos	AutoFire	exact	Common SW tags; Reference
+Background	UNMAPPED		needs adjudication	NewMenus
+BaseDefenseCounts	UNMAPPED		needs adjudication	Adding a new Side
+BaseDefenses	UNMAPPED		needs adjudication	Adding a new Side
+BaseUnit	vanilla		(stock YR tag — doc example)	Reference
+BeamValue	UNMAPPED		needs adjudication	BeamValueGenerator; Custom beams
+Bounty	UNMAPPED		needs adjudication	Bounty; Reference
+BountyAnim	UNMAPPED		needs adjudication	Bounty; Reference
+BountyCostMult	UNMAPPED		needs adjudication	Bounty; Reference
+Category	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+CellSpread	vanilla		(stock YR tag — doc example)	Reference; WarheadTags
+ChronoBay	UNMAPPED		needs adjudication	Using a new factory type
+Civilian	vanilla		(stock YR tag — doc example)	Adding a new Side
+Cloakable	vanilla		(stock YR tag — doc example)	Reference
+Color	vanilla		(stock YR tag — doc example)	Adding a new Side; Adding new playable Countries
+ConstructionYard	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+Cost	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW; Using the new Upgrade System
+Crew	UNMAPPED		needs adjudication	Adding a new Side
+CrewType	UNMAPPED		needs adjudication	Pilot from destroyed aircraft
+Crewed	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+Cursor	ares	Cursor	exact	Add Custom Cursor for Weapon
+Damage	vanilla		(stock YR tag — doc example)	Custom beams; Laser Improvements
+DeathWeapon	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+DescendProximity	UNMAPPED		needs adjudication	Adding a non helicopter plane
+DisableLoadScreenText	UNMAPPED		needs adjudication	Misc; Reference
+DisableableFromShell	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+Disguise	UNMAPPED		needs adjudication	Adding a new Side
+DomCapture	ares	Dominator.Capture	family-rename	Adding a new Psychic Dominator; Reference
+DomCaptureAll	UNMAPPED		needs adjudication	Adding a new Psychic Dominator
+DomCaptureBuildings	UNMAPPED		needs adjudication	Adding a new Psychic Dominator
+DomCaptureRange	UNMAPPED		needs adjudication	Adding a new Psychic Dominator
+DomDamage	UNMAPPED		needs adjudication	Adding a new Psychic Dominator; Reference
+DomFireAtPercentage	ares	Dominator.FireAtPercentage	family-rename	Adding a new Psychic Dominator; Reference
+DomFirstAnim	ares	Dominator.FirstAnim	family-rename	Adding a new Psychic Dominator; Reference
+DomSecondAnim	ares	Dominator.SecondAnim	family-rename	Adding a new Psychic Dominator; Reference
+DomWarhead	UNMAPPED		needs adjudication	Reference
+DontSayUnitLost	UNMAPPED		needs adjudication	Reference
+DropInf	UNMAPPED		needs adjudication	Adding a new DropPod SW; Adding a new ParaDrop
+DropInfNum	UNMAPPED		needs adjudication	Adding a new DropPod SW; Adding a new ParaDrop
+DropPodBay	UNMAPPED		needs adjudication	Using a new factory type
+DropUnits	UNMAPPED		needs adjudication	Adding a new DropPod SW; Adding a new ParaDrop
+DropUnitsNum	UNMAPPED		needs adjudication	Adding a new DropPod SW; Adding a new ParaDrop
+EBoltColor1	kratos	Bolt.Color1	family-rename	Coloring ElectricBolts; Reference
+EBoltColor2	kratos	Bolt.Color2	family-rename	Coloring ElectricBolts; Reference
+EBoltColor3	kratos	Bolt.Color3	family-rename	Coloring ElectricBolts; Reference
+EMEffect	vanilla		(stock YR tag — doc example)	Reference; Using EMP
+EMPulseCannon	phobos	EMPulseCannon	exact	Reference; Using the new EMPulse SW
+EVerses	UNMAPPED		needs adjudication	Add new armor type
+EliteBounty	UNMAPPED		needs adjudication	Bounty; Reference
+EliteBountyCostMult	UNMAPPED		needs adjudication	Bounty; Reference
+EliteGetsBounty	UNMAPPED		needs adjudication	Bounty; Reference
+EliteImmuneTo	UNMAPPED		needs adjudication	Immunity
+Engineer	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+EvaActivated	UNMAPPED		needs adjudication	Common SW tags; Customizing EVA Events for SW Clones
+EvaDetected	UNMAPPED		needs adjudication	Common SW tags; Customizing EVA Events for SW Clones
+EvaReady	UNMAPPED		needs adjudication	Common SW tags; Customizing EVA Events for SW Clones
+ExitCoord	vanilla		(stock YR tag — doc example)	Using a new factory type
+Explosion	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+Factory	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+Fighter	vanilla		(stock YR tag — doc example)	Reference; Using AACombat tag
+Firepower	vanilla		(stock YR tag — doc example)	Using the new Upgrade SW
+FirstAnim	UNMAPPED		needs adjudication	Reference
+FlashSidebarTabFrames	vanilla		(stock YR tag — doc example)	Adding a new SpyPlane
+FlightLevel	vanilla		(stock YR tag — doc example)	Adding a non helicopter plane; Using the HunterSeeker SW
+FourthBaseDefenseCounts	UNMAPPED		needs adjudication	Reference
+FourthBaseDefenses	UNMAPPED		needs adjudication	Reference
+FourthCrew	UNMAPPED		needs adjudication	Reference
+FourthLoad	UNMAPPED		needs adjudication	Reference
+FourthPowerPlant	UNMAPPED		needs adjudication	Reference
+FourthSide	UNMAPPED		needs adjudication	Adding a new Side
+FourthSurvivorDivisor	UNMAPPED		needs adjudication	Reference
+GetsBounty	UNMAPPED		needs adjudication	Bounty; Reference
+GuardRange	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+HSBuildings	UNMAPPED		needs adjudication	Using the HunterSeeker SW
+HasSpotlight	UNMAPPED		needs adjudication	Reference
+HideCampaignButton	UNMAPPED		needs adjudication	Use UISettings
+HighlightSound	UNMAPPED		needs adjudication	NewMenus
+Highlighted	UNMAPPED		needs adjudication	NewMenus
+Hunter	UNMAPPED		needs adjudication	Using the HunterSeeker SW
+HunterSeeker	UNMAPPED		needs adjudication	Using the HunterSeeker SW
+Image	vanilla		(stock YR tag — doc example)	NewMenus
+ImmuneTo	UNMAPPED		needs adjudication	Immunity
+ImmuneToPsionics	vanilla		(stock YR tag — doc example)	Adding a new Psychic Dominator
+ImmunityType	UNMAPPED		needs adjudication	Immunity
+InfDeathAnim	ares	InfDeathAnim	exact	Adding new infantry death animations; Reference
+Insignificant	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+IronCurtain	UNMAPPED		needs adjudication	WarheadTags
+IsAirstrike	UNMAPPED		needs adjudication	Adding a new SpyPlane
+IsBeam	UNMAPPED		needs adjudication	Custom beams
+IsBigLaser	vanilla		(stock YR tag — doc example)	Laser Improvements
+IsCow	ares	IsCow	exact	Misc; Reference
+IsCustomColor	UNMAPPED		needs adjudication	Coloring ElectricBolts; Coloring RadBeams and RadEruptions
+IsCustomMissile	UNMAPPED		needs adjudication	Reference
+IsDesolator	ares	IsDesolator	exact	Misc; Reference
+IsElectricBolt	vanilla		(stock YR tag — doc example)	Coloring ElectricBolts
+IsHouseColor	vanilla		(stock YR tag — doc example)	Laser Improvements
+IsIFV	UNMAPPED		needs adjudication	Misc; Reference
+IsLaser	vanilla		(stock YR tag — doc example)	Laser Improvements
+IsNormalPlane	UNMAPPED		needs adjudication	Adding a non helicopter plane
+IsPermaControlled	UNMAPPED		needs adjudication	Reference; Using IsPermaControlled tag
+IsPowered	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+IsRadBeam	vanilla		(stock YR tag — doc example)	Coloring RadBeams and RadEruptions
+IsRadEruption	vanilla		(stock YR tag — doc example)	Coloring RadBeams and RadEruptions
+IsStolenTech	UNMAPPED		needs adjudication	New Prerequisite System
+ItemMax	UNMAPPED		needs adjudication	NewMenus
+Keys	UNMAPPED		needs adjudication	NewMenus
+LStormBoltExplosion	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormBolts	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormCellSpread	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormClouds	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormDamage	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormDeferment	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormDuration	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormHitDelay	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormPrintText	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormScatterDelay	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormSeparation	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormSound	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormSounds	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormText	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LStormText2	UNMAPPED		needs adjudication	Adding a new Lightning Storm
+LaserColor	vanilla		(stock YR tag — doc example)	Laser Improvements
+LaserDuration	vanilla		(stock YR tag — doc example)	Laser Improvements
+LaserInnerColor	vanilla		(stock YR tag — doc example)	Laser Improvements
+LaserOuterColor	vanilla		(stock YR tag — doc example)	Laser Improvements
+LaserOuterSpread	vanilla		(stock YR tag — doc example)	Laser Improvements
+LaserSize	UNMAPPED		needs adjudication	Laser Improvements
+Layer	UNMAPPED		needs adjudication	Anims Palettes
+LightAmbient	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightAmbientChangeRate	UNMAPPED		needs adjudication	Adding a new Psychic Dominator; Common SW tags
+LightBlue	vanilla		(stock YR tag — doc example)	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightGreen	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightGround	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightLevel	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightRed	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+Lighting	UNMAPPED		needs adjudication	Adding a new Lightning Storm; Adding a new Psychic Dominator
+LightningCellSpread	vanilla		(stock YR tag — doc example)	Reference
+LightningDamage	vanilla		(stock YR tag — doc example)	Reference
+LightningDeferment	vanilla		(stock YR tag — doc example)	Reference
+LightningHitDelay	vanilla		(stock YR tag — doc example)	Reference
+LightningPrintText	UNMAPPED		needs adjudication	Reference
+LightningScatterDelay	vanilla		(stock YR tag — doc example)	Reference
+LightningSeparation	vanilla		(stock YR tag — doc example)	Reference
+LightningSounds	vanilla		(stock YR tag — doc example)	Reference
+LightningStormDuration	vanilla		(stock YR tag — doc example)	Reference
+LightningText	UNMAPPED		needs adjudication	Reference
+LightningWarhead	vanilla		(stock YR tag — doc example)	Reference
+LineMultiplier	vanilla		(stock YR tag — doc example)	Adding a new Lightning Storm; Adding a new Nuke
+LoadSpecialYuriUI	UNMAPPED		needs adjudication	Reference
+Locomotor	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+Loop	UNMAPPED		needs adjudication	NewMenus
+LoopCount	UNMAPPED		needs adjudication	Anims Palettes
+LoopEnd	UNMAPPED		needs adjudication	Anims Palettes
+LoopStart	UNMAPPED		needs adjudication	Anims Palettes
+MPC01	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC02	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC03	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC04	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC05	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC06	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC07	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC08	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC09	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC10	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC11	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC12	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC13	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC14	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC15	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MPC16	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+MapSnapshot	UNMAPPED		needs adjudication	Use MapSnap
+MaxDebris	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+MaximumBuildingPlacementFailures	vanilla		(stock YR tag — doc example)	Using the new AI PS
+Medians	UNMAPPED		needs adjudication	Random Map Generator
+MindControl	vanilla		(stock YR tag — doc example)	Using IsPermaControlled tag
+MissileAcceleration	UNMAPPED		needs adjudication	Reference
+MissileAltitude	UNMAPPED		needs adjudication	Reference
+MissileBodyLength	UNMAPPED		needs adjudication	Reference
+MissileDamage	UNMAPPED		needs adjudication	Reference
+MissileEliteDamage	UNMAPPED		needs adjudication	Reference
+MissileEliteWarhead	UNMAPPED		needs adjudication	Reference
+MissileWarhead	UNMAPPED		needs adjudication	Reference
+Money	vanilla		(stock YR tag — doc example)	Reference; Using the new Money SW
+MovementZone	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+Multiplay	vanilla		(stock YR tag — doc example)	Adding new playable Countries
+MultiplayPassive	vanilla		(stock YR tag — doc example)	Adding a new Side
+Mutant	vanilla		(stock YR tag — doc example)	Adding a new Side
+Name	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+NegativePrerequisite	UNMAPPED		needs adjudication	New Prerequisite System
+NewActionName	UNMAPPED		needs adjudication	Using MouseCursors
+NewPara	UNMAPPED		needs adjudication	Using MouseCursors
+NewPlayableCountries	UNMAPPED		needs adjudication	Adding new playable Countries; Reference
+NewTheater	UNMAPPED		needs adjudication	Anims Palettes
+NextStage	UNMAPPED		needs adjudication	Reference; Using the new Upgrade System
+NoAction	UNMAPPED		needs adjudication	Using the new EMPulse SW
+NoRepairButToggle	UNMAPPED		needs adjudication	TogglePower
+Nod	vanilla		(stock YR tag — doc example)	Adding a new Side
+Normalized	vanilla		(stock YR tag — doc example)	Anims Palettes
+NukeDamage	UNMAPPED		needs adjudication	Adding a new Nuke
+NukeFirstAnim	UNMAPPED		needs adjudication	Adding a new Nuke
+NukePayload	ares	Nuke.Payload	family-rename	Adding a new Nuke
+NukePsiWarning	ares	Nuke.PsiWarning	family-rename	Adding a new Nuke
+NukeSilo	vanilla		(stock YR tag — doc example)	Adding a new Nuke
+NukeTakeOff	vanilla		(stock YR tag — doc example)	Adding a new Nuke
+Origin	UNMAPPED		needs adjudication	NewMenus
+Owner	vanilla		(stock YR tag — doc example)	Adding a new Side; Using the HunterSeeker SW
+Palette	phobos	Palette	exact	Anims Palettes; NewMenus
+ParaDropBay	UNMAPPED		needs adjudication	Using a new factory type
+ParaDropInf	UNMAPPED		needs adjudication	Adding a new Side; Reference
+ParaDropNum	UNMAPPED		needs adjudication	Adding a new Side; Reference
+ParaDropPlane	UNMAPPED		needs adjudication	Adding a new ParaDrop; Reference
+ParadropRadius	vanilla		(stock YR tag — doc example)	Using a new factory type
+Parasite	vanilla		(stock YR tag — doc example)	Bounty
+Payload	UNMAPPED		needs adjudication	Adding a new Nuke; Reference
+PlacementDelay	vanilla		(stock YR tag — doc example)	Using the new AI PS
+Points	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+PowerPlant	UNMAPPED		needs adjudication	Adding a new Side; Using the new AI PS
+PowerPlants	UNMAPPED		needs adjudication	Using the new AI PS
+Prefix	vanilla		(stock YR tag — doc example)	Adding a new Side; Adding new playable Countries
+Prerequisite	vanilla		(stock YR tag — doc example)	New Prerequisite System
+Prerequisite2	UNMAPPED		needs adjudication	New Prerequisite System
+Primary	vanilla		(stock YR tag — doc example)	Laser Improvements; Using the HunterSeeker SW
+Priority	UNMAPPED		needs adjudication	Adding a new Side
+Projectile	vanilla		(stock YR tag — doc example)	Custom beams; Laser Improvements
+PsiWarning	UNMAPPED		needs adjudication	Reference
+RadApplicationDelay	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadColor	vanilla		(stock YR tag — doc example)	Coloring RadBeams and RadEruptions; Creating new Radiation Types
+RadDurationMultiple	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadLevelDelay	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadLevelFactor	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadLevelMax	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadLightDelay	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadLightFactor	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadSiteWarhead	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+RadTintFactor	vanilla		(stock YR tag — doc example)	Creating new Radiation Types; Reference
+Range	vanilla		(stock YR tag — doc example)	Adding a new Lightning Storm; Adding a new Nuke
+Rate	vanilla		(stock YR tag — doc example)	Anims Palettes; NewMenus
+RechargeTime	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+RequiresStolenTech	UNMAPPED		needs adjudication	New Prerequisite System
+RequiresTheater	UNMAPPED		needs adjudication	New Prerequisite System
+Russian	UNMAPPED		needs adjudication	Adding a new Side
+S03Load	UNMAPPED		needs adjudication	Adding a new Side
+S04Load	UNMAPPED		needs adjudication	Adding a new Side
+S05Load	UNMAPPED		needs adjudication	Adding a new Side
+ScreenFlash	UNMAPPED		needs adjudication	Reference
+ScreenshotFileName	UNMAPPED		needs adjudication	Changing the screenshot file names
+SelectVQ	UNMAPPED		needs adjudication	NewMenus
+Selectable	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+ShowTechLevelSlider	UNMAPPED		needs adjudication	Reference; Use UISettings
+ShowThirdButton	UNMAPPED		needs adjudication	Use UISettings
+ShowTimer	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+Side	vanilla		(stock YR tag — doc example)	Adding a new Side; Adding new playable Countries
+SideName	UNMAPPED		needs adjudication	Adding a new Side
+SidebarImage	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+Sight	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+SmartAI	vanilla		(stock YR tag — doc example)	Adding a new Side; Adding new playable Countries
+SovietCrew	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+SovietLoad	vanilla		(stock YR tag — doc example)	Adding a new Side
+Speed	vanilla		(stock YR tag — doc example)	Custom beams; Laser Improvements
+Spread	vanilla		(stock YR tag — doc example)	Using EMP
+SpyPlane	UNMAPPED		needs adjudication	Adding a new SpyPlane; Reference
+SpyPlanesNum	UNMAPPED		needs adjudication	Adding a new SpyPlane; Reference
+Spyable	vanilla		(stock YR tag — doc example)	New Prerequisite System
+Strength	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW; Using the new Upgrade SW
+Suffix	vanilla		(stock YR tag — doc example)	Adding a new Side; Adding new playable Countries
+SuperWeapon	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+SurvivorDivisor	UNMAPPED		needs adjudication	Adding a new Side
+SxxLoad	UNMAPPED		needs adjudication	LoadColors
+TakeOff	UNMAPPED		needs adjudication	Reference
+TechLevel	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW; Using the new Upgrade System
+Temporal	vanilla		(stock YR tag — doc example)	TogglePower
+Text	UNMAPPED		needs adjudication	Adding a new Side
+Theme	UNMAPPED		needs adjudication	NewMenus
+ThirdCrew	vanilla		(stock YR tag — doc example)	Pilot from destroyed aircraft
+ThirdLoad	UNMAPPED		needs adjudication	Adding a new Side; LoadColors
+ThirdSide	vanilla		(stock YR tag — doc example)	Adding a new Side
+ThreatPosed	vanilla		(stock YR tag — doc example)	Using the HunterSeeker SW
+TogglePower	vanilla		(stock YR tag — doc example)	TogglePower
+Trainable	vanilla		(stock YR tag — doc example)	Using the new Upgrade System
+Type	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+UIName	vanilla		(stock YR tag — doc example)	Adding a new DropPod SW; Adding a new Lightning Storm
+UpgradeRadius	UNMAPPED		needs adjudication	Using the new Upgrade SW
+UpgradeType	UNMAPPED		needs adjudication	Using the new Upgrade SW
+UpgradeValue	UNMAPPED		needs adjudication	Using the new Upgrade SW
+UseDropDownColors	UNMAPPED		needs adjudication	Customizing the Dropdown Colors
+UseNewMainMenu	UNMAPPED		needs adjudication	NewMenus
+UseNewUpgradeSystem	UNMAPPED		needs adjudication	Reference; Using the new Upgrade System
+UseSpecialThirdUI	UNMAPPED		needs adjudication	Use UISettings; Using sidec03.mix for Yuri's GUI
+UseTogglePower	UNMAPPED		needs adjudication	TogglePower
+Verses	vanilla		(stock YR tag — doc example)	Add new armor type; Using IsPermaControlled tag
+VeteranBounty	UNMAPPED		needs adjudication	Bounty; Reference
+VeteranBountyCostMult	UNMAPPED		needs adjudication	Bounty; Reference
+VeteranGetsBounty	UNMAPPED		needs adjudication	Bounty; Reference
+VeteranImmuneTo	UNMAPPED		needs adjudication	Immunity
+VoiceIFVRepair	vanilla		(stock YR tag — doc example)	Misc; Reference
+Wall	vanilla		(stock YR tag — doc example)	WarheadTags
+Warhead	vanilla		(stock YR tag — doc example)	Add new armor type; Adding a new Lightning Storm
+WeaponType	vanilla		(stock YR tag — doc example)	Adding a new Nuke
+WeaponsFactory	vanilla		(stock YR tag — doc example)	Using a new factory type
+WeatherConBoltExplosion	vanilla		(stock YR tag — doc example)	Reference
+WeatherConBolts	vanilla		(stock YR tag — doc example)	Reference
+WeatherConClouds	vanilla		(stock YR tag — doc example)	Reference
+WholeBib	UNMAPPED		needs adjudication	Using a new factory type
+Wood	vanilla		(stock YR tag — doc example)	WarheadTags
+Yuri	UNMAPPED		needs adjudication	Adding a new Side
