@@ -11,4 +11,9 @@ dist/
 # Local game data / test artifacts — don't commit copyrighted rules files
 *.ini
 !examples/*.ini
+# Our own metadata, not game data: the engine-extension registry the
+# NPatch converter and dll_detect read. The blanket *.ini above exists to
+# keep copyrighted mod/game INIs out of the repo, so whitelist narrowly
+# rather than relaxing it.
+!knowledge/extensions.ini
 wavegen/__pycache__/

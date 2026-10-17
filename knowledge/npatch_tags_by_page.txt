@@ -1,0 +1,112 @@
+## Add Custom Cursor for Weapon  (1)
+   Cursor
+## Add new armor type  (4)
+   Armor, EVerses, Verses, Warhead
+## Adding a new DropPod SW  (11)
+   Action, DisableableFromShell, DropInf, DropInfNum, DropUnits, DropUnitsNum, IsPowered, RechargeTime, ShowTimer, SidebarImage, UIName
+## Adding a new Lightning Storm  (33)
+   AIDefendAgainst, Action, DisableableFromShell, IsPowered, LStormBoltExplosion, LStormBolts, LStormCellSpread, LStormClouds, LStormDamage, LStormDeferment, LStormDuration, LStormHitDelay, LStormPrintText, LStormScatterDelay, LStormSeparation, LStormSound, LStormSounds, LStormText, LStormText2, LightAmbient, LightBlue, LightGreen, LightGround, LightLevel, LightRed, Lighting, LineMultiplier, Range, RechargeTime, ShowTimer, SidebarImage, UIName, Warhead
+## Adding a new Nuke  (19)
+   Action, ActivateSound, DisableableFromShell, IsPowered, LineMultiplier, NukeDamage, NukeFirstAnim, NukePayload, NukePsiWarning, NukeSilo, NukeTakeOff, Payload, Range, RechargeTime, ShowTimer, SidebarImage, UIName, Warhead, WeaponType
+## Adding a new ParaDrop  (12)
+   Action, DisableableFromShell, DropInf, DropInfNum, DropUnits, DropUnitsNum, IsPowered, ParaDropPlane, RechargeTime, ShowTimer, SidebarImage, UIName
+## Adding a new Psychic Dominator  (29)
+   AIDefendAgainst, Action, ActivateSound, DisableableFromShell, DomCapture, DomCaptureAll, DomCaptureBuildings, DomCaptureRange, DomDamage, DomFireAtPercentage, DomFirstAnim, DomSecondAnim, ImmuneToPsionics, IsPowered, LightAmbient, LightAmbientChangeRate, LightBlue, LightGreen, LightGround, LightLevel, LightRed, Lighting, LineMultiplier, Range, RechargeTime, ShowTimer, SidebarImage, UIName, Warhead
+## Adding a new Side  (33)
+   Allied, AlliedLoad, BaseDefenseCounts, BaseDefenses, Civilian, Color, Crew, Disguise, FourthSide, MultiplayPassive, Mutant, Nod, Owner, ParaDropInf, ParaDropNum, PowerPlant, Prefix, Priority, Russian, S03Load, S04Load, S05Load, Side, SideName, SmartAI, SovietLoad, Suffix, SurvivorDivisor, Text, ThirdLoad, ThirdSide, UIName, Yuri
+## Adding a new SpyPlane  (11)
+   Action, DisableableFromShell, FlashSidebarTabFrames, IsAirstrike, IsPowered, RechargeTime, ShowTimer, SidebarImage, SpyPlane, SpyPlanesNum, UIName
+## Adding a non helicopter plane  (5)
+   AscentSpeed, DescendProximity, FlightLevel, IsNormalPlane, UIName
+## Adding new infantry death animations  (1)
+   InfDeathAnim
+## Adding new playable Countries  (8)
+   Color, Multiplay, NewPlayableCountries, Prefix, Side, SmartAI, Suffix, UIName
+## Anims Palettes  (8)
+   Layer, LoopCount, LoopEnd, LoopStart, NewTheater, Normalized, Palette, Rate
+## BeamValueGenerator  (1)
+   BeamValue
+## Bounty  (11)
+   Bounty, BountyAnim, BountyCostMult, EliteBounty, EliteBountyCostMult, EliteGetsBounty, GetsBounty, Parasite, VeteranBounty, VeteranBountyCostMult, VeteranGetsBounty
+## Changing the screenshot file names  (1)
+   ScreenshotFileName
+## Coloring ElectricBolts  (5)
+   EBoltColor1, EBoltColor2, EBoltColor3, IsCustomColor, IsElectricBolt
+## Coloring RadBeams and RadEruptions  (4)
+   IsCustomColor, IsRadBeam, IsRadEruption, RadColor
+## Common SW tags  (13)
+   AITargetingType, AutoFire, EvaActivated, EvaDetected, EvaReady, LightAmbient, LightAmbientChangeRate, LightBlue, LightGreen, LightGround, LightLevel, LightRed, Lighting
+## Creating new Radiation Types  (10)
+   RadApplicationDelay, RadColor, RadDurationMultiple, RadLevelDelay, RadLevelFactor, RadLevelMax, RadLightDelay, RadLightFactor, RadSiteWarhead, RadTintFactor
+## Custom beams  (7)
+   BeamValue, Damage, IsBeam, Projectile, Range, Speed, Warhead
+## Customizing EVA Events for SW Clones  (3)
+   EvaActivated, EvaDetected, EvaReady
+## Customizing the Dropdown Colors  (17)
+   MPC01, MPC02, MPC03, MPC04, MPC05, MPC06, MPC07, MPC08, MPC09, MPC10, MPC11, MPC12, MPC13, MPC14, MPC15, MPC16, UseDropDownColors
+## Files  (1)
+   BeamValue
+## INIValidate  (1)
+   Warhead
+## Immunity  (4)
+   EliteImmuneTo, ImmuneTo, ImmunityType, VeteranImmuneTo
+## Laser Improvements  (15)
+   Damage, IsBigLaser, IsHouseColor, IsLaser, LaserColor, LaserDuration, LaserInnerColor, LaserOuterColor, LaserOuterSpread, LaserSize, Primary, Projectile, Range, Speed, Warhead
+## LoadColors  (2)
+   SxxLoad, ThirdLoad
+## Making the AI use custom SuperWeapons  (1)
+   AITargetingType
+## Misc  (5)
+   DisableLoadScreenText, IsCow, IsDesolator, IsIFV, VoiceIFVRepair
+## New Prerequisite System  (8)
+   AlternatePrerequisite, IsStolenTech, NegativePrerequisite, Prerequisite, Prerequisite2, RequiresStolenTech, RequiresTheater, Spyable
+## NewMenus  (14)
+   ActiveRect, Background, HighlightSound, Highlighted, Image, ItemMax, Keys, Loop, Origin, Palette, Rate, SelectVQ, Theme, UseNewMainMenu
+## Pilot from destroyed aircraft  (8)
+   AlliedCrew, ConstructionYard, CrewType, Crewed, Engineer, Factory, SovietCrew, ThirdCrew
+## Random Map Generator  (1)
+   Medians
+## Reference  (107)
+   AACombat, AITargetingType, Action, ActivateSound, Animation, AutoFire, BaseUnit, Bounty, BountyAnim, BountyCostMult, CellSpread, Cloakable, DisableLoadScreenText, DomCapture, DomDamage, DomFireAtPercentage, DomFirstAnim, DomSecondAnim, DomWarhead, DontSayUnitLost, EBoltColor1, EBoltColor2, EBoltColor3, EMEffect, EMPulseCannon, EliteBounty, EliteBountyCostMult, EliteGetsBounty, Fighter, FirstAnim, FourthBaseDefenseCounts, FourthBaseDefenses, FourthCrew, FourthLoad, FourthPowerPlant, FourthSurvivorDivisor, GetsBounty, HasSpotlight, InfDeathAnim, IsCow, IsCustomColor, IsCustomMissile, IsDesolator, IsIFV, IsPermaControlled, LightAmbient, LightAmbientChangeRate, LightBlue, LightGreen, LightGround, LightLevel, LightRed, Lighting, LightningCellSpread, LightningDamage, LightningDeferment, LightningHitDelay, LightningPrintText, LightningScatterDelay, LightningSeparation, LightningSounds, LightningStormDuration, LightningText, LightningWarhead, LoadSpecialYuriUI, MissileAcceleration, MissileAltitude, MissileBodyLength, MissileDamage, MissileEliteDamage, MissileEliteWarhead, MissileWarhead, Money, NewPlayableCountries, NextStage, Palette, ParaDropInf, ParaDropNum, ParaDropPlane, Payload, Projectile, PsiWarning, RadApplicationDelay, RadColor, RadDurationMultiple, RadLevelDelay, RadLevelFactor, RadLevelMax, RadLightDelay, RadLightFactor, RadSiteWarhead, RadTintFactor, ScreenFlash, ShowTechLevelSlider, SpyPlane, SpyPlanesNum, TakeOff, ThirdLoad, UseNewUpgradeSystem, VeteranBounty, VeteranBountyCostMult, VeteranGetsBounty, VoiceIFVRepair, Warhead, WeatherConBoltExplosion, WeatherConBolts, WeatherConClouds
+## TogglePower  (4)
+   NoRepairButToggle, Temporal, TogglePower, UseTogglePower
+## Use MapSnap  (1)
+   MapSnapshot
+## Use UISettings  (4)
+   HideCampaignButton, ShowTechLevelSlider, ShowThirdButton, UseSpecialThirdUI
+## Using AACombat tag  (2)
+   AACombat, Fighter
+## Using EMP  (3)
+   Damage, EMEffect, Spread
+## Using IsPermaControlled tag  (4)
+   AnimList, IsPermaControlled, MindControl, Verses
+## Using MouseCursors  (3)
+   Action, NewActionName, NewPara
+## Using a new factory type  (8)
+   ChronoBay, DropPodBay, ExitCoord, ParaDropBay, ParaDropPlane, ParadropRadius, WeaponsFactory, WholeBib
+## Using sidec03.mix for Yuri's GUI  (1)
+   UseSpecialThirdUI
+## Using the HunterSeeker SW  (31)
+   Action, AllowedToStartInMultiplayer, Armor, Category, Cost, DeathWeapon, DisableableFromShell, Explosion, FlightLevel, GuardRange, HSBuildings, Hunter, HunterSeeker, Insignificant, Locomotor, MaxDebris, MovementZone, Owner, Points, Primary, RechargeTime, Selectable, ShowTimer, SidebarImage, Sight, Speed, Strength, SuperWeapon, TechLevel, ThreatPosed, UIName
+## Using the new AI PS  (5)
+   AIBuildThis, MaximumBuildingPlacementFailures, PlacementDelay, PowerPlant, PowerPlants
+## Using the new Animation SW  (7)
+   Action, Animation, DisableableFromShell, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new EMPulse SW  (8)
+   Action, DisableableFromShell, EMPulseCannon, NoAction, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new Firing SW  (7)
+   Action, DisableableFromShell, EMPulseCannon, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new IonCannon SW  (6)
+   Action, DisableableFromShell, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new Money SW  (7)
+   AutoFire, DisableableFromShell, Money, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new SpySat SW  (6)
+   AutoFire, DisableableFromShell, RechargeTime, ShowTimer, SidebarImage, UIName
+## Using the new Upgrade SW  (14)
+   Action, Animation, DisableableFromShell, Firepower, IsPowered, RechargeTime, ShowTimer, SidebarImage, Speed, Strength, UIName, UpgradeRadius, UpgradeType, UpgradeValue
+## Using the new Upgrade System  (6)
+   Cost, NextStage, Primary, TechLevel, Trainable, UseNewUpgradeSystem
+## WarheadTags  (6)
+   CellSpread, Damage, IronCurtain, Verses, Wall, Wood
+
+=== 319 distinct candidate tags across 55 pages ===
