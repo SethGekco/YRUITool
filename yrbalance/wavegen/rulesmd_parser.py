@@ -236,6 +236,16 @@ def standoff_kill_dps_floor(defense_strengths):
     return _median(vals) / (STANDOFF_KILL_SECONDS * GAME_FPS)
 
 
+def is_aerial_unit(rec):
+    """Whether this unit is exposed to anti-air fire.
+
+    Module-level twin of the grading pass's is_aerial(): an AircraftType, or
+    anything whose locomotor puts it in the air.
+    """
+    return bool(getattr(rec, "is_aircraft_type", False)
+                or getattr(rec, "mobility", "") in ("Jumpjet", "Aircraft"))
+
+
 def dps_is_trustworthy(rec):
     """False when the unit's damage is delivered by something we did not read.
 

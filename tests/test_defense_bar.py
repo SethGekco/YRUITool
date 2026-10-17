@@ -279,6 +279,39 @@ def main():
           f"{'OK' if trust_ok else 'FAIL'}")
     ok = ok and trust_ok
 
+    # ── exposure: AA cannot shoot a ground unit ─────────────────────────────
+    from yrbalance.wavegen.rulesmd_parser import (
+        is_aerial_unit, standoff_kill_dps_floor, STANDOFF_KILL_SECONDS,
+    )
+
+    class Mob:
+        def __init__(self, air=False, mob="Land"):
+            self.is_aircraft_type = air
+            self.mobility = mob
+
+    aer_ok = (is_aerial_unit(Mob(air=True))
+              and is_aerial_unit(Mob(mob="Jumpjet"))
+              and is_aerial_unit(Mob(mob="Aircraft"))
+              and not is_aerial_unit(Mob())
+              and not is_aerial_unit(Mob(mob="Naval")))
+    print(f"is_aerial_unit: AircraftType + Jumpjet/Aircraft locomotors: "
+          f"{'OK' if aer_ok else 'FAIL'}")
+    ok = ok and aer_ok
+
+    # The relaxed floor is only defensible behind a hard range gate. Without
+    # one it put 46 units in the air camp — a GI can eventually kill a SAM
+    # site, which is true and useless — so only standoff gets it.
+    strengths = [400, 600, 810, 900]
+    relaxed = standoff_kill_dps_floor(strengths)
+    strict = defense_kill_dps_floor(strengths)
+    floors_ok = (relaxed < strict
+                 and abs(relaxed - 705 / (STANDOFF_KILL_SECONDS * 15.0)) < 1e-9
+                 and standoff_kill_dps_floor([]) == 0.0)
+    print(f"standoff floor is the lenient one, strict is 5x it: "
+          f"{'OK' if floors_ok else 'FAIL'} "
+          f"relaxed={relaxed:.3f} strict={strict:.3f}")
+    ok = ok and floors_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

@@ -234,6 +234,38 @@ def defense_camp_profile(rules_path, aerial=False):
     return defense_range_profile(targets.get(key) or [])
 
 
+def _median_unit_strength(parser):
+    """Median Strength across the mod's units, cached on the parser."""
+    cached = getattr(parser, "_rb_median_strength", None)
+    if cached is not None:
+        return cached
+    vals = sorted(float(getattr(r, "strength", 0) or 0)
+                  for r in getattr(parser, "units", {}).values())
+    vals = [v for v in vals if v > 0]
+    if not vals:
+        med = 0.0
+    else:
+        n = len(vals)
+        med = (vals[n // 2] if n % 2
+               else (vals[n // 2 - 1] + vals[n // 2]) / 2.0)
+    try:
+        parser._rb_median_strength = med
+    except Exception:
+        pass
+    return med
+
+
+def _is_tough(rec, parser):
+    """At or above the mod's median unit Strength."""
+    med = _median_unit_strength(parser)
+    if med <= 0:
+        return True                 # unreadable -> do not exclude
+    try:
+        return float(getattr(rec, "strength", 0) or 0) >= med
+    except (TypeError, ValueError):
+        return False
+
+
 def suggest_units_for_role(display_role, rules_path):
     """Units whose detected role tags match `display_role`, using the wavegen role
     detector on `rules_path`. Best-effort: returns [] on any parse failure so the
@@ -262,7 +294,7 @@ def suggest_units_for_role(display_role, rules_path):
         from .rulesmd_parser import (
             RulesMdParser, defense_range_profile, defense_kill_dps_floor,
             standoff_kill_dps_floor, primary_defense_armor,
-            best_weapon_dps_vs, dps_is_trustworthy,
+            best_weapon_dps_vs, dps_is_trustworthy, is_aerial_unit,
         )
         parser = RulesMdParser(rules_path)
         parser.parse()
@@ -283,8 +315,16 @@ def suggest_units_for_role(display_role, rules_path):
                 # A standoff unit is out of reach, so it only has to be able to
                 # hurt the thing at all; a breacher is being shot at and has to
                 # kill it promptly.
+                # The relaxed floor is only defensible when paired with a
+                # hard range gate: "it can take as long as it likes" is true
+                # of a unit sitting outside every defense, and of nothing
+                # else. The air camp has no range gate for ground units (AA
+                # cannot shoot them), so relaxing it there put 46 units in —
+                # a GI can eventually kill a SAM site, which is true and
+                # useless. Air and breacher therefore both use the strict
+                # floor; only standoff gets the relaxation.
                 "floor": (standoff_kill_dps_floor(strengths)
-                          if key != BREACH_CAMP_KEY
+                          if key == STANDOFF_CAMP_KEY
                           else defense_kill_dps_floor(strengths)),
             }
         except Exception:
@@ -303,9 +343,18 @@ def suggest_units_for_role(display_role, rules_path):
         except (TypeError, ValueError):
             continue
         outranges = rng > camp["bar"]
-        # Standoff and air want reach; a breacher is DEFINED by not having it,
-        # so requiring range there would leave the camp permanently empty.
-        if key == BREACH_CAMP_KEY:
+        if key == AERIAL_CAMP_KEY:
+            # An AA defense has AG=no — it physically cannot shoot a ground
+            # unit. So a tank walking up to a SAM site takes NOTHING from it,
+            # and demanding that it out-range the AA was meaningless. Only an
+            # AERIAL attacker is exposed, and it then needs the same thing any
+            # unit under fire needs: reach, or the toughness to absorb it.
+            if is_aerial_unit(rec):
+                if not (outranges or _is_tough(rec, parser)):
+                    continue
+        elif key == BREACH_CAMP_KEY:
+            # A breacher is DEFINED by not out-ranging its target, so
+            # requiring range here would leave the camp permanently empty.
             if outranges:
                 continue
         elif not outranges:
