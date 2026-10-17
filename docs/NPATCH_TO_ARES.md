@@ -224,13 +224,47 @@ firing coordinates and mind-control link offsets, and live in artmd.ini. The
 correct target is `<WeaponKey>FLH.BurstN`. Match on semantics, never on string
 resemblance — this one would have produced silently wrong output.
 
-**3. Two AttachEffect implementations, overlapping tag names.**
-Ares has bare `AttachEffect` and `AttachEffect.Duration`; Phobos has
-`AttachEffect.AttachTypes` and `AttachEffect.DurationOverrides`. Both parse the
-same `AttachEffect.*` prefix off the same warheads. Phobos' "won't introduce
-incompatibilities" claim is least likely to hold exactly here. **Needs an
-in-game test before the converter commits to a target** — it cannot be settled
-by reading source.
+**3. The conflict axis is Kratos↔Phobos, not Ares↔Phobos.**
+Corrected by the user 2026-10-16, and then confirmed from Kratos' own manual.
+
+**Ares and Phobos do not overlap behaviourally.** They are similar systems that
+never cross paths. An earlier version of this file claimed their `AttachEffect.*`
+tag prefixes collided and demanded an in-game test; that was a string-level
+reading, not a behavioural one, and it was wrong. Phobos' own position — that it
+is "meant to accompany Ares rather than replace it, thus it won't introduce
+incompatibilities" — holds.
+
+**Kratos is the one that interacts, and it interacts with Phobos.** Its manual
+documents this inline, per tag, which makes it a usable source for the converter
+rather than something to discover by testing:
+
+| Kratos tag | What the manual says |
+|---|---|
+| `AllowDamageIfDebrisHitWater` | inert under Phobos — use Phobos' `ExplodeOnWater` |
+| (splash) | inert under Phobos — use Phobos' `SplashAnims` |
+| `AdvancedBallistics` | **conflicts** with Phobos' `Gravity=0`; pick one |
+| FLH-not-following-turret, FLH-from-target | **conflict** with Phobos; work around via `ExtraFire` |
+| `AllowTakeoverPhobosShadowMaker` | deliberately **takes over** Phobos B39 shadow logic |
+| `AirstrikeTargetLaserColor` | deliberately **key-compatible** with Phobos |
+| (warhead verses) | a Phobos build-32 caveat about 100% verses |
+
+So "Kratos + Phobos" is not a yes/no question — it is a per-feature matrix the
+converter should consult, and the manual is the source of truth for it.
+
+**Kratos ↔ Ares** is the looser relationship. Kratos' AE system is described as
+`同Ares的AttachEffect` — *"same as Ares' AttachEffect"* — but **registry-free**
+(`不需要注册表，直接写AE类型`, "no registry needed, write the AE type
+directly"), and Kratos annotates settings it inherits from Ares with a literal
+`(Ares)` marker (e.g. `Damage.Delay`, `Weapon=NukePayload`). The user's read is
+that Kratos overwrites Ares in order to extend it; that is **plausible and
+unverified** — the manual says "equivalent to", which is not the same claim as
+"hooks over". Do not encode it as fact.
+
+Consequence for the Upgrade→AttachEffect conversion: there are now **three**
+viable targets with different shapes — Ares (warhead + GenericWarhead SW
+scaffolding), Phobos (named type registry), Kratos (type written inline, no
+registry). Kratos' registry-free form is the closest to NPatch's named Upgrades
+of the three, but picking it drags in the Kratos↔Phobos matrix above.
 
 ## Open questions
 
