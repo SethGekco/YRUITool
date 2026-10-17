@@ -421,6 +421,13 @@ class LibraryTab(QWidget):
         vrow.addWidget(self.voice_play_btn)
         vrow.addWidget(self.voice_export_btn)
         vrow.addStretch(1)
+        self.voice_apply_btn = QPushButton("Apply saved set…")
+        self.voice_apply_btn.setToolTip(
+            "Apply a voice set from the library onto this unit — preview first, "
+            "with a merge/keep-both choice for anything that collides. Samples "
+            "are injected into this mod's audio.bag.")
+        self.voice_apply_btn.clicked.connect(self._voice_apply)
+        vrow.addWidget(self.voice_apply_btn)
         vrow.addWidget(self.voice_save_btn)
         vl.addLayout(vrow)
         tabs.addTab(voc, "Voices")
@@ -1059,6 +1066,7 @@ class LibraryTab(QWidget):
         self.voice_play_btn.setEnabled(False)
         self.voice_export_btn.setEnabled(False)
         self.voice_save_btn.setEnabled(False)
+        self.voice_apply_btn.setEnabled(False)
 
     def _sample_location(self, cat, name):
         """(label, playable) for a sample name against a media catalog."""
@@ -1111,6 +1119,7 @@ class LibraryTab(QWidget):
             self.voice_info.setText(f"[{entry.name}] sets no voice tags.")
             return
         self.voice_save_btn.setEnabled(True)
+        self.voice_apply_btn.setEnabled(bool(load_sets()))
         bits = [f"{len(vset.tags)} tags", f"{len(vset.entries)} sound entries",
                 f"{len(vset.samples)} samples ({playable} playable)"]
         if vset.notes:
@@ -1200,6 +1209,29 @@ class LibraryTab(QWidget):
             msg += f"; {len(missing)} not found ({', '.join(missing[:4])}"
             msg += ", …)" if len(missing) > 4 else ")"
         self.status.setText(msg + ".")
+
+    def _voice_apply(self):
+        """Apply a saved voice set onto the selected unit, in its own mod."""
+        it = self._selected_item()
+        if it is None:
+            return
+        src = next((s for s in self.sources if s.id == it.source_id), None)
+        if src is None:
+            return
+        # Target the ORIGINAL mod, not a snapshot copy in our sidecar — editing
+        # the snapshot would silently leave the real mod untouched.
+        rules = src.orig_path or src.rules_path
+        if not os.path.isfile(rules):
+            QMessageBox.warning(
+                self, "Can't apply",
+                f"The source mod's rulesmd is no longer at:\n{rules}")
+            return
+        from .voice_apply_dialog import VoiceApplyDialog
+        dlg = VoiceApplyDialog(self, it.name, os.path.dirname(rules), rules)
+        if dlg.exec() == QDialog.Accepted:
+            self.status.setText(getattr(dlg, "result_message", "Applied."))
+            self._scan_by_source.pop(it.source_id, None)   # re-scan next show
+            self._show_detail()
 
     # ── data ─────────────────────────────────────────────────────────────────
     def _reload(self, keep_row=None):
