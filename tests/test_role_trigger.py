@@ -100,30 +100,45 @@ def main():
     from yrbalance.wavegen.team_generator import ROLE_FLAGS
 
     roles = available_roles()
-    camps_ok = ("Anti-Defenses (Ground)" in roles
-                and "Anti-Defenses (Air)" in roles
-                and "Anti-Defenses" not in roles)
-    print(f"both camps offered, bare name retired from the list: "
+    camps_ok = all(r in roles for r in ("Anti-Defenses (Standoff)",
+                                        "Anti-Defenses (Breacher)",
+                                        "Anti-Defenses (Air)")) \
+        and "Anti-Defenses" not in roles \
+        and "Anti-Defenses (Ground)" not in roles
+    print(f"three camps offered, old names retired from the list: "
           f"{'OK' if camps_ok else 'FAIL'}")
     ok = ok and camps_ok
 
     # The old display name is what sits in users' unit_roles.json, so it has to
     # keep resolving or their saved picks silently detach from the role.
+    # Both historical display names must keep resolving: they are what sits in
+    # users' unit_roles.json, and a miss silently detaches their saved picks.
     legacy_ok = (_resolve("Anti-Defenses")[0] == "ANTI_DEFENSES"
                  and _resolve("Anti-Defenses (Ground)")[0] == "ANTI_DEFENSES"
+                 and _resolve("Anti-Defenses (Standoff)")[0] == "ANTI_DEFENSES"
+                 and _resolve("Anti-Defenses (Breacher)")[0]
+                 == "ANTI_DEFENSES_BREACH"
                  and _resolve("Anti-Defenses (Air)")[0] == "ANTI_DEFENSES_AIR"
-                 and "Anti-Defenses" in LEGACY_ROLE_NAMES)
-    print(f"legacy 'Anti-Defenses' still resolves to the ground camp: "
+                 and set(LEGACY_ROLE_NAMES) == {"Anti-Defenses",
+                                                "Anti-Defenses (Ground)"})
+    print(f"both legacy names resolve to the standoff camp: "
           f"{'OK' if legacy_ok else 'FAIL'}")
     ok = ok and legacy_ok
 
     # A new key is useless if the three tables it indexes lack an entry — it
     # would silently fall back to GENERAL_ATTACK weights/flags/script.
-    k = "ANTI_DEFENSES_AIR"
-    tables_ok = (k in SCRIPT_BY_ROLE and k in ROLE_WEIGHTS and k in ROLE_FLAGS)
-    print(f"air camp present in script/weights/flags tables: "
+    tables_ok = all(k in SCRIPT_BY_ROLE and k in ROLE_WEIGHTS
+                    and k in ROLE_FLAGS
+                    for k in ("ANTI_DEFENSES_AIR", "ANTI_DEFENSES_BREACH"))
+    print(f"new camps present in script/weights/flags tables: "
           f"{'OK' if tables_ok else 'FAIL'}")
     ok = ok and tables_ok
+
+    for nm in ("Anti-Defenses (Breacher)", "Anti-Defenses (Standoff)"):
+        f2 = fields(build_role_entry(nm, ["X"]).trigger_def)
+        if f2["TechLevel"] != "1" or f2["Team2"] != "<none>":
+            ok = False
+            print(f"{nm} trigger malformed: FAIL")
 
     air = build_role_entry("Anti-Defenses (Air)", ["V3"])
     af = fields(air.trigger_def)

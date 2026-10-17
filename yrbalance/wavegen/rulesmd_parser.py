@@ -189,6 +189,53 @@ def unit_dps_vs(rec, armor_indices):
     return max(pri, pri + sec * 0.5)
 
 
+def best_weapon_dps_vs(rec, armor_indices):
+    """DPS of the SINGLE best weapon against `armor_indices`.
+
+    Not unit_dps_vs(): that returns max(pri, pri + sec*0.5), a blend which is
+    right for "how good is this unit overall" but wrong here. A unit fires ONE
+    weapon at a defense — whichever suits the target — so it is graded on that
+    weapon alone (Rex, 2026-10-16). The blend also halved the Magnetron's only
+    building-damaging weapon, because its primary is a locomotor beam that does
+    nothing to structures.
+
+    A secondary whose projectile has AG=no cannot contribute against ground
+    armour; aerial armour indices are the exception.
+    """
+    AERIAL_ARMOR_IDX = {9, 10}
+    armor_indices = set(armor_indices or ())
+    if not armor_indices:
+        return 0.0
+    is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
+    best = 0.0
+    for key in ("role_weapon", "primary_analysis", "secondary_analysis"):
+        w = getattr(rec, key, None)
+        if not w:
+            continue
+        if key == "secondary_analysis" and not w.get("is_combat"):
+            continue
+        if not w.get("can_ag", True) and not is_aerial_target:
+            continue
+        best = max(best, dps_vs_weapon(w, armor_indices))
+    return best
+
+
+# A standoff unit is never in the defense's reach, so it can take as long as it
+# likes — "slow is fine if the range is high" (Rex). The floor is only there to
+# reject units that cannot meaningfully hurt a defense AT ALL: a Sniper needs
+# ~6,750 seconds on the median defense and still fails this, while a Magnetron
+# or Howitzer passes.
+STANDOFF_KILL_SECONDS = 300.0
+
+
+def standoff_kill_dps_floor(defense_strengths):
+    """Relaxed floor for units that out-range what they are shooting."""
+    vals = [s for s in (defense_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return _median(vals) / (STANDOFF_KILL_SECONDS * GAME_FPS)
+
+
 def dps_is_trustworthy(rec):
     """False when the unit's damage is delivered by something we did not read.
 

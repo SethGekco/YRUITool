@@ -38,8 +38,22 @@ ROLE_MAP = {
     # just as much as a fighter is. Each camp is scored against its own range
     # bar: ground-capable building weapons for one, air-capable (AA) for the
     # other. Mixing them put the bar above the Prism Tower.
-    "Anti-Defenses (Ground)": {"key": "ANTI_DEFENSES",
-                               "tags": ["AG-Anti_Building", "Factory_Killer"]},
+    # The ground case splits again, because the two ways to kill a defense have
+    # requirements that differ in KIND, not degree:
+    #   standoff — out-ranges the defense, so it is never shot at and slow
+    #              damage is fine ("fine if damage is slow so long as range is
+    #              high", Rex). Needs reach; barely needs toughness.
+    #   breacher — does NOT out-range it, so it has to drive into the envelope
+    #              and tank the hits. Needs real DPS and real survivability.
+    # One sliding DPS-per-range formula cannot express "also needs armour", and
+    # the AI fields them differently anyway (ROLE_FLAGS already separates
+    # hold-position-and-fire from push-to-target).
+    "Anti-Defenses (Standoff)": {"key": "ANTI_DEFENSES",
+                                 "tags": ["AG-Anti_Building",
+                                          "Factory_Killer"]},
+    "Anti-Defenses (Breacher)": {"key": "ANTI_DEFENSES_BREACH",
+                                 "tags": ["AG-Anti_Building",
+                                          "Factory_Killer"]},
     "Anti-Defenses (Air)":    {"key": "ANTI_DEFENSES_AIR",
                                "tags": ["AG-Anti_Building", "Factory_Killer"]},
     "Miner Killer":   {"key": "MINER_KILLER", "tags": ["Miner_Killer"]},
@@ -63,6 +77,9 @@ SCRIPT_BY_ROLE = {
     # WHICH UNITS get recruited, not in what the script tells them to shoot.
     "ANTI_DEFENSES_AIR": [(54, 0), (53, 0), (0, 7), (49, 0), (0, 6), (49, 0),
                           (0, 2), (49, 0), (0, 1), (49, 0), (6, 1)],
+    "ANTI_DEFENSES_BREACH": [(54, 0), (53, 0), (0, 7), (49, 0), (0, 6),
+                             (49, 0), (0, 2), (49, 0), (0, 1), (49, 0),
+                             (6, 1)],
     "MINER_KILLER":   [(54, 0), (53, 0), (0, 3), (49, 0), (0, 1), (49, 0), (6, 1)],
     "AA":             [(54, 0), (53, 0), (0, 1), (49, 0), (6, 1)],
 }
@@ -113,7 +130,10 @@ def role_trigger_variants(display_role, units=None, enemy_objects=None):
 
 # Role lists are saved by DISPLAY NAME in unit_roles.json, so the old name has
 # to keep resolving or a user's saved picks silently detach from their role.
-LEGACY_ROLE_NAMES = {"Anti-Defenses": "Anti-Defenses (Ground)"}
+LEGACY_ROLE_NAMES = {
+    "Anti-Defenses":          "Anti-Defenses (Standoff)",
+    "Anti-Defenses (Ground)": "Anti-Defenses (Standoff)",
+}
 
 
 def available_roles():
@@ -186,8 +206,13 @@ def build_role_entry(display_role, units, label=None, side=1, condition=None):
         trigger_id="RTRIG", trigger_def=trig, units=list(units))
 
 
-AERIAL_CAMP_KEY = "ANTI_DEFENSES_AIR"
-GROUND_CAMP_KEY = "ANTI_DEFENSES"
+AERIAL_CAMP_KEY  = "ANTI_DEFENSES_AIR"
+STANDOFF_CAMP_KEY = "ANTI_DEFENSES"
+BREACH_CAMP_KEY  = "ANTI_DEFENSES_BREACH"
+DEFENSE_CAMP_KEYS = (STANDOFF_CAMP_KEY, BREACH_CAMP_KEY,
+                     AERIAL_CAMP_KEY)
+# kept for callers that predate the standoff/breacher split
+GROUND_CAMP_KEY = STANDOFF_CAMP_KEY
 
 
 def defense_camp_profile(rules_path, aerial=False):
@@ -236,48 +261,76 @@ def suggest_units_for_role(display_role, rules_path):
     try:
         from .rulesmd_parser import (
             RulesMdParser, defense_range_profile, defense_kill_dps_floor,
-            primary_defense_armor, unit_dps_vs, dps_is_trustworthy,
+            standoff_kill_dps_floor, primary_defense_armor,
+            best_weapon_dps_vs, dps_is_trustworthy,
         )
         parser = RulesMdParser(rules_path)
         parser.parse()
     except Exception:
         return []
 
-    bar = None
-    dps_floor, dps_armor = 0.0, set()
-    if key in (GROUND_CAMP_KEY, AERIAL_CAMP_KEY):
+    camp = None
+    if key in DEFENSE_CAMP_KEYS:
         try:
             targets = parser._scan_strategic_targets()
             rkey = ("base_def_ranges_air" if key == AERIAL_CAMP_KEY
                     else "base_def_ranges")
-            bar = defense_range_profile(targets.get(rkey) or [])["bar"]
-            dps_floor = defense_kill_dps_floor(
-                targets.get("base_def_strengths"))
-            dps_armor = primary_defense_armor(
-                targets.get("base_def_armor_counts"))
+            strengths = targets.get("base_def_strengths")
+            camp = {
+                "bar": defense_range_profile(targets.get(rkey) or [])["bar"],
+                "armor": primary_defense_armor(
+                    targets.get("base_def_armor_counts")),
+                # A standoff unit is out of reach, so it only has to be able to
+                # hurt the thing at all; a breacher is being shot at and has to
+                # kill it promptly.
+                "floor": (standoff_kill_dps_floor(strengths)
+                          if key != BREACH_CAMP_KEY
+                          else defense_kill_dps_floor(strengths)),
+            }
         except Exception:
-            bar, dps_floor, dps_armor = None, 0.0, set()   # tags only
+            camp = None                    # fall back to tags only
 
-    out = []
+    cands = []
     for uid, rec in getattr(parser, "units", {}).items():
         rr = {str(r).lower() for r in (getattr(rec, "roles", None) or [])}
         if not (rr & want):
             continue
-        if bar is not None:
-            try:
-                if float(getattr(rec, "weapon_range", 0) or 0) <= bar:
-                    continue
-            except (TypeError, ValueError):
+        if camp is None:
+            cands.append((uid, rec))
+            continue
+        try:
+            rng = float(getattr(rec, "weapon_range", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        outranges = rng > camp["bar"]
+        # Standoff and air want reach; a breacher is DEFINED by not having it,
+        # so requiring range there would leave the camp permanently empty.
+        if key == BREACH_CAMP_KEY:
+            if outranges:
                 continue
-            # Out-ranging a defense is useless without the damage to kill it.
-            # Range alone let SNIPE through: 125 damage at 1% versus steel is
-            # 0.008/frame, about 53 MINUTES to kill a 400 HP pillbox.
-            # Skipped when the unit's damage comes from a spawned missile or
-            # plane we cannot read (V3, Carrier) — unknown DPS must not be
-            # treated as zero DPS.
-            if (dps_floor > 0 and dps_armor
-                    and dps_is_trustworthy(rec)
-                    and unit_dps_vs(rec, dps_armor) < dps_floor):
-                continue
-        out.append(uid)
+        elif not outranges:
+            continue
+        # Enough damage to actually kill a defense. Skipped when the damage
+        # comes from a spawned missile or plane we cannot read (V3, Carrier):
+        # unknown DPS must not be treated as zero.
+        if (camp["floor"] > 0 and camp["armor"]
+                and dps_is_trustworthy(rec)
+                and best_weapon_dps_vs(rec, camp["armor"]) < camp["floor"]):
+            continue
+        cands.append((uid, rec))
+
+    if camp is None or key != BREACH_CAMP_KEY:
+        return [uid for uid, _rec in cands]
+
+    # A breacher drives into the defense's envelope, so it also has to survive
+    # the trip: require at-or-above-median toughness among the candidates.
+    tough = [float(getattr(r, "strength", 0) or 0) for _u, r in cands]
+    tough = [x for x in tough if x > 0]
+    if not tough:
+        return [uid for uid, _rec in cands]
+    tough.sort()
+    mid = tough[len(tough) // 2] if len(tough) % 2 else (
+        tough[len(tough) // 2 - 1] + tough[len(tough) // 2]) / 2.0
+    return [uid for uid, rec in cands
+            if float(getattr(rec, "strength", 0) or 0) >= mid]
     return out
