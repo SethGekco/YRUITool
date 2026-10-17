@@ -215,7 +215,9 @@ def suggest_units_for_role(display_role, rules_path):
     caller falls back to pure manual selection.
 
     The two Anti-Defenses camps additionally require the unit to OUT-RANGE its
-    camp's defenses. Tags alone cannot separate them — both camps want
+    camp's defenses AND to carry enough DPS against defense armour to actually
+    kill one (warhead verses x damage / ROF against the median defense's
+    health). Tags alone cannot separate them — both camps want
     building-damaging units — so without the range test the ground and air
     lists would be identical.
 
@@ -232,21 +234,29 @@ def suggest_units_for_role(display_role, rules_path):
         return []
     want = {t.lower() for t in tags}
     try:
-        from .rulesmd_parser import RulesMdParser, defense_range_profile
+        from .rulesmd_parser import (
+            RulesMdParser, defense_range_profile, defense_kill_dps_floor,
+            primary_defense_armor, unit_dps_vs, dps_is_trustworthy,
+        )
         parser = RulesMdParser(rules_path)
         parser.parse()
     except Exception:
         return []
 
     bar = None
+    dps_floor, dps_armor = 0.0, set()
     if key in (GROUND_CAMP_KEY, AERIAL_CAMP_KEY):
         try:
             targets = parser._scan_strategic_targets()
             rkey = ("base_def_ranges_air" if key == AERIAL_CAMP_KEY
                     else "base_def_ranges")
             bar = defense_range_profile(targets.get(rkey) or [])["bar"]
+            dps_floor = defense_kill_dps_floor(
+                targets.get("base_def_strengths"))
+            dps_armor = primary_defense_armor(
+                targets.get("base_def_armor_counts"))
         except Exception:
-            bar = None                 # fall back to tags only
+            bar, dps_floor, dps_armor = None, 0.0, set()   # tags only
 
     out = []
     for uid, rec in getattr(parser, "units", {}).items():
@@ -258,6 +268,16 @@ def suggest_units_for_role(display_role, rules_path):
                 if float(getattr(rec, "weapon_range", 0) or 0) <= bar:
                     continue
             except (TypeError, ValueError):
+                continue
+            # Out-ranging a defense is useless without the damage to kill it.
+            # Range alone let SNIPE through: 125 damage at 1% versus steel is
+            # 0.008/frame, about 53 MINUTES to kill a 400 HP pillbox.
+            # Skipped when the unit's damage comes from a spawned missile or
+            # plane we cannot read (V3, Carrier) — unknown DPS must not be
+            # treated as zero DPS.
+            if (dps_floor > 0 and dps_armor
+                    and dps_is_trustworthy(rec)
+                    and unit_dps_vs(rec, dps_armor) < dps_floor):
                 continue
         out.append(uid)
     return out

@@ -98,9 +98,10 @@ ARMOR_INDEX    = {name: i for i, name in enumerate(ARMOR_NAMES)}
 # is now paired with an ABSOLUTE floor.
 #
 # The floor is derived from the mod's own harvesters rather than hardcoded:
-# a unit should be able to solo-kill the WEAKEST harvester inside
-# MINER_KILL_SECONDS. Weakest, not average, because the floor exists to drop
-# the hopeless, not to rank the competent. effective_dps() is per-FRAME
+# a unit should be able to solo-kill a TYPICAL (median) harvester inside
+# MINER_KILL_SECONDS. Median rather than weakest, for the same reason as
+# defense_kill_dps_floor: one junk 10 HP entry otherwise sets the bar at zero
+# and the floor stops filtering anything. effective_dps() is per-FRAME
 # (damage*verses/rof, ROF being in frames), hence the 15 fps conversion.
 MINER_KILL_SECONDS = 30.0
 GAME_FPS = 15.0
@@ -157,6 +158,105 @@ def defense_range_profile(ranges):
             "outliers": outliers, "fence": fence}
 
 
+def dps_vs_weapon(wpn, armor_indices):
+    """Best effective DPS of one analysed weapon against any of `armor_indices`."""
+    verses = wpn.get("verses", [0.0] * 11) if wpn else [0.0] * 11
+    damage = wpn.get("damage", 0.0) if wpn else 0.0
+    rof = wpn.get("rof", 1.0) if wpn else 1.0
+    return max((effective_dps(damage, rof, verses, ai) for ai in armor_indices),
+               default=0.0)
+
+
+def unit_dps_vs(rec, armor_indices):
+    """Primary DPS plus a half-weight secondary bonus, never a penalty.
+
+    Lifted to module level so the role/camp filters score units exactly the
+    way the grading pass does instead of re-deriving it. A secondary whose
+    projectile has AG=no cannot contribute against ground armour (APOC's
+    MammothTusk is air-only); aerial armour indices are the exception.
+    """
+    AERIAL_ARMOR_IDX = {9, 10}
+    armor_indices = set(armor_indices or ())
+    if not armor_indices:
+        return 0.0
+    is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
+    pri = dps_vs_weapon(getattr(rec, "role_weapon", None), armor_indices)
+    sec = 0.0
+    sec_wpn = getattr(rec, "secondary_analysis", None)
+    if sec_wpn and sec_wpn.get("is_combat"):
+        if sec_wpn.get("can_ag", True) or is_aerial_target:
+            sec = dps_vs_weapon(sec_wpn, armor_indices)
+    return max(pri, pri + sec * 0.5)
+
+
+def dps_is_trustworthy(rec):
+    """False when the unit's damage is delivered by something we did not read.
+
+    A spawner weapon (V3 launcher, Aircraft Carrier, Dreadnought) carries a
+    placeholder warhead — V3Launcher is Damage=1 — and the real damage lives in
+    the spawned missile or plane, which the analyser does not follow. Scoring
+    such a unit on its own weapon would rank the premier defense killers at
+    ~0, so callers must treat their DPS as UNKNOWN and decline to exclude them
+    rather than exclude them wrongly.
+    """
+    if getattr(rec, "is_spawner", False):
+        return False
+    for key in ("role_weapon", "primary_analysis", "secondary_analysis"):
+        a = getattr(rec, key, None)
+        if a and a.get("is_spawner_wpn"):
+            return False
+    return True
+
+
+# Defenses are tougher than miners and shoot back, so the allowance is longer.
+# Vanilla defenses are 400-900 HP, all steel armour.
+DEFENSE_KILL_SECONDS = 60.0
+
+
+def _median(vals):
+    s = sorted(vals)
+    n = len(s)
+    if not n:
+        return 0.0
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def defense_kill_dps_floor(defense_strengths):
+    """Minimum DPS vs defense armour to count as a defense killer.
+
+    Uses the MEDIAN defense, not the weakest. "Weakest" is what this started
+    as, and it is fragile: counting every armed building (correctly — an armed
+    building shoots at you the same) pulls in civilian map props, and vanilla's
+    CAMISC06/CAMSC11 at 10 HP dropped the floor to 0.011/frame. At that floor a
+    Virus sniper — 35 MINUTES to kill a pillbox — counted as a defense killer.
+    The median lands on a real defense (vanilla: 810, the Gattling Cannon)
+    while ignoring both the 10 HP props and the 3000 HP ones.
+
+    0.0 when nothing was found, which disables the floor rather than gating
+    everything out.
+    """
+    vals = [s for s in (defense_strengths or ()) if s and s > 0]
+    if not vals:
+        return 0.0
+    return _median(vals) / (DEFENSE_KILL_SECONDS * GAME_FPS)
+
+
+def primary_defense_armor(armor_counts):
+    """The armour a typical defense wears, as {armor_index: count}.
+
+    Scoring against the whole armour SET is wrong here, because
+    dps_vs_weapon() takes the MAX over the set: a unit strong against a wooden
+    map prop would read as a defense killer. Vanilla's armed buildings are
+    steel 12, concrete 6, wood 2, medium 1 — the mode is steel, which is what
+    every real defense wears.
+    """
+    if not armor_counts:
+        return set()
+    best = max(armor_counts.items(), key=lambda kv: (kv[1], -kv[0]))
+    return {best[0]}
+
+
 def miner_kill_dps_floor(miner_strengths):
     """Minimum per-frame DPS vs miner armour to count as a miner killer.
 
@@ -166,7 +266,7 @@ def miner_kill_dps_floor(miner_strengths):
     vals = [s for s in (miner_strengths or ()) if s and s > 0]
     if not vals:
         return 0.0
-    return min(vals) / (MINER_KILL_SECONDS * GAME_FPS)
+    return _median(vals) / (MINER_KILL_SECONDS * GAME_FPS)
 
 
 def defense_range_bar(ranges):
@@ -2737,6 +2837,7 @@ class RulesMdParser:
                                  buildings (any building with a weapon —
                                  IsBaseDefense is deliberately ignored)
           base_def_ranges_air  : the same for air-capable weapons
+          base_def_strengths   : Strength of each armed building
           opentopped_dmg_mult  : OpenToppedDamageMultiplier from [CombatDamage]
           opentopped_rng_bonus : OpenToppedRangeBonus from [CombatDamage]
         """
@@ -2746,6 +2847,8 @@ class RulesMdParser:
         cy_armor_by_bid    = {}              # bid -> armor_index
         factory_armors     = set()
         base_def_armors    = set()
+        base_def_armor_counts = {}   # armor_index -> armed buildings
+        base_def_strengths = []      # Strength of each armed building
         base_def_ranges    = []      # ground-capable building weapons
         base_def_ranges_air = []     # air-capable building weapons
         service_depots     = []              # buildings that remove parasites (UnitRepair=yes)
@@ -2808,10 +2911,12 @@ class RulesMdParser:
             # touch a ground attacker (vanilla NASAM/NAFLAK, range 12), so its
             # range says nothing about out-ranging the base on the ground, and
             # mixing them pushed the bar above the Prism Tower.
+            armed = False
             for wtag in REGULAR_WEAPON_TAGS:
                 wname = (sec.get(wtag.lower(), "") or "").strip()
                 if not wname:
                     continue
+                armed = True
                 try:
                     r = float(self.ini.get(wname, "Range", "0"))
                 except ValueError:
@@ -2822,6 +2927,19 @@ class RulesMdParser:
                     base_def_ranges.append(r)
                 if self._weapon_hits_air(wname):
                     base_def_ranges_air.append(r)
+            if armed:
+                # Armour and Strength come from the same armed-building set as
+                # the ranges. base_def_armors used to be flag-gated, which left
+                # it inconsistent with the ranges beside it — and it had no
+                # consumer at all until the defense-killer DPS floor.
+                base_def_armors.add(ai)
+                base_def_armor_counts[ai] = base_def_armor_counts.get(ai, 0) + 1
+                try:
+                    st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    st = 0.0
+                if st > 0:
+                    base_def_strengths.append(st)
 
             if (sec.get("basedefense",   "no").lower() == "yes" or
                     sec.get("isbasedefense", "no").lower() == "yes"):
@@ -2873,6 +2991,8 @@ class RulesMdParser:
             "base_def_armors":     base_def_armors,
             "base_def_ranges":     base_def_ranges,
             "base_def_ranges_air": base_def_ranges_air,
+            "base_def_strengths":  base_def_strengths,
+            "base_def_armor_counts": base_def_armor_counts,
             "service_depots":      service_depots,
             "grinders":            grinders,
             "opentopped_dmg_mult": opentopped_dmg_mult,
@@ -3331,45 +3451,12 @@ class RulesMdParser:
             base = rec.strength * mult
             return base * 1.25 if rec.self_healing else base
 
-        def dps_vs_weapon(wpn, armor_indices):
-            verses = wpn.get("verses", [0.0] * 11)
-            damage = wpn.get("damage", 0.0)
-            rof    = wpn.get("rof",    1.0)
-            return max(
-                (effective_dps(damage, rof, verses, ai) for ai in armor_indices),
-                default=0.0
-            )
+        dps_vs_weapon = globals()["dps_vs_weapon"]
 
         def dps_vs(rec, armor_indices):
-            """
-            Primary weapon DPS + secondary bonus (only if secondary helps).
-            Secondary never penalizes — only added if it improves the score.
-
-            Key gate: if secondary has can_ag=False (AG=no on projectile),
-            it physically cannot target ground units regardless of its warhead
-            verses. MammothTusk (APOC secondary) has AG=no — it can only
-            target aircraft, so it contributes 0 to any ground DPS calculation.
-
-            Exception: if armor_indices are aerial armor types (index 9),
-            can_ag=False secondaries ARE allowed to contribute.
-            """
-            AERIAL_ARMOR_IDX = {9, 10}  # air and ore/misc (aerial targets)
-            is_aerial_target = bool(armor_indices & AERIAL_ARMOR_IDX)
-
-            pri = dps_vs_weapon(rec.role_weapon, armor_indices)
-            sec = 0.0
-            sec_wpn = rec.secondary_analysis
-            if sec_wpn and sec_wpn.get("is_combat"):
-                # Gate: can_ag=False means weapon cannot target ground units
-                can_ag_sec = sec_wpn.get("can_ag", True)
-                if not can_ag_sec and not is_aerial_target:
-                    sec = 0.0  # MammothTusk etc: can't hit ground
-                else:
-                    sec_dps = dps_vs_weapon(sec_wpn, armor_indices)
-                    if sec_dps > 0:
-                        sec = sec_dps
-            # Never let secondary reduce the score below primary alone
-            return max(pri, pri + sec * 0.5)
+            """Module-level unit_dps_vs(); kept as a local name for the many
+            call sites below."""
+            return unit_dps_vs(rec, armor_indices)
 
         def kills_per_hit(rec, armor_indices, target_avg_hp: float) -> float:
             """

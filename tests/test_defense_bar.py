@@ -147,11 +147,13 @@ def main():
     ok = ok and deg_ok
 
     # ── the miner DPS floor ────────────────────────────────────────────────
-    floor = miner_kill_dps_floor([1000, 1000, 2000])
+    # Median, not min — [1000, 1000, 2000] has the same value either way, so
+    # use a set where they differ or the test passes for the wrong reason.
+    floor = miner_kill_dps_floor([10, 1000, 2000])
     floor_ok = (abs(floor - 1000 / (MINER_KILL_SECONDS * 15.0)) < 1e-9
                 and miner_kill_dps_floor([]) == 0.0       # disabled, not 0-gate
                 and miner_kill_dps_floor([0, -5]) == 0.0)
-    print(f"miner floor from the WEAKEST miner, disabled when none found: "
+    print(f"miner floor from the MEDIAN miner, unmoved by a 10HP outlier: "
           f"{'OK' if floor_ok else 'FAIL'} {floor:.3f}/frame")
     ok = ok and floor_ok
 
@@ -194,6 +196,88 @@ def main():
         print(f"AG defaults yes / AA defaults no on unknown projectiles: "
               f"{'OK' if hits_ok else 'FAIL'}")
         ok = ok and hits_ok
+
+    # ── defense-killer DPS floor ───────────────────────────────────────────
+    from yrbalance.wavegen.rulesmd_parser import (
+        defense_kill_dps_floor, primary_defense_armor, unit_dps_vs,
+        dps_is_trustworthy, DEFENSE_KILL_SECONDS, ARMOR_INDEX,
+    )
+    STEEL = ARMOR_INDEX["steel"]
+
+    # Counting every armed building (correct — an armed building shoots at you
+    # the same) drags in vanilla's 10 HP civilian props. With min() the floor
+    # collapsed to 0.011/frame and a Virus sniper, 35 MINUTES to kill a
+    # pillbox, counted as a defense killer. The median ignores both ends.
+    real = [400, 400, 600, 600, 810, 900, 900]
+    polluted = [10, 10, 100, 100] + real + [2000, 3000, 3000, 3000]
+    f_real = defense_kill_dps_floor(real)
+    f_poll = defense_kill_dps_floor(polluted)
+    med_ok = (abs(f_real - 600 / (DEFENSE_KILL_SECONDS * 15.0)) < 1e-9
+              and f_poll > 0.5                      # not collapsed by the 10s
+              and defense_kill_dps_floor([]) == 0.0
+              and defense_kill_dps_floor([0, -1]) == 0.0)
+    print(f"defense floor uses the median, survives 10HP props: "
+          f"{'OK' if med_ok else 'FAIL'} clean={f_real:.3f} polluted={f_poll:.3f}")
+    ok = ok and med_ok
+
+    # Scoring against the whole armour SET is wrong: dps_vs_weapon takes the
+    # MAX, so a unit strong against a wooden map prop would read as a defense
+    # killer. Vanilla's armed buildings are steel 12 / concrete 6 / wood 2 /
+    # medium 1 — the mode is steel, which every real defense wears.
+    mode = primary_defense_armor({STEEL: 12, 8: 6, 6: 2, 4: 1})
+    mode_ok = (mode == {STEEL} and primary_defense_armor({}) == set()
+               and primary_defense_armor(None) == set())
+    print(f"defense armour is the MODE, not the set: "
+          f"{'OK' if mode_ok else 'FAIL'} {mode}")
+    ok = ok and mode_ok
+
+    class _Wpn(dict):
+        pass
+
+    def wpn(dmg, rof, steel_vs, combat=True, spawner=False, can_ag=True):
+        v = [0.0] * 11
+        v[STEEL] = steel_vs
+        return {"damage": dmg, "rof": rof, "verses": v, "is_combat": combat,
+                "is_spawner_wpn": spawner, "can_ag": can_ag}
+
+    class Rec:
+        def __init__(self, pri, sec=None, spawner=False):
+            self.role_weapon = pri
+            self.secondary_analysis = sec
+            self.is_spawner = spawner
+
+    # SNIPE shape: long range, 1% versus steel -> nowhere near the floor.
+    snipe = Rec(wpn(125, 150, 0.01))
+    # A Magnetron: primary is a locomotor beam doing 0 to steel, the SECONDARY
+    # does the real damage, so primary-only scoring reads it as harmless.
+    tele = Rec(wpn(5000, 20, 0.0), wpn(80, 110, 1.0))
+    prism = Rec(wpn(100, 100, 2.0))
+    dps_ok = (abs(unit_dps_vs(snipe, {STEEL}) - 125 * 0.01 / 150) < 1e-9
+              and unit_dps_vs(tele, {STEEL}) > 0      # secondary counted
+              and unit_dps_vs(prism, {STEEL}) == 2.0
+              and unit_dps_vs(prism, set()) == 0.0)
+    print(f"unit_dps_vs counts the secondary (Magnetron reads > 0): "
+          f"{'OK' if dps_ok else 'FAIL'} tele={unit_dps_vs(tele, {STEEL}):.3f}")
+    ok = ok and dps_ok
+
+    # An AG=no secondary cannot contribute against ground armour.
+    air_only_sec = Rec(wpn(10, 100, 0.1), wpn(500, 10, 2.0, can_ag=False))
+    ag_ok = unit_dps_vs(air_only_sec, {STEEL}) == 10 * 0.1 / 100
+    print(f"AG=no secondary excluded from ground DPS: "
+          f"{'OK' if ag_ok else 'FAIL'}")
+    ok = ok and ag_ok
+
+    # A spawner's damage lives in the missile/plane we never read, so its DPS
+    # is UNKNOWN — it must not be treated as zero and filtered out.
+    v3 = Rec(wpn(1, 150, 1.0, spawner=True), spawner=True)
+    carrier = Rec(wpn(1, 150, 1.0, spawner=True))
+    trust_ok = (not dps_is_trustworthy(v3)
+                and not dps_is_trustworthy(carrier)
+                and dps_is_trustworthy(prism)
+                and dps_is_trustworthy(snipe))
+    print(f"spawner DPS flagged untrustworthy (V3/Carrier not excluded): "
+          f"{'OK' if trust_ok else 'FAIL'}")
+    ok = ok and trust_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
