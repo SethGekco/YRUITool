@@ -7,7 +7,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 pass=0; fail=0
 
 need_rules=(smoke_engine test_pass1 test_techlevel test_selectors test_sections test_script test_generator test_pipeline test_filters test_history test_garrison)
-no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_reference_feed test_dll_gating test_mix test_encyclopedia test_includes test_wavegen_includes test_bookmarks_history test_tags test_portai test_ailib test_aiwork test_unitroles test_addons test_library test_images test_audio test_vxl test_vpl test_aimd)
+no_rules=(test_ticket test_formula test_backup test_vanilla_ref test_retrieval test_lint test_portmod test_obtain test_obtain_buildable test_role_suggest test_reference_feed test_dll_gating test_mix test_encyclopedia test_includes test_wavegen_includes test_bookmarks_history test_tags test_portai test_ailib test_aiwork test_unitroles test_addons test_library test_voicelib test_voicelib_apply test_voicelib_share test_images test_audio test_vxl test_vpl test_aimd)
 # test_eva needs a rules path (for rules_summary) but no Ollama/Qt.
 need_rules+=(test_eva test_wavegen_analysis test_wavegen_taskforce test_wavegen_wave test_wavegen_roles test_wavegen_specialty test_wavegen_strategic test_wavegen_strategic_full test_wavegen_everything)
 
@@ -62,6 +62,10 @@ elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_library_ui.py" >/dev/null 
 printf '%-18s ' "test_addon_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_addon_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+# Voice-set apply dialog smoke (PySide6 + offscreen Qt).
+printf '%-18s ' "test_voice_apply_ui"
+if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_voice_apply_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
 # AI (aimd) tab UI smoke (PySide6 + offscreen Qt).
 printf '%-18s ' "test_aimd_ui"
