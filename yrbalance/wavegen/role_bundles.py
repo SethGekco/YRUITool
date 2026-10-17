@@ -14,7 +14,7 @@ reusing the wavegen generators' own vanilla-confirmed constants:
   • trigger weights + layout  — trigger_generator.ROLE_WEIGHTS + to_ini_line order.
 """
 
-from ..engine import LibEntry, LibBlock
+from ..engine import LibEntry, LibBlock, parse_type_list, get_val
 
 from .trigger_generator import (
     ROLE_WEIGHTS, DEFAULT_WEIGHTS, ALWAYS_TRUE, OWN_AT_LEAST_1,
@@ -62,6 +62,8 @@ ROLE_MAP = {
                        # "any of" is a no-op on vanilla but guards a mod whose
                        # early units cannot touch production at all.
                        "any_tags": ("CY_Killer", "Factory_Killer"),
+                       # One bundle per factory queue — see production_queue().
+                       "one_queue": True,
                        # tier_from_prereq_chain returns "Early" when the chain
                        # contains no radar and no lab — which is also true of a
                        # chain that is EMPTY. So campaign and civilian units
@@ -180,6 +182,58 @@ LEGACY_ROLE_NAMES = {
 }
 
 
+# ── production queues ───────────────────────────────────────────────────────
+# A rush works by MASSING, and each factory type has its own build queue. A
+# taskforce mixing infantry, tanks and aircraft trickles out of three queues in
+# parallel instead of arriving as one punch, so a rush bundle must draw from a
+# single queue (Rex). Aircraft in particular are their own queue entirely.
+QUEUE_INFANTRY = "infantry"
+QUEUE_VEHICLE = "vehicle"
+QUEUE_NAVAL = "naval"
+QUEUE_AIRCRAFT = "aircraft"
+QUEUE_OTHER = "other"
+QUEUE_ORDER = (QUEUE_INFANTRY, QUEUE_VEHICLE, QUEUE_NAVAL, QUEUE_AIRCRAFT,
+               QUEUE_OTHER)
+QUEUE_LABEL = {QUEUE_INFANTRY: "Infantry", QUEUE_VEHICLE: "Vehicle",
+               QUEUE_NAVAL: "Naval", QUEUE_AIRCRAFT: "Aircraft",
+               QUEUE_OTHER: "Other"}
+
+
+def production_queue(uid, rules_map):
+    """Which factory queue builds `uid`, from the rules alone.
+
+    Derived from the type lists plus Naval=, so it needs no full parse: a naval
+    vehicle comes out of a naval yard, not the war factory, and must not share
+    a rush taskforce with land armour.
+    """
+    if not uid or not rules_map:
+        return QUEUE_OTHER
+    u = uid.lower()
+    for section, queue in (("InfantryTypes", QUEUE_INFANTRY),
+                           ("AircraftTypes", QUEUE_AIRCRAFT),
+                           ("VehicleTypes", QUEUE_VEHICLE)):
+        if any(x.lower() == u for x in parse_type_list(rules_map, section)):
+            if queue == QUEUE_VEHICLE:
+                naval = (get_val(rules_map, uid, "Naval") or "").strip().lower()
+                if naval in ("yes", "true", "1"):
+                    return QUEUE_NAVAL
+            return queue
+    return QUEUE_OTHER
+
+
+def split_by_queue(units, rules_map):
+    """[(queue, [uids])] in QUEUE_ORDER, skipping empty queues."""
+    buckets = {}
+    for u in units or ():
+        buckets.setdefault(production_queue(u, rules_map), []).append(u)
+    return [(q, buckets[q]) for q in QUEUE_ORDER if buckets.get(q)]
+
+
+def role_one_queue(display_role):
+    """Whether this role must not mix production queues in one bundle."""
+    return bool(_spec_of(display_role).get("one_queue"))
+
+
 def available_roles():
     return list(ROLE_MAP.keys())
 
@@ -221,6 +275,39 @@ def _resolve(display_role):
         # unknown custom role → treat as a general attack
         return "GENERAL_ATTACK", []
     return spec["key"], spec["tags"]
+
+
+def build_role_entries(display_role, units, label=None, side=1,
+                       condition=None, rules_map=None):
+    """One or more LibEntries for `units` in `display_role`.
+
+    Normally a single entry. For a role flagged `one_queue` the units are
+    split by production queue and each queue gets its OWN TaskForce, Script,
+    TeamType and AITrigger — a rush that mixes infantry, armour and aircraft
+    would otherwise trickle out of three separate build queues instead of
+    arriving as one punch. Each entry's label carries its queue so the two are
+    distinguishable in the library and in the target aimd.
+
+    Falls back to a single entry when `rules_map` is absent, since the queue
+    cannot be determined without it — better one honest mixed bundle than
+    silently dropping units.
+    """
+    units = [u for u in units if u]
+    if not (role_one_queue(display_role) and rules_map and units):
+        return [build_role_entry(display_role, units, label=label, side=side,
+                                 condition=condition)]
+    groups = split_by_queue(units, rules_map)
+    if len(groups) <= 1:
+        return [build_role_entry(display_role, units, label=label, side=side,
+                                 condition=condition)]
+    out = []
+    for queue, members in groups:
+        base = label or f"{display_role} ({len(members)})"
+        out.append(build_role_entry(
+            display_role, members,
+            label=f"{base} {QUEUE_LABEL[queue]}", side=side,
+            condition=condition))
+    return out
 
 
 def build_role_entry(display_role, units, label=None, side=1, condition=None):
