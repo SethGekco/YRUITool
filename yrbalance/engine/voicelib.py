@@ -31,6 +31,8 @@ from dataclasses import dataclass, field, asdict
 
 from .ini_model import get_val
 from .portmod import _clean, _ordered_keys
+from .sections import (append_raw_section, set_key_in_appended_section,
+                       make_safe_clone_name)
 
 # Voice/sound reference tags on a TechnoType. Deliberately a SUPERSET of
 # portmod._SOUND_REF_TAGS: the porter follows 8 of these, but a voice set that
@@ -317,6 +319,294 @@ def sample_wav(vset, sample):
     s = decode_bag_sample(raw, sample.sample_rate, sample.flags,
                           sample.chunk_size)
     return to_wav(s.pcm, s.sample_rate, s.channels, s.bits)
+
+
+# ── applying a set back into a mod ──────────────────────────────────────────
+@dataclass
+class VoiceItem:
+    """One planned change. `kind` is entry | sample | tag.
+
+    entry  : add | reuse | rename      (reuse = keep the target's section)
+    sample : add | skip | rename | loose | absent
+    tag    : set | skip
+    """
+    kind: str
+    name: str
+    action: str
+    value: str = ""                 # tag: the entry name it will point at
+    new_name: str = ""              # rename: the minted name actually written
+    conflict: bool = False          # the target already had this, and differs
+    detail: str = ""
+
+
+@dataclass
+class VoicePlan:
+    unit: str = ""
+    items: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)
+    entry_remap: dict = field(default_factory=dict)   # src_lower -> final name
+    sample_remap: dict = field(default_factory=dict)  # SRC -> FINAL
+
+    def of(self, kind):
+        return [i for i in self.items if i.kind == kind]
+
+    def conflicts(self):
+        return [i for i in self.items if i.conflict]
+
+
+def _keys_equal(a, b):
+    """Whether two [(k, v)] bodies are the same ignoring key case + whitespace."""
+    def norm(kv):
+        return sorted((k.strip().lower(), _clean(v).strip()) for k, v in kv)
+    return norm(a) == norm(b)
+
+
+def _mint_sample(base, taken):
+    """A free sample name near `base` that still fits the idx name field."""
+    if base not in taken and idx_name_ok(base):
+        return base
+    n = 2
+    while True:
+        tail = str(n)
+        stem = base[:IDX_NAME_MAX - len(tail)]
+        cand = stem + tail
+        if cand not in taken:
+            return cand
+        n += 1
+
+
+def _remap_sounds(value, sample_remap):
+    """Rewrite a `Sounds=` value through a sample rename map, keeping each
+    token's '$' marker. Returns the value unchanged when nothing was renamed."""
+    toks = _clean(value or "").replace(",", " ").split()
+    if not any(t.lstrip("$").upper().removesuffix(".WAV") in sample_remap
+               for t in toks):
+        return value                            # untouched — keep formatting
+    out = []
+    for t in toks:
+        dollar = t.startswith("$")
+        bare = t.lstrip("$").upper().removesuffix(".WAV")
+        out.append(("$" if dollar else "") + sample_remap.get(bare, bare))
+    return ",".join(out)
+
+
+def build_voice_plan(vset, unit, tgt_rules_map, tgt_sound_map,
+                     tgt_catalog=None, choices=None):
+    """Plan applying `vset` onto `unit` in a target mod. Pure — reads nothing.
+
+    `choices` resolves conflicts, keyed ("entry"|"sample", source_name):
+      entry  "reuse"    keep the target's existing section (default)
+             "keepboth" append ours under a minted name and point the tag at it
+      sample "skip"     keep the target's existing sample (default)
+             "keepboth" inject ours under a minted name and rewrite Sounds=
+    """
+    choices = choices or {}
+    tgt_sound_map = tgt_sound_map or {}
+    plan = VoicePlan(unit=unit)
+
+    if unit.lower() not in (tgt_rules_map or {}):
+        plan.warnings.append(
+            f"[{unit}] does not exist in the target rulesmd — its voice tags "
+            "would be written into a section that isn't there")
+
+    # ── sound entries ───────────────────────────────────────────────────────
+    taken = dict(tgt_sound_map)                 # grows as we mint names
+    for e in vset.entries:
+        if e.name.lower() not in tgt_sound_map:
+            plan.entry_remap[e.name.lower()] = e.name
+            plan.items.append(VoiceItem("entry", e.name, "add"))
+            taken[e.name.lower()] = True
+            continue
+        if _keys_equal(_ordered_keys(tgt_sound_map, e.name), e.keys):
+            plan.entry_remap[e.name.lower()] = e.name
+            plan.items.append(VoiceItem(
+                "entry", e.name, "reuse",
+                detail="identical section already in the target"))
+            continue
+        if choices.get(("entry", e.name)) == "keepboth":
+            new = make_safe_clone_name(e.name, "V", taken)
+            taken[new.lower()] = True
+            plan.entry_remap[e.name.lower()] = new
+            plan.items.append(VoiceItem("entry", e.name, "rename",
+                                        new_name=new, conflict=True,
+                                        detail="target had a different section"))
+        else:
+            plan.entry_remap[e.name.lower()] = e.name
+            plan.items.append(VoiceItem(
+                "entry", e.name, "reuse", conflict=True,
+                detail="target has a DIFFERENT section of this name — its "
+                       "version is kept"))
+
+    # ── samples ─────────────────────────────────────────────────────────────
+    cat = tgt_catalog or {}
+    taken_s = {k for k in cat if isinstance(k, str)}
+    for s in vset.samples:
+        if not s.file:
+            plan.items.append(VoiceItem(
+                "sample", s.name, "absent",
+                detail="never stored — not found when the set was saved"))
+            continue
+        if s.provenance != "bag":
+            plan.items.append(VoiceItem(
+                "sample", s.name, "loose",
+                detail="not bag-encoded; written as a loose file (injecting it "
+                       "would need an ADPCM encoder)"))
+            continue
+        present = cat.get(s.name) or cat.get(s.name + ".WAV")
+        if present is None:
+            plan.items.append(VoiceItem("sample", s.name, "add"))
+            continue
+        if choices.get(("sample", s.name)) == "keepboth":
+            new = _mint_sample(s.name, taken_s)
+            taken_s.add(new)
+            plan.sample_remap[s.name] = new
+            plan.items.append(VoiceItem("sample", s.name, "rename",
+                                        new_name=new, conflict=True,
+                                        detail="target already has this sample"))
+        else:
+            plan.items.append(VoiceItem(
+                "sample", s.name, "skip", conflict=True,
+                detail="target already has a sample of this name — its "
+                       "version is kept"))
+
+    # ── tags (last: they point at whatever the entries resolved to) ─────────
+    for tag, ref in vset.tags:
+        final = plan.entry_remap.get(ref.lower())
+        if final is None:
+            plan.items.append(VoiceItem(
+                "tag", tag, "skip", value=ref,
+                detail=f"no [{ref}] section was captured — writing this tag "
+                       "would point at nothing"))
+            continue
+        plan.items.append(VoiceItem("tag", tag, "set", value=final))
+
+    if not any(i.kind == "tag" and i.action == "set" for i in plan.items):
+        plan.warnings.append("nothing to apply — no voice tag resolved")
+    return plan
+
+
+def plan_to_text(vset, plan):
+    """Human preview of a VoicePlan — what lands in which file."""
+    L = [f"Apply voice set “{vset.name}” → [{plan.unit}]", ""]
+    for w in plan.warnings:
+        L.append(f"! {w}")
+    if plan.warnings:
+        L.append("")
+
+    L.append("; ===== rulesmd.ini =====")
+    L.append(f"[{plan.unit}]")
+    for i in plan.of("tag"):
+        if i.action == "set":
+            L.append(f"{i.name}={i.value}")
+        else:
+            L.append(f"; {i.name}={i.value}  — SKIPPED: {i.detail}")
+    L.append("")
+
+    by_name = {e.name.lower(): e for e in vset.entries}
+    L.append("; ===== soundmd.ini =====")
+    for i in plan.of("entry"):
+        if i.action == "reuse":
+            L.append(f"; [{i.name}] — {i.detail}")
+            continue
+        e = by_name.get(i.name.lower())
+        L.append(f"[{i.new_name or i.name}]"
+                 + (f"   ; renamed from {i.name} — {i.detail}"
+                    if i.action == "rename" else ""))
+        for k, v in (e.keys if e else []):
+            L.append(f"{k}={_remap_sounds(v, plan.sample_remap) if k.lower() == 'sounds' else v}")
+        L.append("")
+
+    L.append("; ===== samples =====")
+    for i in plan.of("sample"):
+        tail = f"  ; {i.detail}" if i.detail else ""
+        L.append(f"; {i.name}"
+                 + (f" → {i.new_name}" if i.new_name else "")
+                 + f"  [{i.action}]{tail}")
+    return "\n".join(L) + "\n"
+
+
+def apply_voice_plan(lines, tgt_map, vset, plan, sound=None, bag=None,
+                     folder=None):
+    """Apply a VoicePlan. Mutates `lines`/`tgt_map` (rulesmd) and, when given,
+    `sound` = (lines, section_map) for the target soundmd — both IN MEMORY, so
+    the caller still owns backup-then-write.
+
+    `bag` = (bag_path, idx_path) receives the injected samples and IS written
+    here (a bag is not a text file we can stage). `folder` receives any loose
+    samples. Returns a summary dict.
+    """
+    from .mixlib import inject_audio_samples
+
+    summary = {"tags": 0, "entries": 0, "reused": 0, "samples": 0,
+               "replaced": 0, "loose": 0, "skipped": 0, "errors": []}
+    by_name = {e.name.lower(): e for e in vset.entries}
+
+    # 1) soundmd sections first, so the tags point at something that exists.
+    if sound is not None:
+        slines, smap = sound
+        ending = "\r\n" if slines and slines[-1].endswith("\r\n") else "\n"
+        for i in plan.of("entry"):
+            if i.action == "reuse":
+                summary["reused"] += 1
+                continue
+            e = by_name.get(i.name.lower())
+            if e is None:
+                continue
+            raw = [f"[{i.new_name or i.name}]"]
+            for k, v in e.keys:
+                raw.append(f"{k}="
+                           + (_remap_sounds(v, plan.sample_remap)
+                              if k.lower() == "sounds" else v))
+            append_raw_section(slines, smap, i.new_name or i.name, raw, ending)
+            summary["entries"] += 1
+
+    # 2) the unit's voice tags.
+    for i in plan.of("tag"):
+        if i.action != "set":
+            summary["skipped"] += 1
+            continue
+        set_key_in_appended_section(lines, tgt_map, plan.unit, i.name, i.value)
+        summary["tags"] += 1
+
+    # 3) samples — bag injections in one pass, loose files written beside them.
+    inject, loose = [], []
+    for i in plan.of("sample"):
+        s = next((x for x in vset.samples if x.name == i.name), None)
+        if s is None or i.action in ("skip", "absent"):
+            summary["skipped"] += 1
+            continue
+        raw = sample_bytes(vset, s)
+        if raw is None:
+            summary["errors"].append(f"{i.name}: stored bytes missing")
+            continue
+        if i.action == "loose":
+            loose.append((s.file or (i.name + ".wav"), raw))
+        else:
+            inject.append((i.new_name or i.name, raw, s.sample_rate, s.flags,
+                           s.chunk_size))
+
+    if inject and bag:
+        try:
+            added, replaced = inject_audio_samples(bag[0], bag[1], inject)
+            summary["samples"], summary["replaced"] = added, replaced
+        except Exception as exc:                 # a bad name, unwritable bag…
+            summary["errors"].append(f"bag injection failed: "
+                                     f"{type(exc).__name__}: {exc}")
+    elif inject:
+        summary["errors"].append(
+            f"{len(inject)} samples could not be injected — no audio.bag given")
+
+    for name, raw in loose:
+        if not folder:
+            summary["errors"].append(f"{name}: no target folder for loose files")
+            continue
+        try:
+            with open(os.path.join(folder, name), "wb") as fh:
+                fh.write(raw)
+            summary["loose"] += 1
+        except OSError as exc:
+            summary["errors"].append(f"{name}: {exc}")
+    return summary
 
 
 # ── persistence ─────────────────────────────────────────────────────────────
