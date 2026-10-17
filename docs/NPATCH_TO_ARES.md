@@ -70,38 +70,53 @@ On record now:
   grouped by the page that documents them. `Reference` alone carries 107.
 - `knowledge/npatch_to_modern.tsv` — the mapping table.
 
-### Method, and why the numbers are what they are
+### Method, and the adjudicated result
 
 ```
-321 candidates
--126 vanilla     a tag in stock rulesmd is a doc EXAMPLE, not an NPatch addition
-  17 mapped      verified against the target extension's own flag list
- 178 unmapped    no verified target in the reference sets we hold
+321 candidate tags from the CHM
+-126 vanilla      a tag in stock rulesmd is a doc EXAMPLE, not an NPatch addition
+ 195 real NPatch tags, adjudicated:
+
+  T0-rename        37   verified 1:1 target name
+  T1-reencode      85   verified target, different spelling/shape
+  T1-switch         1   on/off tag with no target (the system is always on)
+  T2-structural    12   verified target but the semantics move (see note column)
+  T2-sides          6   Ares has 16 sides, but as definitions not per-side tags
+  T3-ui            31   NPatch's bespoke menu/shell system — unportable
+  T3-factory        4   Chrono/DropPod/ParaDrop bays — deferred work item
+  T3-missile        5   custom-missile params; only Missile.TakeOffAnim exists
+  T?-research      14   genuinely unresolved
 ```
 
-Two rules make this trustworthy:
+**123 of 195 (63%) now have a verified target.** Only 14 are unresolved.
+
+Three rules make this trustworthy:
 
 1. **Vanilla wins outright.** An early pass labelled `Damage`, `Speed`,
    `Strength` and `Warhead` as "Phobos tags" purely because Phobos' docs also
    mention them. Any tag present in stock rulesmd is excluded regardless.
-2. **A proposed target is only accepted if it exists** in that extension's own
-   flag set. Family rules (NPatch abbreviates where Ares spells out:
-   `Dom*` → `Dominator.*`, `Nuke*` → `Nuke.*`, `EBolt*` → `Bolt.*`) generate
-   *candidates*; a candidate that matches nothing real yields nothing. So the
-   table cannot contain an invented tag.
+2. **A proposed target is emitted only if it exists** in that extension's own
+   key set. Hand-authored semantic mappings and family rules both produce
+   *candidates*; a candidate matching nothing real yields nothing. So the table
+   cannot contain an invented tag. Four of my own candidates failed this way
+   (the sides family) and are recorded as unmapped rather than asserted.
+3. **Key sets come from source, not docs.** Antares `src/**` yields 866 keys
+   against the 408 of the ModENC-derived list; Phobos `src/**` yields 1,694
+   against 261 from its docs — which omit `AttachEffect.AttachTypes` and
+   `LaserThickness`, both demonstrably read by the source. Keys the source
+   builds by substitution (`Bounty.%sValue`) are expanded over the veterancy
+   prefixes.
 
-**178 unmapped does NOT mean 178 unportable.** It means no verified target was
-found in the sets we hold, and those sets are known-incomplete:
-`09_ares_flags.md` is ModENC-derived and lacks e.g. `LightningStorm.Duration`
-and `ParaDrop.Types`, both of which plainly should exist. The remainder needs
-semantic adjudication, not more string matching — `Prerequisite2` /
-`AlternatePrerequisite` → `Prerequisite.Lists`, `ImmuneTo` → `Verses`
-defaulting, `Fourth*` / `Third*` / `S0xLoad` / `MPC01-16` → Ares' unlimited
-sides. That is the next work item.
+Corrections this produced to earlier guesses in this file:
+- the lightning family is **`Lightning.*`**, not `LightningStorm.*`
+- Ares spells them **`Prerequisite.StolenTechs`** and
+  **`Prerequisite.RequiredTheaters`** (plural)
+- `SurvivorDivisor` exists in Antares **verbatim**; no transform needed
+- per-side load screens map to **`File.LoadScreen`**, and `MPC01`-`MPC16`
+  to Ares `Color` entries
 
-Phobos' tag set must come from **source, not docs**: the docs yield 261 keys and
-omit `AttachEffect.AttachTypes` and `LaserThickness`, which `src/**` demonstrably
-reads. Scanning `Read(..., "Key")` literals yields 1,546.
+`knowledge/npatch_to_modern.tsv` carries tier, target extension, target tag,
+how it was derived, and a note for every non-mechanical case.
 
 ## Tier 1 — same feature, different encoding
 
