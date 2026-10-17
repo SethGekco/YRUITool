@@ -92,6 +92,48 @@ def main():
           f"{'OK' if bare_ok else 'FAIL'}")
     ok = ok and bare_ok
 
+    # ── the two Anti-Defenses camps ─────────────────────────────────────────
+    from yrbalance.wavegen.role_bundles import (
+        available_roles, _resolve, LEGACY_ROLE_NAMES, SCRIPT_BY_ROLE,
+    )
+    from yrbalance.wavegen.trigger_generator import ROLE_WEIGHTS
+    from yrbalance.wavegen.team_generator import ROLE_FLAGS
+
+    roles = available_roles()
+    camps_ok = ("Anti-Defenses (Ground)" in roles
+                and "Anti-Defenses (Air)" in roles
+                and "Anti-Defenses" not in roles)
+    print(f"both camps offered, bare name retired from the list: "
+          f"{'OK' if camps_ok else 'FAIL'}")
+    ok = ok and camps_ok
+
+    # The old display name is what sits in users' unit_roles.json, so it has to
+    # keep resolving or their saved picks silently detach from the role.
+    legacy_ok = (_resolve("Anti-Defenses")[0] == "ANTI_DEFENSES"
+                 and _resolve("Anti-Defenses (Ground)")[0] == "ANTI_DEFENSES"
+                 and _resolve("Anti-Defenses (Air)")[0] == "ANTI_DEFENSES_AIR"
+                 and "Anti-Defenses" in LEGACY_ROLE_NAMES)
+    print(f"legacy 'Anti-Defenses' still resolves to the ground camp: "
+          f"{'OK' if legacy_ok else 'FAIL'}")
+    ok = ok and legacy_ok
+
+    # A new key is useless if the three tables it indexes lack an entry — it
+    # would silently fall back to GENERAL_ATTACK weights/flags/script.
+    k = "ANTI_DEFENSES_AIR"
+    tables_ok = (k in SCRIPT_BY_ROLE and k in ROLE_WEIGHTS and k in ROLE_FLAGS)
+    print(f"air camp present in script/weights/flags tables: "
+          f"{'OK' if tables_ok else 'FAIL'}")
+    ok = ok and tables_ok
+
+    air = build_role_entry("Anti-Defenses (Air)", ["V3"])
+    af = fields(air.trigger_def)
+    airtrig_ok = (af["TechLevel"] == "1" and af["Team2"] == "<none>"
+                  and af["Side"] in ("1", "2", "3")
+                  and len(af["Comparator"]) == 64)
+    print(f"air camp emits a vanilla-shaped trigger: "
+          f"{'OK' if airtrig_ok else 'FAIL'}")
+    ok = ok and airtrig_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 

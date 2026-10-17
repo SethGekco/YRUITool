@@ -33,8 +33,15 @@ ROLE_MAP = {
                        "tags": ["AG-Anti_Vehicle", "Miner_Killer"]},
     "Anti-Building":  {"key": "ANTI_BUILDING",
                        "tags": ["AG-Anti_Building", "Factory_Killer", "CY_Killer"]},
-    "Anti-Defenses":  {"key": "ANTI_DEFENSES",
-                       "tags": ["AG-Anti_Building", "Factory_Killer"]},
+    # Two camps, split by the DOMAIN OF THE DEFENSES BEING ATTACKED, not by
+    # the attacker's domain — a V3 sniping a SAM site is an air-defense killer
+    # just as much as a fighter is. Each camp is scored against its own range
+    # bar: ground-capable building weapons for one, air-capable (AA) for the
+    # other. Mixing them put the bar above the Prism Tower.
+    "Anti-Defenses (Ground)": {"key": "ANTI_DEFENSES",
+                               "tags": ["AG-Anti_Building", "Factory_Killer"]},
+    "Anti-Defenses (Air)":    {"key": "ANTI_DEFENSES_AIR",
+                               "tags": ["AG-Anti_Building", "Factory_Killer"]},
     "Miner Killer":   {"key": "MINER_KILLER", "tags": ["Miner_Killer"]},
     "Anti-Air":       {"key": "AA", "tags": ["AA", "AA_Secondary"]},
 }
@@ -51,6 +58,11 @@ SCRIPT_BY_ROLE = {
     "ANTI_BUILDING":  [(54, 0), (53, 0), (0, 2), (49, 0), (0, 1), (49, 0), (6, 1)],
     "ANTI_DEFENSES":  [(54, 0), (53, 0), (0, 7), (49, 0), (0, 6), (49, 0),
                        (0, 2), (49, 0), (0, 1), (49, 0), (6, 1)],
+    # Same action list for both camps: vanilla's "attack defenses" target (7)
+    # cannot distinguish an AA tower from a gun tower, so the camps differ in
+    # WHICH UNITS get recruited, not in what the script tells them to shoot.
+    "ANTI_DEFENSES_AIR": [(54, 0), (53, 0), (0, 7), (49, 0), (0, 6), (49, 0),
+                          (0, 2), (49, 0), (0, 1), (49, 0), (6, 1)],
     "MINER_KILLER":   [(54, 0), (53, 0), (0, 3), (49, 0), (0, 1), (49, 0), (6, 1)],
     "AA":             [(54, 0), (53, 0), (0, 1), (49, 0), (6, 1)],
 }
@@ -99,12 +111,19 @@ def role_trigger_variants(display_role, units=None, enemy_objects=None):
     return out
 
 
+# Role lists are saved by DISPLAY NAME in unit_roles.json, so the old name has
+# to keep resolving or a user's saved picks silently detach from their role.
+LEGACY_ROLE_NAMES = {"Anti-Defenses": "Anti-Defenses (Ground)"}
+
+
 def available_roles():
     return list(ROLE_MAP.keys())
 
 
 def _resolve(display_role):
     spec = ROLE_MAP.get(display_role)
+    if spec is None and display_role in LEGACY_ROLE_NAMES:
+        spec = ROLE_MAP.get(LEGACY_ROLE_NAMES[display_role])
     if spec is None:
         # unknown custom role → treat as a general attack
         return "GENERAL_ATTACK", []
@@ -167,23 +186,78 @@ def build_role_entry(display_role, units, label=None, side=1, condition=None):
         trigger_id="RTRIG", trigger_def=trig, units=list(units))
 
 
+AERIAL_CAMP_KEY = "ANTI_DEFENSES_AIR"
+GROUND_CAMP_KEY = "ANTI_DEFENSES"
+
+
+def defense_camp_profile(rules_path, aerial=False):
+    """Range profile of the defenses a camp attacks, or None if unreadable.
+
+    aerial=False -> building weapons that can hit GROUND (what threatens a
+    ground army). aerial=True -> weapons that can hit AIR (the AA network).
+    """
+    if not rules_path:
+        return None
+    try:
+        from .rulesmd_parser import RulesMdParser, defense_range_profile
+        parser = RulesMdParser(rules_path)
+        parser.parse()
+        targets = parser._scan_strategic_targets()
+    except Exception:
+        return None
+    key = "base_def_ranges_air" if aerial else "base_def_ranges"
+    return defense_range_profile(targets.get(key) or [])
+
+
 def suggest_units_for_role(display_role, rules_path):
     """Units whose detected role tags match `display_role`, using the wavegen role
     detector on `rules_path`. Best-effort: returns [] on any parse failure so the
-    caller falls back to pure manual selection."""
-    _key, tags = _resolve(display_role)
+    caller falls back to pure manual selection.
+
+    The two Anti-Defenses camps additionally require the unit to OUT-RANGE its
+    camp's defenses. Tags alone cannot separate them — both camps want
+    building-damaging units — so without the range test the ground and air
+    lists would be identical.
+
+    NOT A BUG: no AIRCRAFT qualifies for either camp on vanilla. The six
+    building-damaging vanilla aircraft (ASW, BEAG, BPLN, HORNET, ORCA,
+    PDPLANE) have range 3-6 against bars of 7.71 and 12.0, because aircraft
+    close in and bomb rather than out-range anything. Confirmed expected by Rex
+    2026-10-16 — do not "fix" it by exempting aircraft from the range test.
+    These camps mean "can engage the defenses from outside their reach", which
+    is a property aircraft simply do not have.
+    """
+    key, tags = _resolve(display_role)
     if not tags or not rules_path:
         return []
     want = {t.lower() for t in tags}
     try:
-        from .rulesmd_parser import RulesMdParser
+        from .rulesmd_parser import RulesMdParser, defense_range_profile
         parser = RulesMdParser(rules_path)
         parser.parse()
     except Exception:
         return []
+
+    bar = None
+    if key in (GROUND_CAMP_KEY, AERIAL_CAMP_KEY):
+        try:
+            targets = parser._scan_strategic_targets()
+            rkey = ("base_def_ranges_air" if key == AERIAL_CAMP_KEY
+                    else "base_def_ranges")
+            bar = defense_range_profile(targets.get(rkey) or [])["bar"]
+        except Exception:
+            bar = None                 # fall back to tags only
+
     out = []
     for uid, rec in getattr(parser, "units", {}).items():
         rr = {str(r).lower() for r in (getattr(rec, "roles", None) or [])}
-        if rr & want:
-            out.append(uid)
+        if not (rr & want):
+            continue
+        if bar is not None:
+            try:
+                if float(getattr(rec, "weapon_range", 0) or 0) <= bar:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        out.append(uid)
     return out

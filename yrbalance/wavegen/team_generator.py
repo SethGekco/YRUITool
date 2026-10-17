@@ -227,6 +227,19 @@ ROLE_FLAGS: dict[str, dict] = {
         "Annoyance":                 "no",
         "GuardSlower":               "no",
     },
+
+    "ANTI_DEFENSES_AIR": {
+        "Priority":                  "10",
+        "Max":                       "2",
+        "Suicide":                   "no",
+        "Aggressive":                "yes",   # push to target, don't stop
+        "AvoidThreats":              "no",    # artillery holds range naturally
+        "Whiner":                    "no",
+        "LooseRecruit":              "no",
+        "AreTeamMembersRecruitable": "no",
+        "Annoyance":                 "no",
+        "GuardSlower":               "no",
+    },
     # ----------------------------------------------------------------
     # ARTILLERY — long-range bombardment, don't chase
     # ----------------------------------------------------------------

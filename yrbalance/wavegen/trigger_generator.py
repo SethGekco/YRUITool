@@ -144,6 +144,7 @@ ROLE_WEIGHTS = {
     "GENERAL_ATTACK": (50.0,  10.0, 70.0),
     "MINER_KILLER":   (55.0,  10.0, 80.0),
     "ANTI_DEFENSES":  (50.0,  10.0, 70.0),
+    "ANTI_DEFENSES_AIR": (50.0,  10.0, 70.0),
     "ANTI_BUILDING":  (50.0,  10.0, 70.0),
     "ANTI_VEHICLE":   (50.0,  10.0, 70.0),
     "ANTI_INF":       (50.0,  10.0, 70.0),
