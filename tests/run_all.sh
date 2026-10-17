@@ -58,6 +58,11 @@ printf '%-18s ' "test_library_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
 elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_library_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
 
+# Addon tab strip + Eva approval dialog smoke (PySide6 + offscreen Qt).
+printf '%-18s ' "test_addon_ui"
+if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
+elif QT_QPA_PLATFORM=offscreen "$venv_py" "$here/test_addon_ui.py" >/dev/null 2>&1; then echo OK; pass=$((pass+1)); else echo FAIL; fail=$((fail+1)); fi
+
 # AI (aimd) tab UI smoke (PySide6 + offscreen Qt).
 printf '%-18s ' "test_aimd_ui"
 if [ ! -x "$venv_py" ]; then echo "SKIP (no .venv / PySide6)";
