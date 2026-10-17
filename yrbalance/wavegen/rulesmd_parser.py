@@ -74,6 +74,44 @@ ARMOR_NAMES = [
     "special", "defense",
 ]
 ARMOR_INDEX    = {name: i for i, name in enumerate(ARMOR_NAMES)}
+# A unit counts as out-ranging base defenses when its weapon range beats this
+# bar. Deliberately NOT the mean of every defense range:
+#
+#   * The mean is dragged down by short-range defenses (pillboxes, gun walls),
+#     so mediocre units qualify and then get killed by the defenses that
+#     actually matter.
+#   * The max is dragged up by one extreme outlier, making the bar unreachable.
+#
+# Rex's definition (2026-10-16): drop the single extreme highest, then average
+# the upper half of what remains.
+#
+# The trim only applies once there are enough defenses for "extreme highest" to
+# mean anything. On a small set it removes the one defense you most need to
+# out-range — vanilla YR has just four ground defenses, and trimming would
+# discard the Prism Tower.
+DEFENSE_BAR_MIN_TRIM_N = 6
+DEFENSE_BAR_FALLBACK = 6.0
+
+
+def defense_range_bar(ranges):
+    """Range a unit must exceed to out-range base defenses. See notes above."""
+    vals = []
+    for r in ranges or ():
+        try:
+            v = float(r)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            vals.append(v)
+    if not vals:
+        return DEFENSE_BAR_FALLBACK
+    vals.sort()
+    if len(vals) >= DEFENSE_BAR_MIN_TRIM_N:
+        vals = vals[:-1]                       # drop the extreme highest
+    upper = vals[len(vals) // 2:]              # upper half of the remainder
+    return sum(upper) / len(upper)
+
+
 ARMOR_INFANTRY = frozenset({0, 1, 2})
 ARMOR_VEHICLE  = frozenset({3, 4, 5})
 ARMOR_BUILDING = frozenset({6, 7, 8})
@@ -2594,6 +2632,21 @@ class RulesMdParser:
             for ai in range(11)
         }
 
+    def _weapon_hits_ground(self, weapon):
+        """Whether this weapon can engage a GROUND target.
+
+        Keyed off the projectile's AG flag, which defaults to yes in YR — so an
+        unknown or missing projectile is treated as ground-capable rather than
+        silently dropping a real defense.
+        """
+        if not weapon:
+            return False
+        proj = (self.ini.get(weapon, "Projectile", "") or "").strip()
+        if not proj:
+            return True
+        ag = (self.ini.get(proj, "AG", "yes") or "yes").strip().lower()
+        return ag not in ("no", "false", "0")
+
     def _scan_strategic_targets(self):
         """
         Scan rulesmd.ini for strategic target buildings/units and
@@ -2662,7 +2715,13 @@ class RulesMdParser:
                     sec.get("isbasedefense", "no").lower() == "yes"):
                 base_def_armors.add(ai)
                 primary = sec.get("weapon1", "") or sec.get("primary", "")
-                if primary:
+                if primary and self._weapon_hits_ground(primary):
+                    # AA-only defenses are excluded on purpose: a projectile
+                    # with AG=no cannot hit a ground attacker, so its range is
+                    # irrelevant to whether a ground unit out-ranges the base.
+                    # In vanilla YR that is NASAM and NAFLAK — the two LONGEST
+                    # ranges (12.0) of six defenses, which inflated the bar
+                    # from 7.5 to 9.0 and put it above the Prism Tower.
                     try:
                         r = float(self.ini.get(primary, "Range", "0"))
                         if r > 0:
@@ -3090,10 +3149,7 @@ class RulesMdParser:
         factory_armors      = targets["factory_armors"]
         base_def_ranges     = targets["base_def_ranges"]
         ot_dmg_mult         = targets["opentopped_dmg_mult"]
-        avg_base_def_range  = (
-            sum(base_def_ranges) / len(base_def_ranges)
-            if base_def_ranges else 6.0
-        )
+        avg_base_def_range  = defense_range_bar(base_def_ranges)
 
         global_avg_hp       = threat["avg_hp"]
         avg_miner_hp        = threat["avg_miner_hp"]
