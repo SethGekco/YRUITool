@@ -27,6 +27,7 @@ Storage is a sidecar under ~/.yrbalancetool/ — never the mod's INI or its bag:
 import json
 import os
 import re
+import zipfile
 from dataclasses import dataclass, field, asdict
 
 from .ini_model import get_val
@@ -707,6 +708,78 @@ def set_bookmark(name, on, path=None):
             s.bookmarked = bool(on)
     save_sets(sets, path)
     return sets
+
+
+# ── export / import a shareable set ─────────────────────────────────────────
+VOICE_FILE_EXT = ".yrvoice"
+_MANIFEST = "voiceset.json"
+
+
+def _unique_name(base, taken):
+    cand, n = base, 1
+    while cand in taken:
+        n += 1
+        cand = f"{base} ({n})"
+    return cand
+
+
+def export_set(vset, path):
+    """Write a self-contained, shareable voice set: a zip holding the manifest
+    plus every stored sample's original bytes. Returns (path, exported_count)."""
+    n = 0
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(_MANIFEST, json.dumps(vset.to_json(), indent=1))
+        for s in vset.samples:
+            raw = sample_bytes(vset, s)
+            if not s.file or raw is None:
+                continue
+            z.writestr("samples/" + os.path.basename(s.file), raw)
+            n += 1
+    return path, n
+
+
+def import_set(path, name=None, lib_path=None):
+    """Read a .yrvoice and add it to the library under a non-colliding name.
+
+    Returns (vset, missing) where `missing` lists samples the archive did not
+    actually carry. The file may have come from anyone, so member names are
+    never trusted: we only read paths we build ourselves from the manifest, and
+    a sample whose stored name isn't a plain basename is rejected rather than
+    written (that is the zip path-traversal shape — "../../x").
+    """
+    with zipfile.ZipFile(path) as z:
+        try:
+            doc = json.loads(z.read(_MANIFEST).decode("utf-8"))
+        except (KeyError, ValueError, UnicodeDecodeError) as exc:
+            raise ValueError(f"not a voice set file: {exc}") from exc
+        if not isinstance(doc, dict) or not doc.get("name"):
+            raise ValueError("not a voice set file: manifest has no name")
+        vset = VoiceSet.from_json(doc)
+        vset.name = _unique_name(name or vset.name,
+                                 {s.name for s in load_sets(lib_path)})
+        vset.set_id = _unique_id(_slug(vset.name),
+                                 {s.set_id for s in load_sets(lib_path)})
+
+        members = set(z.namelist())
+        dest = samples_dir(vset.set_id)
+        os.makedirs(dest, exist_ok=True)
+        missing = []
+        for s in vset.samples:
+            safe = os.path.basename(s.file or "")
+            member = "samples/" + safe
+            if not safe or safe != s.file or member not in members:
+                missing.append(s.name)
+                s.file = ""                     # nothing stored for this one
+                continue
+            raw = z.read(member)
+            with open(os.path.join(dest, safe), "wb") as fh:
+                fh.write(raw)
+            s.size = len(raw)
+
+    if missing:
+        vset.notes.append("imported without samples: " + ", ".join(missing))
+    add_set(vset, lib_path)
+    return vset, missing
 
 
 # ── collections ─────────────────────────────────────────────────────────────

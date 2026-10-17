@@ -96,6 +96,30 @@ def main():
             print(f"   idx={sorted(tidx)}")
         ok = ok and ap_ok
 
+        # export/import round-trip through the dialog's own buttons, with the
+        # file choosers stubbed (they'd block on a real file dialog).
+        import types as _t
+        import yrbalance.ui.voice_apply_dialog as _V
+        box = os.path.join(home, "shared.yrvoice")
+        _real_fd = _V.QFileDialog
+        _V.QFileDialog = _t.SimpleNamespace(
+            getSaveFileName=lambda *a, **k: (box, ""),
+            getOpenFileName=lambda *a, **k: (box, ""))
+        try:
+            d3 = VoiceApplyDialog(None, "GI", tgt, rp)
+            d3.set_list.setCurrentRow(0)
+            d3._export()
+            exported = os.path.isfile(box)
+            before = d3.set_list.count()
+            d3._import()
+            share_ok = (exported and d3.set_list.count() == before + 1
+                        and "Imported" in d3.status.text())
+        finally:
+            _V.QFileDialog = _real_fd
+        print(f"dialog export then import adds a set: "
+              f"{'OK' if share_ok else 'FAIL'}")
+        ok = ok and share_ok
+
         # a mod with no soundmd.ini must block Apply rather than half-write
         bare = os.path.join(home, "bare")
         os.makedirs(bare)

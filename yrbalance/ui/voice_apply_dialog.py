@@ -13,6 +13,7 @@ mixlib.inject_audio_samples), which is why that is safe to do last.
 """
 
 import os
+import zipfile
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -20,13 +21,13 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPlainTextEdit, QPushButton, QSplitter, QComboBox, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QWidget,
+    QMessageBox, QWidget, QFileDialog,
 )
 
 from ..engine import (
     load_sets, build_voice_plan, apply_voice_plan, voice_plan_to_text,
     parse_ini_lines, build_section_map, sibling_file, make_backup,
-    build_media_catalog,
+    build_media_catalog, export_set, import_set, VOICE_FILE_EXT,
 )
 
 _MERGE = "Keep the target's"
@@ -59,13 +60,22 @@ class VoiceApplyDialog(QDialog):
         ll = QVBoxLayout(left)
         ll.addWidget(QLabel("<b>Saved voice sets</b>"))
         self.set_list = QListWidget()
-        for s in self.sets:
-            it = QListWidgetItem(
-                f"{s.name}  ({len(s.entries)} entries, {len(s.samples)} samples)")
-            it.setData(Qt.UserRole, s.name)
-            self.set_list.addItem(it)
         self.set_list.currentRowChanged.connect(lambda _r: self._rebuild())
         ll.addWidget(self.set_list, 1)
+        xrow = QHBoxLayout()
+        self.export_btn = QPushButton("Export…")
+        self.export_btn.setToolTip(
+            f"Save the selected set as a shareable {VOICE_FILE_EXT} file "
+            "(manifest + the original sample bytes).")
+        self.export_btn.clicked.connect(self._export)
+        self.import_btn = QPushButton("Import…")
+        self.import_btn.setToolTip(
+            f"Add a {VOICE_FILE_EXT} file someone shared to your library.")
+        self.import_btn.clicked.connect(self._import)
+        xrow.addWidget(self.export_btn)
+        xrow.addWidget(self.import_btn)
+        xrow.addStretch(1)
+        ll.addLayout(xrow)
         ll.addWidget(QLabel("<b>Conflicts</b>"))
         self.conf_table = QTableWidget(0, 3)
         self.conf_table.setHorizontalHeaderLabels(["What", "Name", "Resolution"])
@@ -102,12 +112,13 @@ class VoiceApplyDialog(QDialog):
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
+        # Populated last: selecting a row drives _rebuild(), which needs every
+        # widget above to already exist.
+        self._reload_sets()
         if not self.sets:
             self.status.setText(
                 "No voice sets saved yet — use “Save as voice set…” on a unit's "
-                "Voices tab first.")
-        else:
-            self.set_list.setCurrentRow(0)
+                "Voices tab first, or Import one.")
 
     # ── plan ───────────────────────────────────────────────────────────────
     def _current_set(self):
@@ -198,6 +209,56 @@ class VoiceApplyDialog(QDialog):
         bits += plan.warnings
         self.apply_btn.setEnabled(can)
         self.status.setText("  ·  ".join(bits))
+
+    # ── export / import ────────────────────────────────────────────────────
+    def _reload_sets(self, select=None):
+        self.sets = load_sets()
+        self.set_list.clear()
+        for s in self.sets:
+            it = QListWidgetItem(
+                f"{s.name}  ({len(s.entries)} entries, {len(s.samples)} samples)")
+            it.setData(Qt.UserRole, s.name)
+            self.set_list.addItem(it)
+            if select and s.name == select:
+                self.set_list.setCurrentItem(it)
+        if select is None and self.sets:
+            self.set_list.setCurrentRow(0)
+
+    def _export(self):
+        vset = self._current_set()
+        if vset is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export voice set", f"{vset.name}{VOICE_FILE_EXT}",
+            f"Voice set (*{VOICE_FILE_EXT})")
+        if not path:
+            return
+        try:
+            _p, n = export_set(vset, path)
+        except OSError as e:
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        self.status.setText(f"Exported “{vset.name}” with {n} samples to "
+                            f"{os.path.basename(path)}.")
+
+    def _import(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import voice set", "", f"Voice set (*{VOICE_FILE_EXT})")
+        if not path:
+            return
+        try:
+            vset, missing = import_set(path)
+        except (OSError, ValueError, zipfile.BadZipFile) as e:
+            QMessageBox.warning(self, "Import failed",
+                                f"{type(e).__name__}: {e}")
+            return
+        self._reload_sets(select=vset.name)
+        msg = f"Imported “{vset.name}”"
+        if missing:
+            msg += (f" — but {len(missing)} sample(s) weren't in the file "
+                    f"({', '.join(missing[:4])}"
+                    + (", …)" if len(missing) > 4 else ")"))
+        self.status.setText(msg + ".")
 
     # ── apply ──────────────────────────────────────────────────────────────
     def _apply(self):
