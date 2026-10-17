@@ -246,6 +246,42 @@ def is_aerial_unit(rec):
                 or getattr(rec, "mobility", "") in ("Jumpjet", "Aircraft"))
 
 
+# How long a unit may take to kill one target of a class and still count as
+# effective against it. Deliberately GENEROUS: these floors exist to drop the
+# hopeless, not to rank the competent. Vanilla's Allied Tech Centre needs 76s
+# per infantryman, 9 minutes per tank and 12 minutes per structure while being
+# tagged effective against all three.
+INFANTRY_KILL_SECONDS  = 30.0
+VEHICLE_KILL_SECONDS   = 60.0
+STRUCTURE_KILL_SECONDS = 120.0
+
+
+def kill_dps_floor(target_hp, seconds):
+    """Per-frame DPS needed to kill `target_hp` within `seconds`.
+
+    0.0 for a non-positive target HP, which disables the floor rather than
+    gating everything out on data we could not read.
+    """
+    try:
+        hp = float(target_hp or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if hp <= 0 or seconds <= 0:
+        return 0.0
+    return hp / (seconds * GAME_FPS)
+
+
+# Mechanisms whose effect is NOT damage, so a DPS reading says nothing about
+# them. Chrono erasure deletes the target outright, mind control takes it,
+# radiation and chaos and parasites work over time. Vanilla's Chrono
+# Legionnaire reads 0.067 DPS across every armour class and is nonetheless one
+# of the most lethal units in the game.
+_SPECIAL_MECHANISM_FLAGS = (
+    "is_temporal", "is_mind_control", "is_chaos", "is_radiation",
+    "is_parasite", "is_parasite_drone",
+)
+
+
 def dps_is_trustworthy(rec):
     """False when the unit's damage is delivered by something we did not read.
 
@@ -255,9 +291,16 @@ def dps_is_trustworthy(rec):
     such a unit on its own weapon would rank the premier defense killers at
     ~0, so callers must treat their DPS as UNKNOWN and decline to exclude them
     rather than exclude them wrongly.
+
+    The same applies to units whose effect is not damage at all — chrono
+    erasure, mind control, radiation, chaos, parasites. The codebase already
+    treats those as "special effects not captured by DPS" when grading.
     """
     if getattr(rec, "is_spawner", False):
         return False
+    for flag in _SPECIAL_MECHANISM_FLAGS:
+        if getattr(rec, flag, False):
+            return False
     for key in ("role_weapon", "primary_analysis", "secondary_analysis"):
         a = getattr(rec, key, None)
         if a and a.get("is_spawner_wpn"):
@@ -1740,6 +1783,7 @@ class RulesMdParser:
         self._build_pools()
         self._compute_faction_baselines()
         self._compute_unit_grades()
+        self._prune_weak_role_tags()
         self._classify_dps_rank()
         # Build naval_bombarders after grades are computed
         _min_bombard = 10.0
@@ -2902,6 +2946,8 @@ class RulesMdParser:
         miner_strengths    = []
         cy_armors          = set()           # all CY armor types seen
         cy_armor_by_bid    = {}              # bid -> armor_index
+        cy_strengths       = []
+        factory_strengths  = []
         factory_armors     = set()
         base_def_armors    = set()
         base_def_armor_counts = {}   # armor_index -> armed buildings
@@ -2951,9 +2997,21 @@ class RulesMdParser:
             if sec.get("constructionyard", "no").lower() == "yes":
                 cy_armors.add(ai)
                 cy_armor_by_bid[uid] = ai
+                try:
+                    _st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    _st = 0.0
+                if _st > 0:
+                    cy_strengths.append(_st)
 
             if sec.get("factory", "").lower() in factory_tag_values:
                 factory_armors.add(ai)
+                try:
+                    _st = float(sec.get("strength", "0") or 0)
+                except ValueError:
+                    _st = 0.0
+                if _st > 0:
+                    factory_strengths.append(_st)
 
             # Defense RANGES are taken from weapon tags only — never from
             # IsBaseDefense. Per Rex: modders often leave that flag unset, and
@@ -3050,6 +3108,8 @@ class RulesMdParser:
             "base_def_ranges_air": base_def_ranges_air,
             "base_def_strengths":  base_def_strengths,
             "base_def_armor_counts": base_def_armor_counts,
+            "cy_strengths":        cy_strengths,
+            "factory_strengths":   factory_strengths,
             "service_depots":      service_depots,
             "grinders":            grinders,
             "opentopped_dmg_mult": opentopped_dmg_mult,
@@ -3342,6 +3402,86 @@ class RulesMdParser:
             "aerial_bonus":        aerial_bonus,
             "aa_capability_bonus": aa_cap_bonus,
         }
+
+    # Role tags are assigned to EVERY unit by WeaponAnalyzer.assign_roles(),
+    # but _compute_unit_grades only iterates self.buildable — so every
+    # refinement and every floor there misses anything outside that pool.
+    # Vanilla's Allied Tech Centre is exactly that case: it carries
+    # AG-Anti_Infantry + AG-Anti_Vehicle + AG-Anti_Building + AG-Multi from
+    # assign_roles and the grading pass never sees it. Hence a pass of its own.
+    _FLOOR_TAGS = (
+        ("AG-Anti_Infantry", "infantry"),
+        ("AG-Anti_Vehicle",  "vehicle"),
+        ("AG-Anti_Building", "structure"),
+        ("CY_Killer",        "cy"),
+        ("Factory_Killer",   "factory"),
+    )
+
+    def _prune_weak_role_tags(self):
+        """Drop target-class role tags the unit cannot actually act on.
+
+        AG-Anti_* comes from warhead Verses >= 50% against that armour class —
+        pure target-type matching, no magnitude at all. CY_Killer and
+        Factory_Killer use spectrum(), which is relative to the mod average, so
+        in a mod where nothing hits hard the least-bad units still qualify.
+
+        Units whose effect is not damage are skipped entirely
+        (dps_is_trustworthy): chrono erasure, mind control, radiation, chaos,
+        parasites, and spawned payloads.
+        """
+        try:
+            targets = self._scan_strategic_targets()
+            threat = self._compute_global_threat_stats()
+        except Exception:
+            return
+        avg_hp = threat.get("avg_hp") or {}
+        armors = {
+            "infantry": set(ARMOR_INFANTRY),
+            "vehicle": set(ARMOR_VEHICLE),
+            "structure": set(ARMOR_BUILDING),
+            "cy": set(targets.get("cy_armors") or ()),
+            "factory": set(targets.get("factory_armors") or ()),
+        }
+        floors = {
+            "infantry": kill_dps_floor(avg_hp.get("Infantry", 0),
+                                       INFANTRY_KILL_SECONDS),
+            "vehicle": kill_dps_floor(avg_hp.get("Vehicle", 0),
+                                      VEHICLE_KILL_SECONDS),
+            "structure": kill_dps_floor(
+                _median(targets.get("base_def_strengths") or []),
+                STRUCTURE_KILL_SECONDS),
+            "cy": kill_dps_floor(_median(targets.get("cy_strengths") or []),
+                                 STRUCTURE_KILL_SECONDS),
+            "factory": kill_dps_floor(
+                _median(targets.get("factory_strengths") or []),
+                STRUCTURE_KILL_SECONDS),
+        }
+        for rec in getattr(self, "units", {}).values():
+            if not dps_is_trustworthy(rec):
+                continue
+            roles = list(getattr(rec, "roles", None) or [])
+            if not roles:
+                continue
+            drop = []
+            for tag, key in self._FLOOR_TAGS:
+                if tag not in roles:
+                    continue
+                floor, arm = floors[key], armors[key]
+                if floor <= 0 or not arm:
+                    continue
+                if best_weapon_dps_vs(rec, arm) < floor:
+                    drop.append(tag)
+            if not drop:
+                continue
+            roles = [r for r in roles if r not in drop]
+            # AG-Multi and GENERALIST both claim breadth across the AG-Anti_*
+            # set, so neither can outlive it.
+            left = sum(1 for r in roles if r.startswith("AG-Anti_"))
+            if left < 2:
+                roles = [r for r in roles if r != "AG-Multi"]
+            if left == 0:
+                roles = [r for r in roles if r != "GENERALIST"]
+            rec.roles = roles
 
     def _compute_unit_grades(self):
         """
@@ -4273,5 +4413,6 @@ class RulesMdParser:
                 if (bd.get("outranges_def", 0) >= 2 and _arty_bld_dps >= 0.10):
                     if "ARTY" not in rec.roles:
                         rec.roles = rec.roles + ["ARTY"]
+
 
 

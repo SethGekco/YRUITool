@@ -312,6 +312,41 @@ def main():
           f"relaxed={relaxed:.3f} strict={strict:.3f}")
     ok = ok and floors_ok
 
+    # ── absolute floors on the target-class tags ───────────────────────────
+    from yrbalance.wavegen.rulesmd_parser import (
+        kill_dps_floor, INFANTRY_KILL_SECONDS, STRUCTURE_KILL_SECONDS,
+    )
+
+    kf_ok = (abs(kill_dps_floor(113.6, INFANTRY_KILL_SECONDS)
+                 - 113.6 / (INFANTRY_KILL_SECONDS * 15.0)) < 1e-9
+             and kill_dps_floor(0, 30) == 0.0        # unreadable -> disabled
+             and kill_dps_floor(-5, 30) == 0.0
+             and kill_dps_floor(100, 0) == 0.0
+             and kill_dps_floor(None, 30) == 0.0
+             and kill_dps_floor("x", 30) == 0.0)
+    print(f"kill_dps_floor disables itself on unreadable data: "
+          f"{'OK' if kf_ok else 'FAIL'}")
+    ok = ok and kf_ok
+
+    # A mechanism that is not damage must be exempt, or the floors delete the
+    # most lethal units in the game. Vanilla's Chrono Legionnaire reads 0.067
+    # DPS against every armour class and erases whatever it touches.
+    class Special:
+        def __init__(self, **kw):
+            self.is_spawner = False
+            for f in ("is_temporal", "is_mind_control", "is_chaos",
+                      "is_radiation", "is_parasite", "is_parasite_drone"):
+                setattr(self, f, kw.get(f, False))
+    spec_ok = (not dps_is_trustworthy(Special(is_temporal=True))
+               and not dps_is_trustworthy(Special(is_mind_control=True))
+               and not dps_is_trustworthy(Special(is_radiation=True))
+               and not dps_is_trustworthy(Special(is_chaos=True))
+               and not dps_is_trustworthy(Special(is_parasite=True))
+               and dps_is_trustworthy(Special()))
+    print(f"non-damage mechanisms exempt from the floors: "
+          f"{'OK' if spec_ok else 'FAIL'}")
+    ok = ok and spec_ok
+
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1
 
