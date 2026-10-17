@@ -16,7 +16,10 @@ reusing the wavegen generators' own vanilla-confirmed constants:
 
 from ..engine import LibEntry, LibBlock
 
-from .trigger_generator import ROLE_WEIGHTS, DEFAULT_WEIGHTS, ALWAYS_TRUE
+from .trigger_generator import (
+    ROLE_WEIGHTS, DEFAULT_WEIGHTS, ALWAYS_TRUE, OWN_AT_LEAST_1,
+    COND_ENEMY_CREDITS, COND_ENEMY_OWNS, COND_AI_OWNS,
+)
 from .team_generator import FIXED_FLAGS, ROLE_FLAGS
 
 # Display role → canonical generator key + role-detector tags for auto-suggest.
@@ -53,6 +56,49 @@ SCRIPT_BY_ROLE = {
 }
 
 
+
+# ── trigger conditions ──────────────────────────────────────────────────────
+# Vanilla spreads AITrigger conditions across credits (53 of 165), "enemy owns"
+# (50) and "AI owns" (49) — roughly 60% are conditional on battlefield state.
+# Emitting credits>=0 for everything, as this module used to, makes every
+# trigger permanently eligible, so the AI picks from a flat weighted lottery
+# instead of reacting to what is actually on the field.
+#
+# Vanilla cannot express "enemy owns a unit of CLASS x", only a specific
+# ID, so a role cannot be turned into a condition automatically with full
+# fidelity. Per Rex: generate the plausible enemy-side and owner-side variants
+# and let the player cycle through and choose.
+COND_ALWAYS_LABEL = "Always (enemy credits >= 0)"
+
+
+def role_trigger_variants(display_role, units=None, enemy_objects=None):
+    """Candidate conditions for a role's trigger.
+
+    Returns [{"label", "cond_type", "cond_object", "comparator"}]. The first is
+    always the unconditional one, so existing behaviour stays the default.
+
+    `units` are the role's own units — used for the owner-side variant ("only
+    form this team once the AI actually owns one"). `enemy_objects` are IDs
+    worth watching on the enemy side (harvesters, defences, factories…); the
+    caller supplies them because only it has the parsed rules.
+    """
+    out = [{"label": COND_ALWAYS_LABEL,
+            "cond_type": COND_ENEMY_CREDITS,
+            "cond_object": "<none>",
+            "comparator": ALWAYS_TRUE}]
+    for uid in (units or [])[:8]:
+        out.append({"label": f"AI owns >= 1 {uid}",
+                    "cond_type": COND_AI_OWNS,
+                    "cond_object": uid,
+                    "comparator": OWN_AT_LEAST_1})
+    for oid in (enemy_objects or [])[:12]:
+        out.append({"label": f"Enemy owns >= 1 {oid}",
+                    "cond_type": COND_ENEMY_OWNS,
+                    "cond_object": oid,
+                    "comparator": OWN_AT_LEAST_1})
+    return out
+
+
 def available_roles():
     return list(ROLE_MAP.keys())
 
@@ -65,9 +111,17 @@ def _resolve(display_role):
     return spec["key"], spec["tags"]
 
 
-def build_role_entry(display_role, units, label=None):
+def build_role_entry(display_role, units, label=None, side=1, condition=None):
     """Assemble a LibEntry (TaskForce + Script + TeamType + trigger) for `units` in
-    `display_role`. Placeholder ids (RTF/RSC/RTM/RTRIG) are remapped by the pull."""
+    `display_role`. Placeholder ids (RTF/RSC/RTM/RTRIG) are remapped by the pull.
+
+    `side` is the AITrigger Side field (1=Allied, 2=Soviet, 3=Yuri). All 165
+    vanilla triggers set 1, 2 or 3 — none uses 0 — so there is no "any side"
+    value to fall back on and the caller must say which.
+
+    `condition` is one entry from role_trigger_variants(); omitted means the
+    unconditional credits>=0 one.
+    """
     key, _tags = _resolve(display_role)
     units = [u for u in units if u]
     label = (label or f"{display_role} ({len(units)})")[:47].replace(",", " ")
@@ -86,11 +140,23 @@ def build_role_entry(display_role, units, label=None):
     tm_keys = [["Name", label], ["TaskForce", "RTF"], ["Script", "RSC"]]
     tm_keys += [[k, v] for k, v in flags.items()]
 
-    # 18 comma fields, in trigger_generator.to_ini_line order.
+    cond = condition or role_trigger_variants(display_role)[0]
+    try:
+        side_n = int(side)
+    except (TypeError, ValueError):
+        side_n = 1
+    if side_n not in (1, 2, 3):
+        side_n = 1
+
+    # 18 comma fields, in trigger_generator.to_ini_line order. Three of these
+    # were previously emitted as values that appear in NONE of the 165 vanilla
+    # triggers: TechLevel=0 (vanilla floor is 1), Side=0 (vanilla is always
+    # 1/2/3) and Team2="0" (vanilla is "<none>" or a real TeamType id).
     trig = ",".join([
-        label, "RTM", "<all>", "0", "4", "<none>", ALWAYS_TRUE,
+        label, "RTM", "<all>", "1",
+        str(cond["cond_type"]), cond["cond_object"], cond["comparator"],
         f"{start_w:.6f}", f"{min_w:.6f}", f"{max_w:.6f}",
-        "1", "0", "0", "0", "0", "1", "1", "1",
+        "1", "0", str(side_n), "0", "<none>", "1", "1", "1",
     ])
 
     return LibEntry(

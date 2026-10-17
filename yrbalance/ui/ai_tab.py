@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget,
     QLineEdit, QListWidget, QListWidgetItem, QSplitter, QPlainTextEdit,
     QMenu, QMessageBox, QInputDialog, QAbstractItemView, QFileDialog, QDialog,
+    QComboBox,
 )
 
 from ..engine import (
@@ -36,7 +37,7 @@ from ..engine import (
     ai_add_to_collection as add_to_collection,
     ai_remove_from_collection as remove_from_collection,
     load_roles, set_role_units, create_role, delete_role, rename_role,
-    parse_type_list,
+    parse_type_list, get_val,
 )
 from .aimd_tab import AiBuilderTab
 
@@ -499,7 +500,31 @@ class UnitRolesPanel(QWidget):
         srow.addWidget(self.unit_search, 1)
         rl.addLayout(srow)
         self.unit_list = QListWidget()
+        self.unit_list.itemChanged.connect(
+            lambda _i: self._refresh_trigger_opts())
         rl.addWidget(self.unit_list, 1)
+
+        # Side and condition: both were previously hardcoded, and both to values
+        # that appear in NO vanilla trigger (Side=0, and credits>=0 for
+        # everything). Vanilla has no "any side", and ~60% of its triggers are
+        # conditional on battlefield state — but vanilla can only test a
+        # specific object ID, not a class, so the choice has to be the user's.
+        crow = QHBoxLayout()
+        crow.addWidget(QLabel("Side:"))
+        self.side_combo = QComboBox()
+        self.side_combo.setToolTip(
+            "AITrigger Side field. All 165 vanilla triggers use 1, 2 or 3 — "
+            "there is no 'any side' value, so the trigger has to name one.")
+        crow.addWidget(self.side_combo)
+        crow.addWidget(QLabel("Fires when:"))
+        self.cond_combo = QComboBox()
+        self.cond_combo.setMinimumWidth(240)
+        self.cond_combo.setToolTip(
+            "Condition on the generated AITrigger. 'Always' is the old "
+            "behaviour and leaves the team permanently eligible; the owner-side "
+            "and enemy-side options make the AI react to what is on the field.")
+        crow.addWidget(self.cond_combo, 1)
+        rl.addLayout(crow)
 
         brow = QHBoxLayout()
         suggest = QPushButton("Suggest units")
@@ -586,11 +611,74 @@ class UnitRolesPanel(QWidget):
             it.setCheckState(Qt.Checked if it.data(Qt.UserRole).lower() in saved
                              else Qt.Unchecked)
 
+    # ── trigger options (side + condition) ─────────────────────────────────
+    def _sides(self):
+        """[(label, side_number)] from the mod's [Sides], else the YR default."""
+        sm = getattr(self.mw, "section_map", None)
+        if sm and "sides" in sm:
+            # [Sides] is `SideName=countries`, so the KEYS are the side names,
+            # and their file order is the 1-based side number.
+            ordered = sorted(sm["sides"]["keys"].items(),
+                             key=lambda kv: kv[1][0])
+            names = [kv[1][1] for kv in ordered]
+            if names:
+                return [(n, i + 1) for i, n in enumerate(names)]
+        return [("Allied", 1), ("Soviet", 2), ("Yuri", 3)]
+
+    def _enemy_objects(self):
+        """IDs worth watching on the enemy side, from the loaded rules."""
+        sm = getattr(self.mw, "section_map", None)
+        if not sm:
+            return []
+        out = []
+        for lst, tags in (("BuildingTypes",
+                           ("isbasedefense", "basedefense", "harvester",
+                            "constructionyard", "factory")),
+                          ("VehicleTypes", ("harvester", "unloads"))):
+            for uid in parse_type_list(sm, lst):
+                for tag in tags:
+                    v = (get_val(sm, uid, tag) or "").strip().lower()
+                    if v and v not in ("no", "none", "0", "false"):
+                        out.append(uid)
+                        break
+        # stable, de-duplicated
+        seen, uniq = set(), []
+        for u in out:
+            if u.upper() not in seen:
+                seen.add(u.upper())
+                uniq.append(u)
+        return uniq
+
+    def _refresh_trigger_opts(self):
+        from ..wavegen.role_bundles import role_trigger_variants
+        if self.side_combo.count() == 0:
+            for label, n in self._sides():
+                self.side_combo.addItem(f"{n} — {label}", n)
+        keep = self.cond_combo.currentText()
+        self._cond_variants = role_trigger_variants(
+            self._current_role() or "", units=self._checked_units(),
+            enemy_objects=self._enemy_objects())
+        self.cond_combo.blockSignals(True)
+        self.cond_combo.clear()
+        for i, v in enumerate(self._cond_variants):
+            self.cond_combo.addItem(v["label"], i)
+        idx = self.cond_combo.findText(keep)
+        self.cond_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cond_combo.blockSignals(False)
+
+    def _selected_condition(self):
+        vs = getattr(self, "_cond_variants", None)
+        if not vs:
+            return None
+        i = self.cond_combo.currentData()
+        return vs[i] if isinstance(i, int) and 0 <= i < len(vs) else vs[0]
+
     def _show_role(self):
         self._apply_role_checks()
         role = self._current_role()
         n = len(self.roles.get(role, []))
         self.status.setText(f"“{role}”: {n} unit(s) saved." if role else "")
+        self._refresh_trigger_opts()
 
     def _checked_units(self):
         return [self.unit_list.item(r).data(Qt.UserRole)
@@ -677,7 +765,10 @@ class UnitRolesPanel(QWidget):
         from ..wavegen.role_bundles import build_role_entry
         from ..engine import working_path, target_countries
         from .ai_library_dialog import _PullDialog, _sibling_aimd
-        entry = build_role_entry(role, units)
+        entry = build_role_entry(
+            role, units,
+            side=self.side_combo.currentData() or 1,
+            condition=self._selected_condition())
 
         container = self.parent()
         while container is not None and not isinstance(container, AiTab):
