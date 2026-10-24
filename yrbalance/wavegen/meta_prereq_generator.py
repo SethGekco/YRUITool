@@ -48,6 +48,7 @@ TODO: Country restriction on meta-dummy SWs (SW.RequiredHouses).
 """
 
 from __future__ import annotations
+from ..engine.ini_model import guard_ini_text
 from dataclasses import dataclass, field
 from pathlib import Path
 from .rulesmd_parser import IniParser
@@ -593,7 +594,7 @@ class MetaPrereqGenerator:
             ]
 
         with open(out_path, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def get_superweapons_to_inject(self) -> dict[str, list[str]]:
         """

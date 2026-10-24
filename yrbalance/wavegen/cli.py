@@ -23,6 +23,7 @@ Orchestration order:
 
 TOOL_VERSION = "v39"  # Update with each release
 
+from ..engine.ini_model import guard_ini_text
 import argparse
 import sys
 import shutil
@@ -293,7 +294,7 @@ def strip_tool_entries(path: Path, tag: str = "; YR-AI-Tool") -> int:
         i += 1
 
     with path.open('w', encoding='latin-1', errors='replace') as f:
-        f.writelines(result)
+        f.write(guard_ini_text(result))
 
     return removed
 
@@ -335,7 +336,7 @@ def strip_vanilla_entries(aimd_path: Path) -> int:
         result.append(line)
 
     with aimd_path.open('w', encoding='latin-1', errors='replace') as f:
-        f.writelines(result)
+        f.write(guard_ini_text(result))
 
     return removed
 
@@ -479,7 +480,7 @@ def _update_relaxed_stray(rules_path: str, scale: int) -> None:
         content
     )
     with open(rules_path, 'w', encoding='latin-1') as f:
-        f.write(new_content)
+        f.write(guard_ini_text(new_content))
 
 
 def _inject_superweapons(rules_path: str, inject: dict) -> None:
@@ -532,7 +533,7 @@ def _inject_superweapons(rules_path: str, inject: dict) -> None:
                     section_line[k] += 1
 
     with open(rules_path, 'w', encoding='latin-1') as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))
 
 
 def reorder_aimd(path):
@@ -1177,7 +1178,7 @@ def main():
     with open(out_aimd, 'r+', encoding='latin-1') as f:
         original = f.read()
         f.seek(0)
-        f.write(stamp + original)
+        f.write(guard_ini_text(stamp + original))
 
     if not args.skip_cleanup:
         # Locate vanilla baseline files

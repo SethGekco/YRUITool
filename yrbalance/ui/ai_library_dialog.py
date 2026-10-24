@@ -8,6 +8,7 @@ flagged), lets the user remap or bring referenced units, and always backs up the
 target aimd before writing.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 
 from PySide6.QtCore import Qt
@@ -44,7 +45,7 @@ def _sibling_aimd(rules_path):
 def _write(path, lines):
     nl = "" if (lines and lines[-1].endswith("\n")) else "\n"
     with open(path, "w", encoding="latin-1", errors="replace", newline="") as f:
-        f.write("".join(lines) + nl if nl else "".join(lines))
+        f.write(guard_ini_text("".join(lines) + nl if nl else "".join(lines)))
 
 
 class AILibraryDialog(QDialog):

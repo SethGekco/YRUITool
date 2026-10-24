@@ -183,27 +183,49 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None):
     return kinds
 
 
+# Techno tags that fire a weapon besides the Primary/Secondary/WeaponN family.
+_EXTRA_TECHNO_WEAPON_TAGS = ("DeathWeapon", "OccupyWeapon",
+                             "EliteOccupyWeapon")
+# Projectile tags that fire a further weapon when the projectile detonates.
+_PROJECTILE_WEAPON_TAGS = ("ShrapnelWeapon", "AirburstWeapon")
+
+
 def _closure(src_map, techno_names):
-    """Follow weapon references from technos → weapons → warheads/projectiles.
-    Only returns names that are source sections (so they can be moved)."""
+    """Follow weapon references from technos → weapons → warheads/projectiles,
+    and on through any weapon a projectile fires in turn (shrapnel, airburst).
+    Only returns names that are source sections (so they can be moved).
+
+    This used to stop one level down, so a projectile's ShrapnelWeapon never
+    became a plan object and could not be ported with the unit that needs it.
+    """
     weapons, warheads, projectiles = [], [], []
 
     def ref(name, tag):
         return _clean(get_val(src_map, name, tag))
 
+    def real(x):
+        return x and x.lower() not in ("none", "") and _exists(src_map, x)
+
+    queue = []
     for t in techno_names:
-        for wt in ALL_WEAPON_TAGS:
+        for wt in tuple(ALL_WEAPON_TAGS) + _EXTRA_TECHNO_WEAPON_TAGS:
             w = ref(t, wt)
-            if w and w.lower() not in ("none", "") and _exists(src_map, w) \
-                    and w not in weapons:
+            if real(w) and w not in weapons:
                 weapons.append(w)
-    for w in weapons:
+                queue.append(w)
+    while queue:
+        w = queue.pop(0)
         wh = ref(w, "Warhead")
-        if wh and _exists(src_map, wh) and wh not in warheads:
+        if real(wh) and wh not in warheads:
             warheads.append(wh)
         pr = ref(w, "Projectile")
-        if pr and _exists(src_map, pr) and pr not in projectiles:
+        if real(pr) and pr not in projectiles:
             projectiles.append(pr)
+            for tag in _PROJECTILE_WEAPON_TAGS:
+                sub = ref(pr, tag)
+                if real(sub) and sub not in weapons:
+                    weapons.append(sub)
+                    queue.append(sub)
     return weapons, warheads, projectiles
 
 
@@ -537,6 +559,21 @@ def _fmt(n):
     return str(int(n)) if float(n).is_integer() else str(n)
 
 
+# Stats the engine reads as INTEGERS. Scaling them by a culture factor yields
+# fractions (Strength 1250 x 0.25 = 312.5), and writing "Strength=312.5" into
+# rulesmd is not a value the game expects — so these are rounded on the way
+# out. Range is genuinely fractional (cells, e.g. 5.75) and is left alone.
+_INTEGER_STATS = frozenset({"cost", "strength", "speed", "sight", "damage",
+                            "rof"})
+
+
+def _fmt_stat(stat, n):
+    if stat.lower() in _INTEGER_STATS:
+        return str(int(round(float(n))))
+    v = round(float(n), 2)
+    return str(int(v)) if v.is_integer() else str(v)
+
+
 _LIST_FOR_KIND = {
     "infantry": "InfantryTypes", "vehicle": "VehicleTypes",
     "naval": "VehicleTypes", "aircraft": "AircraftTypes",
@@ -548,12 +585,28 @@ def _ending(lines):
     return "\r\n" if lines and lines[-1].endswith("\r\n") else "\n"
 
 
+# Tags that point from a techno to a weapon, or from a weapon to the next link
+# of its chain. ALL_WEAPON_TAGS covers Primary/Secondary/Elite*/WeaponN; the
+# rest are the other ways a unit or projectile fires something.
+_CHAIN_TAGS = frozenset(
+    {t.lower() for t in ALL_WEAPON_TAGS}
+    | {"deathweapon", "occupyweapon", "eliteoccupyweapon",
+       "warhead", "projectile", "shrapnelweapon", "airburstweapon"})
+
+
 def _expand_selection(plan, selected):
     """Grow a selection to include each selected unit's built-in InitialPayload
-    part units (transitively) and the weapon chain of each auto-added part unit —
-    a transport's dummy passengers (and a dummy gunner's weapon) are never left
-    behind. User-picked units keep their own weapon selection unchanged. Returns a
-    new set."""
+    part units (transitively), and the WEAPON CHAIN of every selected unit —
+    weapon, warhead, projectile and any weapon those fire in turn.
+
+    This used to pull weapons only for AUTO-ADDED part units, leaving
+    "User-picked units keep their own weapon selection unchanged". That was a
+    trap: picking a unit wrote its section with Primary=/ElitePrimary= naming
+    weapons that existed only in the source mod, so the ported unit arrived
+    unarmed — and the weapon's culture-converted Damage/ROF/Range, which the
+    preview showed, never reached the file. A weapon that already exists in
+    the target is not a plan object at all, so nothing is duplicated.
+    Returns a new set."""
     selected = set(selected)
     by_name = {o.name.lower(): o for o in plan.objects}
 
@@ -575,20 +628,29 @@ def _expand_selection(plan, selected):
                 selected.add(d)
                 frontier.append(d)
                 newly.append(d)
-    for nm in newly:                       # weapon chain of each auto-added dep
+    # Every selected techno — picked or auto-added — brings its weapon chain.
+    # Projectiles and warheads can fire further weapons (shrapnel, airburst,
+    # ambient damage), so this walks until nothing new turns up.
+    queue = [n for n in selected]
+    seen = set()
+    while queue:
+        nm = queue.pop()
+        if nm.lower() in seen:
+            continue
+        seen.add(nm.lower())
         o = by_name.get(nm.lower())
         if not o:
             continue
         for kr, vr in o.keys:
-            if kr.lower() not in weap_tags:
+            if kr.lower() not in _CHAIN_TAGS:
                 continue
-            w = _clean(vr)
-            wobj = by_name.get(w.lower()) if w else None
-            if wobj and w not in selected:
-                selected.add(w)
-                for x in (_kv(wobj, "warhead"), _kv(wobj, "projectile")):
-                    if x and x.lower() in by_name and x not in selected:
-                        selected.add(x)
+            ref = _clean(vr)
+            if not ref:
+                continue
+            robj = by_name.get(ref.lower())
+            if robj and robj.name not in selected:
+                selected.add(robj.name)
+                queue.append(robj.name)
     return selected
 
 
@@ -652,7 +714,7 @@ def _section_raw(obj, overrides, ending):
     for kr, vr in obj.keys:
         kl = kr.lower()
         if kl in newvals:
-            raw.append(f"{kr}={_fmt(newvals[kl])}{ending}")
+            raw.append(f"{kr}={_fmt_stat(kl, newvals[kl])}{ending}")
         elif kl == "owner" and obj.owner_before:
             raw.append(f"{kr}={obj.owner_after}{ending}")
         elif kl == "prerequisite" and obj.prereq_before:

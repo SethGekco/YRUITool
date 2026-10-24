@@ -5,6 +5,7 @@ Keeping this Qt-free means the whole apply/preview flow is unit-testable without
 constructing widgets or a QApplication.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 
 from ..engine import (
@@ -180,7 +181,7 @@ class WorkingSession:
 
     def save(self, out_path):
         with open(out_path, "w", encoding="utf-8", newline="") as f:
-            f.writelines(self.lines)
+            f.write(guard_ini_text(self.lines))
         self.dirty = False
 
 
@@ -200,7 +201,7 @@ def apply_and_save(source_path, out_path, spec, scripts=None, config=None,
     # newline="" so each line's own \r\n / \n (preserved by the parser) is written
     # verbatim rather than translated by the platform.
     with open(out_path, "w", encoding="utf-8", newline="") as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))
     return summary, results
 
 

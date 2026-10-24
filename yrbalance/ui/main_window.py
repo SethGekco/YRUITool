@@ -3,6 +3,7 @@ MainWindow — assembles the toolbar, the TechnoType tabs, and the bottom script
 panel, and wires "Apply and save" to the controller.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 import sys
 
@@ -805,7 +806,7 @@ class MainWindow(QMainWindow):
         name = os.path.splitext(os.path.basename(path))[0]
         try:
             with open(path, "w", encoding="utf-8") as f:
-                f.write(self.to_blueprint_text(name=name))
+                f.write(guard_ini_text(self.to_blueprint_text(name=name)))
         except OSError as e:
             QMessageBox.warning(self, "Blueprint", f"Could not write:\n{e}")
             return
@@ -844,7 +845,7 @@ class MainWindow(QMainWindow):
             return
         try:
             with open(out, "w", encoding="utf-8", newline="") as f:
-                f.writelines(lines)
+                f.write(guard_ini_text(lines))
         except OSError as e:
             QMessageBox.critical(self, "Restore", f"Could not write:\n{e}")
             return

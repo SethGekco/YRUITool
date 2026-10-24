@@ -13,6 +13,10 @@ import sys
 import tempfile
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Never touch the user's real QSettings, even when run on its own: this test
+# writes backup_dir, and the app uses that setting as its backup location.
+# Must be set before Qt is imported, which is when the config path is fixed.
+os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp(prefix="yrbt_cfg_")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)

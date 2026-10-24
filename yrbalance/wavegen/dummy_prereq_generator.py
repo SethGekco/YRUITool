@@ -42,6 +42,7 @@ Sections written to rulesmd.ini:
   [DMPRKSW###...]     — killer superweapon sections
 """
 
+from ..engine.ini_model import guard_ini_text
 from itertools import combinations
 from pathlib import Path
 from .rulesmd_parser import IniParser
@@ -597,7 +598,7 @@ class DummyPrereqGenerator:
         lines.append(';\r\n')
 
         with output_path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
         return output_path
 
@@ -1211,7 +1212,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
                                          presence=True, comment=cmt)
 
         with path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def _write_absence_sections(self, path: Path):
         """Write absence dummy sections to a separate include file."""
@@ -1219,7 +1220,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
                  '; Generated automatically. Do not edit manually.\r\n\r\n']
         lines += self._absence_section_lines()
         with path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def _write_mixed_sections(self, path: Path):
         """Write mixed dummy sections to a separate include file."""
@@ -1262,7 +1263,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
                 presence=True, comment=cmt)
 
         with path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
         """Generate presence dummy building and SW section lines."""
         lines = []
         owner_str = self._multiplay_countries()
@@ -1441,7 +1442,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
         lines = self._absence_section_lines()
         with path.open('a', encoding='latin-1', errors='replace') as f:
             f.write('; === YR-AI-Tool Absence Dummy Prerequisites ===\r\n\r\n')
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def _append_mixed_sections(self, path: Path):
         """Append mixed presence+absence sections inline to rulesmd.ini."""
@@ -1484,7 +1485,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
                 presence=True, comment=cmt)
 
         with path.open('a', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def _write_rulesmd_lists(self, source_path: Path, output_path: Path,
                                include_files: dict):
@@ -1574,7 +1575,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
 
         lines.append(';\r\n')
         with output_path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
     def _patch_real_buildings(self, rulesmd_path: Path):
         """
@@ -1626,7 +1627,7 @@ class FullDummyPrereqGenerator(DummyPrereqGenerator):
                         break
 
         with rulesmd_path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
 
 # ---------------------------------------------------------------------------

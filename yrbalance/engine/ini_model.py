@@ -196,6 +196,81 @@ def line_ending(line):
     return ""
 
 
+# ── end-of-file guard ───────────────────────────────────────────────────────
+# The engine's INI reader never reads a file's LAST line (Rex). If that line is
+# a key, the key is silently lost — no error, the value just does not exist in
+# game. So every INI the tool writes must end with a comment line, which is
+# harmless to lose. EOF_GUARD is that line.
+EOF_GUARD = ";"
+
+
+def _is_bare_guard(line):
+    """A blank line, or a comment consisting of nothing but the marker."""
+    s = line.strip()
+    return s == "" or s == EOF_GUARD
+
+
+def pop_eof_guard(lines):
+    """Remove and return the trailing run of blank / bare-';' lines.
+
+    Used before appending, so new content goes in FRONT of the guard instead of
+    after it. Appending after it is how a ported section's final key became
+    the file's last line: rulesmd ended in ';', the porter added a warhead
+    after that, and its `Bullets=yes` became the line the engine never reads.
+    Only bare guards are moved — a real trailing comment stays put.
+    """
+    tail = []
+    while lines and _is_bare_guard(lines[-1]):
+        tail.append(lines.pop())
+    tail.reverse()
+    return tail
+
+
+def ensure_eof_guard(lines, ending=None):
+    """Return `lines` (same list, modified) ending in a comment line.
+
+    Idempotent: a file already ending in a comment gets only a trailing newline
+    if it lacked one. Call it on every INI immediately before writing.
+    """
+    if ending is None:
+        ending = "\n"
+        for ln in reversed(lines):
+            if ln.endswith("\r\n"):
+                ending = "\r\n"
+                break
+            if ln.endswith("\n"):
+                break
+    if lines and not (lines[-1].endswith("\n") or lines[-1].endswith("\r")):
+        lines[-1] = lines[-1] + ending
+    last = next((ln for ln in reversed(lines) if ln.strip()), "")
+    if not last.strip().startswith(";"):
+        lines.append(EOF_GUARD + ending)
+    return lines
+
+
+def guard_ini_text(content):
+    """`content` (a line list or a string) as a string ending in a comment line.
+
+    Non-mutating, so a caller's line list is untouched. This is what every
+    game-facing INI writer passes its output through.
+    """
+    if isinstance(content, str):
+        lines = content.splitlines(keepends=True)
+    else:
+        lines = list(content)
+    return "".join(ensure_eof_guard(lines))
+
+
+def write_ini_lines(path, lines, encoding="utf-8", errors=None):
+    """Write an INI line list with the EOF guard enforced."""
+    ensure_eof_guard(lines)
+    kw = {"encoding": encoding, "newline": ""}
+    if errors:
+        kw["errors"] = errors
+    with open(path, "w", **kw) as fh:
+        fh.writelines(lines)
+
+
 def modify_line(lines, line_idx, key_raw, new_value_str):
     """Rewrite a key=value line in place, preserving leading whitespace/ending."""
     line = lines[line_idx]

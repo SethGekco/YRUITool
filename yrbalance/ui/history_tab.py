@@ -8,6 +8,7 @@ vanilla-reference copy.
 Date grouping and multi-patch history are noted as future work.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 
 from PySide6.QtCore import Qt
@@ -182,7 +183,7 @@ class HistoryTab(QWidget):
         if not path:
             return
         with open(path, "w", encoding="utf-8", newline="") as f:
-            f.writelines(self._lines)
+            f.write(guard_ini_text(self._lines))
         self.status.setText(f"Saved reverted rules to {os.path.basename(path)}.")
 
     def _save_vanilla(self):
@@ -196,7 +197,7 @@ class HistoryTab(QWidget):
         copy = list(self._lines)
         n = restore_vanilla(copy)
         with open(path, "w", encoding="utf-8", newline="") as f:
-            f.writelines(copy)
+            f.write(guard_ini_text(copy))
         QMessageBox.information(
             self, "Vanilla reference",
             f"Reverted {n} annotated values to vanilla and saved a reference to:\n{path}")

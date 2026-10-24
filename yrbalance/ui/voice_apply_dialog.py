@@ -12,6 +12,7 @@ a line list, so injection writes it directly. Injection is append-only (see
 mixlib.inject_audio_samples), which is why that is safe to do last.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 import zipfile
 
@@ -36,7 +37,7 @@ _BOTH = "Keep both (rename mine)"
 
 def _write(path, lines):
     with open(path, "w", encoding="utf-8", newline="") as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))
 
 
 class VoiceApplyDialog(QDialog):

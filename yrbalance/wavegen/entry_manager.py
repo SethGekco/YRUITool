@@ -14,6 +14,7 @@ Each has a registry list section that also needs updating.
 """
 
 from __future__ import annotations
+from ..engine.ini_model import guard_ini_text
 import re, hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -744,7 +745,7 @@ def apply_deletions(aimd_path: str | Path,
             n_commented += 1
 
     with open(aimd_path, 'w', encoding='latin-1') as f:
-        f.writelines(out_lines)
+        f.write(guard_ini_text(out_lines))
 
     return n_deleted, n_commented
     cur_id = None
@@ -810,7 +811,7 @@ def apply_deletions(aimd_path: str | Path,
                 out_lines[idx] = '; ' + out_lines[idx].lstrip()
 
     with open(aimd_path, 'w', encoding='latin-1') as f:
-        f.writelines(out_lines)
+        f.write(guard_ini_text(out_lines))
 
     return n_deleted, n_commented
 
@@ -883,6 +884,6 @@ def cleanup_orphan_sidecars(aimd_path: str | Path) -> int:
             lines[i] = ''
 
     with open(aimd_path, 'w', encoding='latin-1') as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))
 
     return len(orphan_ranges)

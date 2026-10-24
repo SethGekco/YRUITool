@@ -67,6 +67,7 @@ Each script is a sequence of (action, argument) pairs written as:
 - Variable manipulation (18000-18999) for dynamic behavior
 """
 
+from ..engine.ini_model import guard_ini_text
 import re
 import secrets
 from dataclasses import dataclass, field
@@ -1356,7 +1357,7 @@ class ScriptGenerator:
         lines.append(";\r\n")
 
         with output_path.open("w", encoding="latin-1") as fh:
-            fh.writelines(lines)
+            fh.write(guard_ini_text(lines))
 
         return output_path
 

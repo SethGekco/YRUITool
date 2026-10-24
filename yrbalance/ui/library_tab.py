@@ -10,6 +10,7 @@ shows its estimated balance culture (per-kind factors vs vanilla), optionally
 summarized by Eva.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 import sys
 import shutil
@@ -1766,7 +1767,7 @@ class LibraryTab(QWidget):
             summ = apply_port_plan(tlines, tmap, plan, selected=selected)
             with open(target_rules, "w", encoding="latin-1",
                       errors="replace", newline="") as fh:
-                fh.write("".join(tlines))
+                fh.write(guard_ini_text("".join(tlines)))
             if hasattr(self.mw, "_load_rules_path"):
                 self.mw._load_rules_path(target_rules)
             return (f"Ported {summ['sections']} section(s) into "

@@ -17,7 +17,7 @@ index can't create a duplicate) and de-dupes.
 
 import re
 
-from .ini_model import line_ending, modify_line
+from .ini_model import line_ending, modify_line, pop_eof_guard
 
 
 def _shift_indices(section_map, insert_idx, by=1):
@@ -74,6 +74,11 @@ def append_raw_section(lines, section_map, section_name, raw_lines, ending="\n")
     if section_name.lower() in section_map:
         return section_name
 
+    # New content goes in front of a trailing ';' guard, never after it —
+    # otherwise this section's final key becomes the file's last line, which
+    # the engine does not read. The guard is put back below.
+    guard = pop_eof_guard(lines)
+
     if lines and lines[-1].strip() != "":
         lines.append(ending)
 
@@ -96,6 +101,7 @@ def append_raw_section(lines, section_map, section_name, raw_lines, ending="\n")
 
     section_map[section_name.lower()] = {
         "name_raw": section_name, "start": new_start, "keys": new_keys}
+    lines.extend(guard)          # exactly what trailed the file, now after us
     return section_name
 
 
@@ -219,12 +225,14 @@ def register_in_list(lines, section_map, section_name, state, key_prefix, value)
 
     if section_name.lower() not in section_map:
         ending = "\r\n" if lines and lines[-1].endswith("\r\n") else "\n"
-        new_start = len(lines)
+        guard = pop_eof_guard(lines)       # keep a trailing ';' guard last
         if lines and lines[-1].strip():
             lines.append(ending)
+        new_start = len(lines)
         lines.append(f"[{section_name}]{ending}")
         section_map[section_name.lower()] = {
             "name_raw": section_name, "start": new_start, "keys": {}}
+        lines.extend(guard)
 
     s = section_map[section_name.lower()]
     ending = line_ending(lines[s["start"]]) or "\n"

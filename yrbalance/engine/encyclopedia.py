@@ -12,6 +12,7 @@ I/O-free except build_mod_index (reads the mod's files) and export_unit (writes)
 Reuses the porter's resolution helpers so there is one source of truth.
 """
 
+from .ini_model import guard_ini_text
 import os
 from dataclasses import dataclass, field
 
@@ -259,7 +260,7 @@ def export_unit(index, unit_name, dest_folder, user_notes=None, credits=None):
                 lines += _section_block(index.rules_map, sec, ending)
     ini_path = os.path.join(dest_folder, f"{e.name}.ini")
     with open(ini_path, "w", encoding="latin-1", errors="replace") as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))
 
     # art/sound entries → a sidecar .ini
     side = []
@@ -270,7 +271,7 @@ def export_unit(index, unit_name, dest_folder, user_notes=None, credits=None):
     if side:
         with open(os.path.join(dest_folder, f"{e.name}_artsound.ini"), "w",
                   encoding="latin-1", errors="replace") as f:
-            f.writelines(side)
+            f.write(guard_ini_text(side))
 
     # media files
     wanted = [a.name for a in e.assets if a.status in ("present",)]

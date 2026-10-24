@@ -52,6 +52,7 @@ AA variants use the same structure with DMPRNODEFAA prefix.
   batch_size             Max buildings per batch. Default 20.
 """
 
+from ..engine.ini_model import guard_ini_text
 from dataclasses import dataclass, field
 from pathlib import Path
 from .rulesmd_parser import IniParser
@@ -530,7 +531,7 @@ class DefenseDummyGenerator:
             lines += self._killer_lines(ksw)
 
         with output_ini_path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
         # Update rulesmd.ini lists
         self._update_rulesmd_lists(rulesmd_path,
@@ -681,5 +682,5 @@ class DefenseDummyGenerator:
         file_lines[swt_ins:swt_ins] = new_sw
 
         with path.open('w', encoding='latin-1', errors='replace') as f:
-            f.writelines(file_lines)
+            f.write(guard_ini_text(file_lines))
 

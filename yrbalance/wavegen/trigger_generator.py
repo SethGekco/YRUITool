@@ -75,6 +75,7 @@ Support teams (Team2):
   General attack triggers paired with pool vehicle team
 """
 
+from ..engine.ini_model import guard_ini_text
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -533,6 +534,6 @@ class TriggerGenerator:
         lines.append(';\r\n')
 
         with output_path.open('w', encoding='latin-1') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
         return output_path

@@ -561,6 +561,67 @@ def pack_media_mixes(files, dest_folder, base_name, per_mix_limit=0,
     return written
 
 
+# (folder, filename, mix-signature) -> bytes|None. A deep mix search costs
+# 15-20s on a real game folder, and the porter needs the same file on Analyze
+# and again on Apply.
+_INI_FROM_MIX_CACHE = {}
+
+
+def _mix_signature(folder):
+    sig = []
+    try:
+        for fn in sorted(os.listdir(folder)):
+            if fn.lower().endswith(".mix"):
+                st = os.stat(os.path.join(folder, fn))
+                sig.append((fn.lower(), st.st_size, int(st.st_mtime)))
+    except OSError:
+        pass
+    return tuple(sig)
+
+
+def load_ini_text(folder, names, search_mixes=True, max_depth=4):
+    """Find an INI for a mod folder: loose first, then inside its mixes.
+
+    Returns (origin, path, text): origin is "loose" (path is the file),
+    "mix" (path is None — the text was extracted from one of the folder's
+    mixes) or None (not found anywhere; text is None).
+
+    Looking only for a LOOSE file is not enough: a stock game install keeps
+    soundmd.ini inside ra2md.mix, so a porter that checked for a loose sibling
+    concluded there was no sound file and never attempted sound at all.
+    """
+    if not folder:
+        return None, None, None
+    try:
+        listing = {f.lower(): f for f in os.listdir(folder)}
+    except OSError:
+        listing = {}
+    for nm in names:
+        real = listing.get(nm.lower())
+        if real:
+            path = os.path.join(folder, real)
+            try:
+                with open(path, "rb") as fh:
+                    return "loose", path, fh.read().decode("latin-1")
+            except OSError:
+                pass
+    if not search_mixes:
+        return None, None, None
+    sig = _mix_signature(folder)
+    for nm in names:
+        key = (os.path.realpath(folder), nm.lower(), sig)
+        if key not in _INI_FROM_MIX_CACHE:
+            try:
+                _INI_FROM_MIX_CACHE[key] = find_in_mixes(
+                    [folder], nm, max_depth=max_depth)
+            except Exception:
+                _INI_FROM_MIX_CACHE[key] = None
+        data = _INI_FROM_MIX_CACHE[key]
+        if data:
+            return "mix", None, data.decode("latin-1")
+    return None, None, None
+
+
 def find_in_mixes(folders, filename, max_depth=3,
                   priority=("ra2md.mix", "ra2.mix"),
                   max_sub_size=64 * 1024 * 1024):

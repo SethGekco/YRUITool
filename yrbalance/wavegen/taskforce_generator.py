@@ -74,6 +74,7 @@ User chooses: delete / keep+use / keep+ignore
 No duplicates — if accidental duplicate, merge labels instead.
 """
 
+from ..engine.ini_model import guard_ini_text
 import random
 import re
 import secrets
@@ -2454,7 +2455,7 @@ class TaskforceGenerator:
         lines.append(";\r\n")
 
         with output_path.open("w", encoding="latin-1") as fh:
-            fh.writelines(lines)
+            fh.write(guard_ini_text(lines))
 
         return output_path
 

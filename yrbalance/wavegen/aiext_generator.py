@@ -18,6 +18,7 @@ never from hardcoded unit IDs.
 """
 
 from __future__ import annotations
+from ..engine.ini_model import guard_ini_text
 
 import math
 import statistics
@@ -1479,7 +1480,7 @@ class AIExtWriter:
         lines[insert_at:insert_at] = new_lines
 
         with output_path.open('w', encoding='latin-1') as f:
-            f.writelines(lines)
+            f.write(guard_ini_text(lines))
 
         return output_path
 

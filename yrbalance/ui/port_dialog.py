@@ -7,6 +7,7 @@ The heavy analysis runs on the engine's portmod core in a worker thread so the
 UI stays responsive on big mods.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 
 from PySide6.QtCore import Qt, QThread, Signal
@@ -25,11 +26,12 @@ from ..engine import (
     build_media_catalog, resolve_media, pack_media_mixes,
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
-    load_with_includes, include_graph, flatten_graph,
+    load_with_includes, include_graph, flatten_graph, load_ini_text,
 )
 # Dialog split out in cleanup C3; re-exported here so existing imports resolve.
 from .include_select_dialog import _IncludeSelectDialog
 
+_SND_NAMES = ("soundmd.ini", "sound.ini")
 _FACTOR_KINDS = ("infantry", "vehicle", "aircraft", "building", "weapon")
 _CONF_COLOR = {"high": "#2e7d32", "medium": "#f9a825", "low": "#c62828",
                "none": "#888888"}
@@ -314,9 +316,27 @@ class PortDialog(QDialog):
             vm = (build_section_map(parse_ini_lines(van))[0]
                   if van and os.path.isfile(van) else None)
             art_p = _sibling(folder, "artmd.ini", "art.ini")
-            snd_p = _sibling(folder, "soundmd.ini", "sound.ini")
             am, _ = _map(art_p) if art_p else (None, [])   # art/sound: fully resolved
-            sn, _ = _map(snd_p) if snd_p else (None, [])
+            # soundmd: loose beside the mod, else inside the mod's own mixes,
+            # else the mod has none and INHERITS the game's — which lives in
+            # the target game's mixes. A loose-only check concluded "no sound"
+            # for any mod that keeps soundmd packed, and never tried at all.
+            snd_origin, snd_p, snd_text = load_ini_text(folder, _SND_NAMES)
+            snd_from = ("beside the source" if snd_origin == "loose" else
+                        "in the source's mixes" if snd_origin == "mix" else "")
+            if snd_origin is None:
+                tgt_folder = os.path.dirname(self.mw.source_path or "")
+                snd_origin, snd_p, snd_text = load_ini_text(tgt_folder,
+                                                            _SND_NAMES)
+                if snd_origin:
+                    snd_from = ("none of its own — it inherits the game's, "
+                                "read from the target")
+            if snd_origin == "loose":
+                sn, _ = _map(snd_p)
+            elif snd_text:
+                sn = build_section_map(snd_text.splitlines(keepends=True))[0]
+            else:
+                sn = None
             inc_files = []
             if resolve_inc:
                 inc_files = [os.path.basename(f) for f in
@@ -324,7 +344,13 @@ class PortDialog(QDialog):
             plan = build_port_plan(sm, self.mw.section_map, vm,
                                    config=self.mw.config,
                                    src_art_map=am, src_sound_map=sn)
-            return plan, bool(art_p), bool(snd_p), inc_files, src_missing
+            if snd_from.startswith("none of its own"):
+                # The entries came from the game's own soundmd, so the samples
+                # they name are the game's own audio — nothing to transfer.
+                for o in plan.objects:
+                    o.media_files = [m for m in o.media_files
+                                     if not m.upper().endswith(".WAV")]
+            return plan, bool(art_p), snd_from, inc_files, src_missing
 
         self._worker = _Worker(work)
         self._worker.done.connect(self._plan_ready)
@@ -336,7 +362,7 @@ class PortDialog(QDialog):
         self.status.setText(f"Analysis failed: {msg}")
 
     def _plan_ready(self, result):
-        self.plan, had_art, had_snd, inc_files, src_missing = result
+        self.plan, had_art, snd_from, inc_files, src_missing = result
         self._busy(False)
         self._fill_factors()
         self._fill_tree()
@@ -344,8 +370,11 @@ class PortDialog(QDialog):
         extra = []
         if had_art:
             extra.append("artmd found")
-        if had_snd:
-            extra.append("soundmd found")
+        if snd_from:
+            extra.append(f"soundmd: {snd_from}")
+        else:
+            extra.append("soundmd: not found beside the source, in its mixes "
+                         "or in the target's")
         if inc_files:
             extra.append(f"{len(inc_files)} include(s) resolved")
         if src_missing:
@@ -531,7 +560,7 @@ class PortDialog(QDialog):
                     text = plan_to_blueprint(self.plan)
                 finally:
                     self.plan.objects = orig
-                open(p, "w", encoding="utf-8").write(text)
+                open(p, "w", encoding="utf-8").write(guard_ini_text(text))
                 msgs.append(f"Blueprint: {os.path.basename(p)} "
                             f"({len(selected)} objs)")
 
@@ -557,13 +586,22 @@ class PortDialog(QDialog):
                        if o.name in selected)
         art = snd = None
         art_path = _sibling(folder, "artmd.ini", "art.ini") if need_art else None
-        snd_path = _sibling(folder, "soundmd.ini", "sound.ini") if need_snd else None
+        snd_path, snd_origin = None, None
+        if need_snd:
+            snd_origin, snd_path, snd_text = load_ini_text(folder, _SND_NAMES)
+            if snd_origin == "loose":
+                sl = parse_ini_lines(snd_path)
+                snd = (sl, build_section_map(sl)[0])
+            elif snd_origin == "mix":
+                # Packed in the game's mixes: work on that text, and only if
+                # something is actually appended write it out as a NEW loose
+                # soundmd.ini, which the game reads in preference to the mix.
+                sl = snd_text.splitlines(keepends=True)
+                snd = (sl, build_section_map(sl)[0])
+                snd_path = os.path.join(folder, "soundmd.ini")
         if art_path:
             al = parse_ini_lines(art_path)
             art = (al, build_section_map(al)[0])
-        if snd_path:
-            sl = parse_ini_lines(snd_path)
-            snd = (sl, build_section_map(sl)[0])
 
         summ = apply_port_plan(tlines, tmap, self.plan, selected=selected,
                                overrides=overrides, art=art, sound=snd)
@@ -577,10 +615,27 @@ class PortDialog(QDialog):
             make_backup(art_path, None, keep=10)
             _write(art_path, art[0])
             written.append(os.path.basename(art_path))
+        snd_note = ""
         if snd and summ["sound"]:
-            make_backup(snd_path, None, keep=10)
+            if snd_origin == "loose":
+                make_backup(snd_path, None, keep=10)
+                written.append(os.path.basename(snd_path))
+            else:
+                written.append(f"{os.path.basename(snd_path)} (new — copied "
+                               "from the game's mixes, plus the ported "
+                               "entries)")
             _write(snd_path, snd[0])
-            written.append(os.path.basename(snd_path))
+        if need_snd:
+            wanted = {n.lower() for o in self.plan.objects if o.name in selected
+                      for n, _ in o.sound_entries}
+            if snd is None:
+                snd_note = (f" {len(wanted)} sound entr(ies) referenced, but the "
+                            "target has no soundmd.ini loose or in its mixes — "
+                            "not written.")
+            elif not summ["sound"] and wanted:
+                snd_note = (f" All {len(wanted)} referenced sound entr(ies) "
+                            "already exist in the target's soundmd — nothing "
+                            "to add.")
 
         media_msg = ""
         if self.media_chk.isChecked():
@@ -594,7 +649,7 @@ class PortDialog(QDialog):
         return (f"Applied: {summ['sections']} section(s), "
                 f"{summ['registered']} registered, {summ['art']} art, "
                 f"{summ['sound']} sound. Wrote: {', '.join(written)} "
-                f"(backups kept).{media_msg}{ai_msg}")
+                f"(backups kept).{snd_note}{media_msg}{ai_msg}")
 
     def _import_ai(self, selected, target_folder, target_rules_map):
         """Transplant the source mod's AI for the ported units into the target's
@@ -687,4 +742,4 @@ class PortDialog(QDialog):
 
 def _write(path, lines):
     with open(path, "w", encoding="utf-8", newline="") as f:
-        f.writelines(lines)
+        f.write(guard_ini_text(lines))

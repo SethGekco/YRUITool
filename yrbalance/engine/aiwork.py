@@ -14,6 +14,7 @@ Seeds:
   • an existing aimd — e.g. a copy of the loaded mod's, to build on.
 """
 
+from .ini_model import guard_ini_text
 import os
 import shutil
 
@@ -74,7 +75,7 @@ def resolve_vanilla_aimd(game_dir=None):
 def _write_text(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="latin-1", errors="replace", newline="") as fh:
-        fh.write(text)
+        fh.write(guard_ini_text(text))
     return path
 
 

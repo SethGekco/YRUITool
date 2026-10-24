@@ -7,6 +7,7 @@ generate waves/triggers. This is one of the three sub-tabs inside the AI (aimd)
 tab (see ai_tab.AiTab); the AI library and Unit Roles live in their own sub-tabs.
 """
 
+from ..engine.ini_model import guard_ini_text
 import os
 
 from PySide6.QtCore import Qt
@@ -397,7 +398,7 @@ class AiBuilderTab(QWidget):
             make_backup(self.aimd_path, None, keep=10)
             with open(self.aimd_path, "w", encoding="latin-1",
                       errors="replace", newline="") as fh:
-                fh.write("".join(self.aimd_lines))
+                fh.write(guard_ini_text("".join(self.aimd_lines)))
         except Exception as e:
             QMessageBox.critical(self, "Save", f"{type(e).__name__}: {e}")
             return
