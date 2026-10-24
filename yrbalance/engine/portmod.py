@@ -26,7 +26,8 @@ from .ini_model import get_val, clean_value as _clean, num_value as _num
 from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
-from .sections import append_raw_section, set_key_in_appended_section
+from .sections import (append_raw_section, set_key_in_appended_section,
+                       make_safe_clone_name)
 from .obtain import classify_obtainability, OB_DUMMY
 
 # Stats the tool actively balances, and which section each applies to.
@@ -111,6 +112,9 @@ class PortPlan:
     factors: dict = field(default_factory=dict)          # stat -> StatFactor
     target_countries: list = field(default_factory=list)
     global_warnings: list = field(default_factory=list)
+    # {source_name: ported_name} for chain sections whose name the target
+    # already uses for a DIFFERENT definition (see classify_new_objects).
+    renames: dict = field(default_factory=dict)
 
     def by_kind(self):
         out = {}
@@ -137,7 +141,23 @@ def _is_dummy_building(section_map, name):
     return tl is not None and tl < 0 and (cost is None or cost == 0)
 
 
-def classify_new_objects(src_map, tgt_map, config=None, obtain=None):
+# Suffix for a ported chain section whose name the target already uses.
+COLLISION_SUFFIX = "_P"
+# AbstractTypeClass::ID is char[25] in the engine, so an ID is at most 24.
+MAX_ID_LEN = 24
+
+
+def _same_definition(src_map, tgt_map, name):
+    """Whether a section has the same keys and values in both mods (order and
+    comments ignored)."""
+    def norm(m):
+        return sorted((k.strip().lower(), _clean(v).strip().lower())
+                      for k, v in _ordered_keys(m, name))
+    return norm(src_map) == norm(tgt_map)
+
+
+def classify_new_objects(src_map, tgt_map, config=None, obtain=None,
+                         renames=None):
     """Return {kind: [names]} for sections in src not in tgt, by object kind.
 
     TechnoTypes come from the source's type-list registries; weapons/warheads/
@@ -172,14 +192,70 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None):
             add("building_dummy" if is_dummy(name) else "building", name)
 
     # Reference closure: weapons → warheads/projectiles, over the new technos.
+    #
+    # A chain section whose NAME the target already has is not automatically
+    # the same section. This used to drop every such name, so a ported unit
+    # silently fired the TARGET's weapon of that name: porting R.I.P World
+    # Powers into the cncnet edition, 55 of 230 weapon references named a
+    # target weapon with a different definition (CAPOC's 120mmxx2 is 90 dmg /
+    # ROF 65 / AP in the source, 100 / 80 / ApocAP in the target). Identical
+    # sections are still reused; a DIFFERENT one is imported under a minted
+    # name, and build_port_plan repoints every reference at it. The target's
+    # own section is never touched, so its other users are unaffected.
     seeds = [n for names in kinds.values() for n in names]
-    weapons, warheads, projectiles = _closure(src_map, seeds)
-    for w in weapons:
-        add("weapon", w)
-    for wh in warheads:
-        add("warhead", wh)
-    for p in projectiles:
-        add("projectile", p)
+    taken = {k: True for k in tgt_map}
+    taken.update({k: True for k in src_map})
+
+    def ref(name, tag):
+        return _clean(get_val(src_map, name, tag))
+
+    def real(x):
+        return x and x.lower() not in ("none", "") and _exists(src_map, x)
+
+    decided = {}            # source name (lower) -> "new" | "reuse" | "rename"
+
+    def decide(kind, name):
+        """Classify one chain section; True if it is being imported, so its
+        own references must be followed. A REUSED section keeps the target's
+        definition — and the target's references — so descending into it
+        would import orphans nothing points at."""
+        key = name.lower()
+        if key in decided:
+            return decided[key] != "reuse"
+        if not _exists(tgt_map, name):
+            decided[key] = "new"
+            add(kind, name)
+        elif _same_definition(src_map, tgt_map, name):
+            decided[key] = "reuse"
+        else:
+            decided[key] = "rename"
+            new = make_safe_clone_name(name, COLLISION_SUFFIX, taken,
+                                       max_len=MAX_ID_LEN)
+            taken[new.lower()] = True
+            if renames is not None:
+                renames[name] = new
+            kinds.setdefault(kind, [])
+            if new not in kinds[kind]:
+                kinds[kind].append(new)
+        return decided[key] != "reuse"
+
+    queue = []
+    for s in seeds:
+        for wt in tuple(ALL_WEAPON_TAGS) + _EXTRA_TECHNO_WEAPON_TAGS:
+            w = ref(s, wt)
+            if real(w) and decide("weapon", w):
+                queue.append(w)
+    while queue:
+        w = queue.pop(0)
+        wh = ref(w, "Warhead")
+        if real(wh):
+            decide("warhead", wh)
+        pr = ref(w, "Projectile")
+        if real(pr) and decide("projectile", pr):
+            for tag in _PROJECTILE_WEAPON_TAGS:
+                sub = ref(pr, tag)
+                if real(sub) and decide("weapon", sub):
+                    queue.append(sub)
     return kinds
 
 
@@ -437,7 +513,11 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                     else compute_factors(src_map, tgt_map, vanilla_map))
     obtain = classify_obtainability(src_map, config, art_map=src_art_map)
 
-    kinds = classify_new_objects(src_map, tgt_map, config, obtain=obtain)
+    renames = {}
+    kinds = classify_new_objects(src_map, tgt_map, config, obtain=obtain,
+                                 renames=renames)
+    plan.renames = dict(renames)
+    orig_of = {new.lower(): old for old, new in renames.items()}
     moved_lower = {n.lower() for names in kinds.values() for n in names}
 
     for kind, names in kinds.items():
@@ -450,12 +530,17 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
         fkind = _OBJ_TO_FACTOR_KIND.get(kind)
         kind_factors = plan.factors.get(fkind, {})
         for name in names:
+            src_name = orig_of.get(name.lower(), name)   # renamed -> original
             obj = PortObject(name=name, kind=kind,
-                             keys=_ordered_keys(src_map, name),
-                             obtainability=obtain.get(name.lower()))
+                             keys=_ordered_keys(src_map, src_name),
+                             obtainability=obtain.get(src_name.lower()))
+            if src_name != name:
+                obj.warnings.append(
+                    f"ported as [{name}]: the target already has a DIFFERENT "
+                    f"[{src_name}], which is left as it is")
             # rescale balance stats using THIS kind's factor
             for stat in stats:
-                old = _stat(src_map, name, stat)
+                old = _stat(src_map, src_name, stat)
                 if old is None:
                     continue
                 sf = kind_factors.get(stat)
@@ -531,6 +616,21 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                     name, src_map, src_sound_map)
                 obj.media_files += snd_files
             plan.objects.append(obj)
+
+    # Repoint every chain reference at the minted names: a unit's Primary=,
+    # a weapon's Warhead=/Projectile=, a projectile's ShrapnelWeapon=, ...
+    if renames:
+        low = {k.lower(): v for k, v in renames.items()}
+        for o in plan.objects:
+            o.keys = [(kr, low[_clean(vr).lower()])
+                      if kr.lower() in _CHAIN_TAGS
+                      and _clean(vr).lower() in low else (kr, vr)
+                      for kr, vr in o.keys]
+        plan.global_warnings.append(
+            f"{len(renames)} weapon/warhead/projectile name(s) already exist "
+            f"in the target with a DIFFERENT definition; imported under new "
+            f"names ({COLLISION_SUFFIX} suffix) so the source units keep their "
+            f"own weapons and the target's are untouched.")
 
     if not plan.objects:
         plan.global_warnings.append("No new content found to port.")

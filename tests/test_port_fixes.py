@@ -12,6 +12,9 @@ Porter regressions found porting R.I.P World Powers into a stock game install.
   4. The engine never reads an INI's last line, so every written INI must end
      with a comment. Appending after an existing ';' made a ported section's
      final key the file's last line, where it was silently lost.
+  5. A weapon the target ALSO defines — under the same name, differently —
+     was silently dropped, so the ported unit fired the target's version.
+     It is now imported under a minted name and the unit repointed at it.
 
     python3 tests/test_port_fixes.py
 """
@@ -182,6 +185,62 @@ def main():
     print(f"append lands before the guard, section map stays correct, real "
           f"comments untouched: {'OK' if pop_ok and keep_ok else 'FAIL'}")
     ok = ok and pop_ok and keep_ok
+
+    # ── 5. same name, different definition -> imported under a new name ───
+    long_wh = "W" * 23                                  # 23 + "_P" > 24
+    col_tgt = VANILLA + """\
+[ROCK]
+Damage=50
+ROF=40
+Range=6
+Warhead=SA
+Projectile=InvisibleLow
+[%s]
+Verses=50%%,50%%,50%%,50%%,50%%,50%%,50%%,50%%,50%%,50%%,50%%
+;
+""" % long_wh
+    col_src = VANILLA.replace("0=E1", "0=E1\n1=TANK") + """\
+[TANK]
+Cost=900
+Strength=400
+Primary=ROCK
+Secondary=M60
+[ROCK]
+Damage=90
+ROF=40
+Range=6
+Warhead=%s
+Projectile=InvisibleLow
+[%s]
+Verses=100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%
+""" % (long_wh, long_wh)
+    with tempfile.TemporaryDirectory() as d:
+        sm = build_section_map(parse_ini_lines(_w(d, "s.ini", col_src)))[0]
+        tl = parse_ini_lines(_w(d, "t.ini", col_tgt))
+        tm = build_section_map(tl)[0]
+        vm = build_section_map(parse_ini_lines(_w(d, "v.ini", VANILLA)))[0]
+        plan = build_port_plan(sm, tm, vm)
+        rn = plan.renames
+        wh_new = rn.get(long_wh, "")
+        apply_port_plan(tl, tm, plan, selected={"TANK"})
+        pw = get_val(tm, "TANK", "Primary")
+        col_ok = (rn.get("ROCK") == "ROCK_P"
+                  and "M60" not in rn                    # identical: reused
+                  and 0 < len(wh_new) <= 24
+                  and pw == "ROCK_P"
+                  # the SOURCE's 90 through the culture factor, not the
+                  # target's 50
+                  and get_val(tm, "ROCK_P", "Damage") not in ("50", None)
+                  and get_val(tm, "ROCK_P", "Warhead") == wh_new
+                  and get_val(tm, "ROCK", "Damage") == "50"   # target's kept
+                  and get_val(tm, "TANK", "Secondary") == "M60"
+                  and any("ROCK_P" in w for o in plan.objects
+                          if o.name == "ROCK_P" for w in o.warnings)
+                  and any("DIFFERENT" in w for w in plan.global_warnings))
+        print(f"colliding weapon/warhead imported under a minted name, unit "
+              f"repointed, target's own left alone, identical reused: "
+              f"{'OK' if col_ok else 'FAIL'} renames={rn} Primary={pw}")
+        ok = ok and col_ok
 
     # ── 3. soundmd from loose, from a mix, or not at all ────────────────────
     with tempfile.TemporaryDirectory() as d:

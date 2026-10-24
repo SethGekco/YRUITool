@@ -381,7 +381,8 @@ class PortDialog(QDialog):
             extra.append(f"{len(src_missing)} include(s) missing")
         self.status.setText(
             f"{n} importable object(s). Tick what you want, tune ratios, Run. "
-            + (" / ".join(extra) if extra else "no art/sound files beside source"))
+            + (" / ".join(extra) if extra else "no art/sound files beside source")
+            + "".join(f"\n⚠ {w}" for w in self.plan.global_warnings))
         self.run_btn.setEnabled(True)
         self.raw_btn.setEnabled(True)
 
