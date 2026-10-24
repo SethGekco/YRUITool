@@ -27,6 +27,8 @@ import struct
 import zlib
 from dataclasses import dataclass
 
+from .ini_model import guard_ini_bytes
+
 from ._blowfish import Blowfish
 
 MIX_CHECKSUM = 0x00010000
@@ -118,6 +120,15 @@ def _decrypt_blowfish_key(src):
         pre_len -= a + 1
         off += a + 1
     return bytes(out[:56])
+
+
+def for_disk(filename, data):
+    """An extracted entry as it should land on disk: a loose .ini gets the
+    ';' guard the engine needs (it never reads an INI's last line); every
+    other file is written byte for byte."""
+    if filename.lower().endswith(".ini"):
+        return guard_ini_bytes(data)
+    return data
 
 
 class MixError(Exception):
@@ -299,7 +310,7 @@ class MixFile:
 
     def extract(self, name, dest_path):
         with open(dest_path, "wb") as f:
-            f.write(self.read(name))
+            f.write(for_disk(dest_path, self.read(name)))
 
     def extract_all(self, dest_dir):
         """Extract every entry. Named entries keep their name; unnamed are written
@@ -309,7 +320,7 @@ class MixFile:
         for fid, size, name, typ in self.listing():
             fn = name or f"{fid:08X}.{typ}"
             with open(os.path.join(dest_dir, fn), "wb") as f:
-                f.write(self.read_id(fid))
+                f.write(for_disk(fn, self.read_id(fid)))
             written.append(fn)
         return written
 

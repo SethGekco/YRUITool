@@ -23,7 +23,7 @@ Orchestration order:
 
 TOOL_VERSION = "v39"  # Update with each release
 
-from ..engine.ini_model import guard_ini_text
+from ..engine.ini_model import guard_ini_text, guard_ini_bytes
 import argparse
 import sys
 import shutil
@@ -765,7 +765,7 @@ def reorder_aimd(path):
     # Other 'unknown' hex-form sections are preserved above; here we
     # only skip literal named blocks like [Digest].
 
-    path.write_text(''.join(out), encoding='latin-1')
+    path.write_text(guard_ini_text(''.join(out)), encoding='latin-1')
 
 
 def main():
@@ -1654,10 +1654,13 @@ def main():
     if n_orphans > 0:
         print(f"  Cleaned up {n_orphans} orphaned .AIExt sidecar section(s)")
 
-    # Trailing semicolon (game never reads last line)
+    # Trailing semicolon (game never reads last line). Only when missing: an
+    # unconditional append stacked one more ';' line on every run.
     for path in [out_aimd, out_rules]:
-        with path.open('a', encoding='latin-1') as f:
-            f.write(';\r\n')
+        data = path.read_bytes()
+        guarded = guard_ini_bytes(data)
+        if guarded != data:
+            path.write_bytes(guarded)
 
     # Update RelaxedStray if wave-scale > 1
     if wave_scale > 1:

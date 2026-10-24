@@ -59,12 +59,16 @@ def main():
         print(f"listing type sniff: {types}  {'OK' if sniff_ok else 'FAIL'}")
         ok = ok and sniff_ok
 
-        # extract_all round-trips the bytes to disk
+        # extract_all round-trips the bytes to disk — except that a loose
+        # .ini gets the ';' guard the engine needs (it skips an INI's last line)
+        from yrbalance.engine.ini_model import guard_ini_bytes
         outdir = os.path.join(d, "ex")
         written = m.extract_all(outdir)
         ex_ok = (set(files) <= set(written)
                  and open(os.path.join(outdir, "rulesmd.ini"), "rb").read()
-                 == files["rulesmd.ini"])
+                 == guard_ini_bytes(files["rulesmd.ini"])
+                 and open(os.path.join(outdir, "gtnk01.vxl"), "rb").read()
+                 == files["gtnk01.vxl"])
         print(f"extract_all ({len(written)} files): {'OK' if ex_ok else 'FAIL'}")
         ok = ok and ex_ok
 

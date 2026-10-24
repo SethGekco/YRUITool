@@ -262,6 +262,30 @@ def guard_ini_text(content):
     return "".join(ensure_eof_guard(lines))
 
 
+# Byte-level guard, for files the tool copies or appends to without parsing
+# (mix extraction, guarding a read-only mod file in place).
+def last_line_unguarded(data):
+    """The last non-blank line of an INI's bytes when it is NOT a comment
+    (that line is never read by the game), else None. Empty files count as
+    unguarded ("")."""
+    for raw in reversed(data.splitlines()):
+        s = raw.strip()
+        if s:
+            return None if s.startswith(b";") else s.decode("latin-1")
+    return ""
+
+
+def guard_ini_bytes(data):
+    """`data` with a ';' line appended if its last line isn't a comment —
+    keeps the file's own line ending."""
+    if last_line_unguarded(data) is None:
+        return data
+    nl = b"\r\n" if b"\r\n" in data else b"\n"
+    if data and not data.endswith((b"\n", b"\r")):
+        data += nl
+    return data + b";" + nl
+
+
 def write_ini_lines(path, lines, encoding="utf-8", errors=None):
     """Write an INI line list with the EOF guard enforced."""
     ensure_eof_guard(lines)

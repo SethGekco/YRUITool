@@ -193,6 +193,10 @@ from .modhistory import (
     record_load, record_changes, update_snapshot, unit_history,
     format_timeline, clear_history,
 )
+from .eofguard import (
+    last_line_unguarded, guard_ini_bytes, mod_ini_files, scan_eof_guards,
+    add_eof_guard,
+)
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     plan_to_files, apply_port_plan, clean_owner, clean_prereq, target_countries,
@@ -341,6 +345,9 @@ __all__ = [
     "make_backup", "list_backups", "default_backup_dir",
     # lint
     "lint_ai", "has_ai_sections", "format_findings", "LintFinding",
+    # eofguard
+    "last_line_unguarded", "guard_ini_bytes", "mod_ini_files",
+    "scan_eof_guards", "add_eof_guard",
     # portmod
     "build_port_plan", "classify_new_objects", "compute_factors",
     "plan_to_blueprint", "plan_to_files", "apply_port_plan", "clean_owner",

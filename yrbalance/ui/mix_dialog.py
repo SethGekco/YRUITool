@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from ..engine import (
     MixFile, write_mix, make_backup, MixError, is_stock_mix, mix_id,
 )
+from ..engine.mixlib import for_disk
 
 _LMD_ID = mix_id("local mix database.dat")
 
@@ -162,7 +163,7 @@ class MixBrowserDialog(QDialog):
         for e in ents:
             fn = e.name or f"{e.id:08X}.bin"
             with open(os.path.join(d, fn), "wb") as f:
-                f.write(self.mix.read_id(e.id))
+                f.write(for_disk(fn, self.mix.read_id(e.id)))
             n += 1
         self.status.setText(f"Extracted {n} file(s) to {d}")
 

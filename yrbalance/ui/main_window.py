@@ -19,7 +19,9 @@ from ..engine import (
     ModConfig, BalanceSpec, parse_ini_lines, build_section_map, restore_vanilla,
     make_backup, default_backup_dir,
 )
+from ..engine import mod_ini_files
 from . import controller, blueprint
+from .eof_guard_bar import EofGuardBar
 from .category_tab import CategoryTab
 from .section_form_tab import SectionFormTab
 from .global_tab import GlobalTab
@@ -103,6 +105,9 @@ class MainWindow(QMainWindow):
         central = QWidget()
         root = QVBoxLayout(central)
         root.addLayout(self._build_toolbar())
+        # Loaded-mod INIs whose last line the game never reads (no ';' guard).
+        self.eof_bar = EofGuardBar()
+        root.addWidget(self.eof_bar)
 
         self.tabs = QTabWidget()
 
@@ -673,6 +678,7 @@ class MainWindow(QMainWindow):
         # History tab: scan the loaded rules for tool-annotated changes.
         self.history_tab.set_rules(self.lines, self.section_map, self.config)
         self._archive_rules(path)
+        self.eof_bar.check_later(lambda: mod_ini_files(path), "the loaded mod")
         self.settings.setValue("last_rules", path)
         self._record_load_history(path)
 

@@ -28,9 +28,10 @@ from ..engine import (
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
     load_with_includes, include_graph, flatten_graph, load_ini_text,
     conflicts_in_selection, CONFLICT_SOURCE, CONFLICT_REBALANCED,
-    CONFLICT_BOTH,
+    CONFLICT_BOTH, mod_ini_files,
 )
 from .port_conflict_dialog import PortConflictDialog
+from .eof_guard_bar import EofGuardBar
 # Dialog split out in cleanup C3; re-exported here so existing imports resolve.
 from .include_select_dialog import _IncludeSelectDialog
 
@@ -130,6 +131,8 @@ class PortDialog(QDialog):
         self.status.setStyleSheet("color: gray;")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
+        self.eof_bar = EofGuardBar()
+        root.addWidget(self.eof_bar)
 
         split = QSplitter(Qt.Vertical)
 
@@ -392,6 +395,11 @@ class PortDialog(QDialog):
             + "".join(f"\n⚠ {w}" for w in self.plan.global_warnings))
         self.run_btn.setEnabled(True)
         self.raw_btn.setEnabled(True)
+        src = self.src_edit.text().strip()
+        self.eof_bar.check_later(
+            lambda: mod_ini_files(src), "the old mod",
+            note="In the old mod those lines never took effect, but the "
+                 "porter copies them as active lines.")
 
     def _fill_factors(self):
         rows = []
