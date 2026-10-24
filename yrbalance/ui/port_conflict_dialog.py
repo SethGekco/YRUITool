@@ -1,13 +1,15 @@
 """
 Name-conflict review for the porter.
 
-A weapon / warhead / projectile the old mod and the loaded mod both define
-under the SAME name, differently. Each one is shown three ways side by side —
-the loaded mod's (being imported into), the old mod's as written (being
-exported from), and the old mod's rebalanced to the loaded mod — and the user
-picks: keep the loaded mod's, replace it with either old-mod version, or keep
-both by importing the old mod's under a new name. Identical sections never
-reach this dialog; they are simply reused.
+A unit / building / weapon / warhead / projectile the old mod and the loaded
+mod both define under the SAME name, differently. Each one is shown three ways
+side by side — the loaded mod's (being imported into), the old mod's as
+written (being exported from), and the old mod's rebalanced to the loaded mod
+— and the user picks: keep the loaded mod's, replace it with either old-mod
+version, or keep both by importing either old-mod version under a new name.
+Keeping both also lets each ported object that uses the name stay attached to
+the loaded mod's version instead of the copy. Identical sections never reach
+this dialog; they are simply reused.
 """
 
 import html
@@ -21,9 +23,16 @@ from PySide6.QtWidgets import (
 )
 
 from ..engine import (
-    conflict_versions, conflicts_in_selection, CONFLICT_CHOICES,
-    CONFLICT_KEEP_TARGET, CONFLICT_SOURCE, CONFLICT_REBALANCED, CONFLICT_BOTH,
+    conflict_versions, conflicts_in_selection, conflict_referrers,
+    CONFLICT_CHOICES, CONFLICT_KEEP_TARGET, CONFLICT_SOURCE,
+    CONFLICT_REBALANCED, CONFLICT_BOTH, CONFLICT_BOTH_SOURCE, ATTACH_COPY,
+    ATTACH_TARGET,
 )
+
+_KEEP_BOTH = (CONFLICT_BOTH_SOURCE, CONFLICT_BOTH)
+_TECHNO_LIST = {"infantry": "InfantryTypes", "vehicle": "VehicleTypes",
+                "aircraft": "AircraftTypes", "building": "BuildingTypes",
+                "building_dummy": "BuildingTypes"}
 
 _SAME, _DIFF, _ONLY = "#888888", "#c62828", "#1565c0"
 
@@ -33,6 +42,8 @@ def choice_label(choice, conflict):
         CONFLICT_KEEP_TARGET: "Keep the loaded mod's",
         CONFLICT_SOURCE: "Replace with the old mod's (as written)",
         CONFLICT_REBALANCED: "Replace with the old mod's (rebalanced)",
+        CONFLICT_BOTH_SOURCE: f"Keep both — import the old mod's (as written) "
+                              f"as [{conflict.new_name}]",
         CONFLICT_BOTH: f"Keep both — import the old mod's (rebalanced) as "
                        f"[{conflict.new_name}]",
     }[choice]
@@ -76,18 +87,25 @@ class PortConflictDialog(QDialog):
         self.overrides = overrides
         self.conflicts = conflicts_in_selection(plan, self.selected)
         prior = {k.lower(): v for k, v in (resolutions or {}).items()}
-        self._choice = {c.name: prior.get(c.name.lower(), CONFLICT_BOTH)
-                        for c in self.conflicts}
+        self._choice, self._attach = {}, {}
+        for c in self.conflicts:
+            v = prior.get(c.name.lower(), CONFLICT_BOTH)
+            if isinstance(v, dict):
+                self._attach[c.name] = dict(v.get("attach") or {})
+                v = v.get("choice", CONFLICT_BOTH)
+            self._choice[c.name] = v
+        self._cur = -1
         self.setWindowTitle("Name conflicts — choose per section")
         self.resize(1180, 700)
 
         root = QVBoxLayout(self)
         root.addWidget(QLabel(
-            f"<b>{len(self.conflicts)}</b> weapon/warhead/projectile name(s) "
-            "used by the selection exist in <b>both</b> mods with different "
-            "definitions. Pick what happens to each. Identical ones are "
-            "reused and not listed. Greyed rows are no longer used by "
-            "anything being imported, because of an earlier choice."))
+            f"<b>{len(self.conflicts)}</b> unit/building/weapon/warhead/"
+            "projectile name(s) in the selection exist in <b>both</b> mods "
+            "with different definitions. Pick what happens to each. "
+            "Identical ones are reused and not listed. Greyed rows are no "
+            "longer used by anything being imported, because of an earlier "
+            "choice."))
 
         split = QSplitter(Qt.Vertical)
 
@@ -143,6 +161,24 @@ class PortConflictDialog(QDialog):
         self.note = QLabel()
         self.note.setWordWrap(True)
         root.addWidget(self.note)
+
+        # Keep both: which version each ported object that uses it is
+        # attached to.
+        self.attach_box = QWidget()
+        al = QVBoxLayout(self.attach_box)
+        al.setContentsMargins(0, 0, 0, 0)
+        self.attach_head = QLabel()
+        self.attach_head.setWordWrap(True)
+        al.addWidget(self.attach_head)
+        self.attach_table = QTableWidget(0, 2)
+        self.attach_table.setHorizontalHeaderLabels(
+            ["ported object using it", "attached to"])
+        self.attach_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.Stretch)
+        self.attach_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.attach_table.setMaximumHeight(150)
+        al.addWidget(self.attach_table)
+        root.addWidget(self.attach_box)
         root.addWidget(QLabel(
             f"<span style='color:{_DIFF}'>≠ different value</span> &nbsp; "
             f"<span style='color:{_ONLY}'>+ only on this side</span> &nbsp; "
@@ -154,7 +190,8 @@ class PortConflictDialog(QDialog):
         for ch, text in ((CONFLICT_KEEP_TARGET, "Keep the loaded mod's"),
                          (CONFLICT_SOURCE, "Replace — as written"),
                          (CONFLICT_REBALANCED, "Replace — rebalanced"),
-                         (CONFLICT_BOTH, "Keep both (rename the old mod's)")):
+                         (CONFLICT_BOTH_SOURCE, "Keep both — as written"),
+                         (CONFLICT_BOTH, "Keep both — rebalanced")):
             self.bulk.addItem(text, ch)
         self.bulk.setCurrentIndex(CONFLICT_CHOICES.index(CONFLICT_BOTH))
         row.addWidget(self.bulk)
@@ -177,7 +214,15 @@ class PortConflictDialog(QDialog):
             self._show(0)
 
     def resolutions(self):
-        return dict(self._choice)
+        """{name: choice}, or {name: {"choice", "attach"}} where a keep-both
+        has a referrer attached to the loaded mod's version."""
+        out = {}
+        for name, ch in self._choice.items():
+            att = {r: a for r, a in self._attach.get(name, {}).items()
+                   if a == ATTACH_TARGET}
+            out[name] = ({"choice": ch, "attach": att}
+                         if ch in _KEEP_BOTH and att else ch)
+        return out
 
     def _set(self, name, choice):
         self._choice[name] = choice
@@ -197,7 +242,7 @@ class PortConflictDialog(QDialog):
 
     def _refresh_reach(self):
         live = {c.name for c in conflicts_in_selection(
-            self.plan, self.selected, self._choice)}
+            self.plan, self.selected, self.resolutions())}
         for r, c in enumerate(self.conflicts):
             col = QColor("#000000") if c.name in live else QColor("#9e9e9e")
             for k in range(3):
@@ -210,6 +255,7 @@ class PortConflictDialog(QDialog):
     def _show(self, r):
         if r < 0 or r >= len(self.conflicts):
             return
+        self._cur = r
         c = self.conflicts[r]
         tgt, raw, bal = conflict_versions(self.plan, c, self.overrides)
         kt, kr, kb = _kv(tgt), _kv(raw), _kv(bal)
@@ -228,20 +274,51 @@ class PortConflictDialog(QDialog):
             h.setText(head)
             v.setHtml(body)
         ch = self._choice[c.name]
+        copy = f"[{c.new_name}]"
+        reg = _TECHNO_LIST.get(c.kind)
         if ch in (CONFLICT_SOURCE, CONFLICT_REBALANCED) and c.used_by:
             self.note.setText(
                 f"⚠ Replacing [{c.name}] changes it for all {len(c.used_by)} "
                 f"section(s) of the loaded mod that use it: "
                 f"{', '.join(c.used_by)}. A backup is kept.")
-        elif ch == CONFLICT_BOTH:
+        elif ch in _KEEP_BOTH:
+            ver = "as written" if ch == CONFLICT_BOTH_SOURCE else "rebalanced"
+            what = (f"a new {c.kind} {copy}, registered in [{reg}] and drawn "
+                    f"with [{c.name}]'s art" if reg else copy)
             self.note.setText(
-                f"The old mod's version is imported as [{c.new_name}] and the "
-                f"ported units point at it; the loaded mod's [{c.name}] is "
-                "left as it is.")
+                f"The old mod's version ({ver}) is imported as {what}; the "
+                f"loaded mod's [{c.name}] is left as it is.")
         elif ch == CONFLICT_KEEP_TARGET:
             self.note.setText(
-                f"The ported units use the loaded mod's [{c.name}]; nothing "
-                "of the old mod's version is imported.")
+                f"The loaded mod's [{c.name}] stays; nothing of the old mod's "
+                "version is imported" + (", and this unit is not ported."
+                                         if reg else "."))
         else:
             self.note.setText(f"[{c.name}] is replaced in place; nothing in "
                               "the loaded mod uses it yet.")
+        self._fill_attach(c, ch)
+
+    def _fill_attach(self, c, ch):
+        refs = (conflict_referrers(self.plan, c, self.selected,
+                                   self.resolutions())
+                if ch in _KEEP_BOTH else [])
+        self.attach_box.setVisible(bool(refs))
+        if not refs:
+            return
+        self.attach_head.setText(
+            f"<b>Attached to</b> — both versions will exist; choose which one "
+            f"each ported object that uses [{html.escape(c.name)}] points at.")
+        cur = self._attach.setdefault(c.name, {})
+        self.attach_table.setRowCount(0)     # drops the previous row widgets
+        self.attach_table.setRowCount(len(refs))
+        for i, (obj_name, written) in enumerate(refs):
+            self.attach_table.setItem(i, 0, QTableWidgetItem(written))
+            box = QComboBox()
+            box.addItem(f"the old mod's — {c.new_name}", ATTACH_COPY)
+            box.addItem(f"the loaded mod's — {c.name}", ATTACH_TARGET)
+            box.setCurrentIndex(1 if cur.get(obj_name) == ATTACH_TARGET else 0)
+            box.currentIndexChanged.connect(
+                lambda _i, n=c.name, o=obj_name, b=box:
+                self._attach.setdefault(n, {}).__setitem__(o, b.currentData()))
+            self.attach_table.setCellWidget(i, 1, box)
+        self.attach_table.resizeColumnToContents(0)

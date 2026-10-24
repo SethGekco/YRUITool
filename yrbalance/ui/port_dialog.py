@@ -27,7 +27,8 @@ from ..engine import (
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
     load_with_includes, include_graph, flatten_graph, load_ini_text,
-    conflicts_in_selection,
+    conflicts_in_selection, CONFLICT_SOURCE, CONFLICT_REBALANCED,
+    CONFLICT_BOTH,
 )
 from .port_conflict_dialog import PortConflictDialog
 # Dialog split out in cleanup C3; re-exported here so existing imports resolve.
@@ -420,8 +421,14 @@ class PortDialog(QDialog):
     def _fill_tree(self):
         self.tree.blockSignals(True)
         self.tree.clear()
-        bk = self.plan.by_kind()
-        for kind in sorted(bk):
+        # Objects the loaded mod ALSO defines (differently) get their own
+        # groups, so the new content isn't buried under every shared unit.
+        bk = {}
+        for o in self.plan.objects:
+            key = (o.kind + "  — also in the loaded mod, differs"
+                   if o.conflict_of else o.kind)
+            bk.setdefault(key, []).append(o)
+        for kind in sorted(bk, key=lambda k: ("also in" in k, k)):
             top = QTreeWidgetItem(self.tree, [f"{kind}  ({len(bk[kind])})", "", ""])
             top.setFlags(top.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
             top.setCheckState(0, Qt.Unchecked)
@@ -431,7 +438,9 @@ class PortDialog(QDialog):
                     f"{c.stat} {c.old:g}→{c.new:g}" for c in obj.stat_changes)
                 oc = obj.obtainability.cls if obj.obtainability else ""
                 notes = oc + (f"  ⚠{len(obj.warnings)}" if obj.warnings else "")
-                child = QTreeWidgetItem(top, [obj.name, changes, notes])
+                label = (f"{obj.conflict_of}  (copy: {obj.name})"
+                         if obj.conflict_of else obj.name)
+                child = QTreeWidgetItem(top, [label, changes, notes])
                 child.setFlags(child.flags() | Qt.ItemIsUserCheckable)
                 child.setCheckState(0, Qt.Unchecked)
                 child.setData(0, Qt.UserRole, obj.name)
@@ -679,8 +688,20 @@ class PortDialog(QDialog):
         aimd.ini (sibling of the target rules). Backup kept; result is linted."""
         techno_kinds = {"infantry", "vehicle", "aircraft", "building",
                         "building_dummy"}
-        ported = {o.name for o in self.plan.objects
-                  if o.name in selected and o.kind in techno_kinds}
+        # The source AI names units by their SOURCE names: a unit that replaced
+        # the loaded mod's keeps that name; a copy under a new name (or one
+        # kept as the loaded mod's) has no source AI that would fit.
+        ported = set()
+        for o in self.plan.objects:
+            if o.name not in selected or o.kind not in techno_kinds:
+                continue
+            if not o.conflict_of:
+                ported.add(o.name)
+            else:
+                ch = self._resolutions.get(o.conflict_of, CONFLICT_BOTH)
+                ch = ch.get("choice") if isinstance(ch, dict) else ch
+                if ch in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+                    ported.add(o.conflict_of)
         if not ported:
             return "\nAI: no units selected — skipped."
 

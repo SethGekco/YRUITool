@@ -15,6 +15,9 @@ Porter regressions found porting R.I.P World Powers into a stock game install.
   5. A weapon the target ALSO defines — under the same name, differently —
      was silently dropped, so the ported unit fired the target's version.
      It is now imported under a minted name and the unit repointed at it.
+  6. Units/buildings the loaded mod already has, differently, are conflicts
+     too; "keep both" comes as written or rebalanced, and per ported object
+     the user may keep a reference attached to the loaded mod's version.
 
     python3 tests/test_port_fixes.py
 """
@@ -294,6 +297,102 @@ Verses=100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%
     print(f"conflict 'replace, rebalanced' (warhead left on its default): "
           f"{'OK' if bal_ok else 'FAIL'} Damage={dmg(tm2, 'ROCK')}")
     ok = ok and bal_ok
+
+    # ── 6. techno conflicts, keep-both variants, per-object attachment ─────
+    from yrbalance.engine import (CONFLICT_BOTH_SOURCE, ATTACH_TARGET,
+                                  conflict_referrers)
+    t_tgt = VANILLA + """\
+[VehicleTypes]
+0=HTNK
+[HTNK]
+Strength=400
+Primary=ROCK
+[ROCK]
+Damage=50
+ROF=40
+Range=6
+Warhead=SA
+Projectile=InvisibleLow
+;
+"""
+    t_src = VANILLA + """\
+[VehicleTypes]
+0=HTNK
+1=TANK2
+[HTNK]
+Strength=600
+Primary=ROCK
+[TANK2]
+Strength=300
+Primary=ROCK
+[ROCK]
+Damage=90
+ROF=40
+Range=6
+Warhead=SA
+Projectile=InvisibleLow
+"""
+
+    def tport(selected, resolutions):
+        d = tempfile.mkdtemp(prefix="yrbt_tc_")
+        sm = build_section_map(parse_ini_lines(_w(d, "s.ini", t_src)))[0]
+        tl = parse_ini_lines(_w(d, "t.ini", t_tgt))
+        tm = build_section_map(tl)[0]
+        vm = build_section_map(parse_ini_lines(_w(d, "v.ini", VANILLA)))[0]
+        plan = build_port_plan(sm, tm, vm)
+        summ = apply_port_plan(tl, tm, plan, selected=selected,
+                               resolutions=resolutions)
+        return plan, summ, build_section_map(
+            guard_ini_text(tl).splitlines(True))[0]
+
+    def vlist(m):
+        return sorted(_clean(v) for _k, (_l, _r, v) in
+                      m["vehicletypes"]["keys"].items())
+
+    from yrbalance.engine.ini_model import clean_value as _clean
+    plan, summ, m = tport({"HTNK_P"}, None)
+    htnk = next((c for c in plan.conflicts if c.name == "HTNK"), None)
+    tc_ok = (htnk is not None and htnk.kind == "vehicle"
+             and {c.name for c in conflicts_in_selection(plan, {"HTNK_P"})}
+             == {"HTNK", "ROCK"}
+             and get_val(m, "HTNK_P", "Image") == "HTNK"
+             and get_val(m, "HTNK_P", "Primary") == "ROCK_P"
+             and vlist(m) == ["HTNK", "HTNK_P"]
+             and get_val(m, "HTNK", "Strength") == "400")
+    print(f"a unit the loaded mod has differently is a conflict; kept as a "
+          f"copy it is registered and keeps its art via Image=: "
+          f"{'OK' if tc_ok else 'FAIL'}")
+    ok = ok and tc_ok
+
+    plan, summ, m = tport({"HTNK_P"}, {"HTNK": CONFLICT_KEEP_TARGET})
+    tk_ok = ("htnk_p" not in m and "rock_p" not in m
+             and vlist(m) == ["HTNK"] and summ["sections"] == 0)
+    plan, summ, m = tport({"HTNK_P"}, {"HTNK": CONFLICT_SOURCE,
+                                        "ROCK": CONFLICT_KEEP_TARGET})
+    tr_ok = (get_val(m, "HTNK", "Strength") == "600"
+             and get_val(m, "HTNK", "Primary") == "ROCK"
+             and dmg(m, "ROCK") == "50" and vlist(m) == ["HTNK"]
+             and summ["replaced"] == ["HTNK"])
+    print(f"unit kept as the loaded mod's writes nothing; replaced as "
+          f"written rewrites it in place, unregistered twice: "
+          f"{'OK' if tk_ok and tr_ok else 'FAIL'}")
+    ok = ok and tk_ok and tr_ok
+
+    plan, summ, m = tport({"TANK2"}, {"ROCK": CONFLICT_BOTH_SOURCE})
+    bs_ok = dmg(m, "ROCK_P") == "90" and dmg(m, "ROCK") == "50"
+    sel = {"TANK2", "HTNK_P"}
+    rock = next(c for c in plan.conflicts if c.name == "ROCK")
+    refs = sorted(n for n, _w in conflict_referrers(plan, rock, sel))
+    plan, summ, m = tport(sel, {"ROCK": {
+        "choice": CONFLICT_BOTH, "attach": {"TANK2": ATTACH_TARGET}}})
+    at_ok = (refs == ["HTNK_P", "TANK2"]
+             and get_val(m, "TANK2", "Primary") == "ROCK"     # loaded mod's
+             and get_val(m, "HTNK_P", "Primary") == "ROCK_P"  # the copy
+             and "rock_p" in m)
+    print(f"keep both as written; keep both with one referrer attached to "
+          f"the loaded mod's version: {'OK' if bs_ok and at_ok else 'FAIL'} "
+          f"referrers={refs}")
+    ok = ok and bs_ok and at_ok
 
     # ── 3. soundmd from loose, from a mix, or not at all ────────────────────
     with tempfile.TemporaryDirectory() as d:

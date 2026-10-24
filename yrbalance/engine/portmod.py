@@ -113,16 +113,23 @@ class PortObject:
 CONFLICT_KEEP_TARGET = "target"      # reuse the loaded mod's; import nothing
 CONFLICT_SOURCE = "source"           # replace it with the old mod's, as written
 CONFLICT_REBALANCED = "rebalanced"   # replace it with the old mod's, rebalanced
-CONFLICT_BOTH = "both"               # keep it; import the old mod's renamed
+CONFLICT_BOTH_SOURCE = "both_source" # keep it; import the old mod's renamed, as written
+CONFLICT_BOTH = "both"               # keep it; import the old mod's renamed, rebalanced
 CONFLICT_CHOICES = (CONFLICT_KEEP_TARGET, CONFLICT_SOURCE,
-                    CONFLICT_REBALANCED, CONFLICT_BOTH)
-CONFLICT_DEFAULT = CONFLICT_BOTH     # the only choice that changes nothing
+                    CONFLICT_REBALANCED, CONFLICT_BOTH_SOURCE, CONFLICT_BOTH)
+CONFLICT_DEFAULT = CONFLICT_BOTH     # keeping both changes nothing that exists
+_KEEP_BOTH = (CONFLICT_BOTH_SOURCE, CONFLICT_BOTH)
+_REPLACE = (CONFLICT_SOURCE, CONFLICT_REBALANCED)
+_AS_WRITTEN = (CONFLICT_SOURCE, CONFLICT_BOTH_SOURCE)
+# Under "keep both", which version a ported object referencing the name uses.
+ATTACH_COPY = "copy"                 # the old mod's, imported under the new name
+ATTACH_TARGET = "target"             # the loaded mod's own
 
 
 @dataclass
 class PortConflict:
     name: str                    # the name both mods use
-    kind: str                    # weapon | warhead | projectile
+    kind: str                    # weapon | warhead | projectile | a techno kind
     new_name: str                # what "keep both" imports it as
     target_keys: list = field(default_factory=list)   # [(k, v)] loaded mod
     used_by: list = field(default_factory=list)       # loaded-mod sections using it
@@ -202,17 +209,46 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None,
             return o is not None and o.cls == OB_DUMMY
         return _is_dummy_building(src_map, name)
 
+    taken = {k: True for k in tgt_map}
+    taken.update({k: True for k in src_map})
+
+    def mint(kind, name):
+        """A section both mods define differently: queue it under a fresh
+        name; the user resolves it on Run (see PortConflict)."""
+        new = make_safe_clone_name(name, COLLISION_SUFFIX, taken,
+                                   max_len=MAX_ID_LEN)
+        taken[new.lower()] = True
+        if renames is not None:
+            renames[name] = new
+        kinds.setdefault(kind, [])
+        if new not in kinds[kind]:
+            kinds[kind].append(new)
+
+    # A techno the loaded mod already has is a conflict too, unless the two
+    # definitions are identical (then there is nothing to port).
+    techno_seeds = []
+
+    def techno(kind, name):
+        if not _exists(src_map, name):
+            return
+        if not _exists(tgt_map, name):
+            add(kind, name)
+            techno_seeds.append(name)
+        elif (name not in (renames or {})
+              and not _same_definition(src_map, tgt_map, name)):
+            mint(kind, name)
+            techno_seeds.append(name)
+
     reg = {
         "infantry": "InfantryTypes",
         "vehicle": "VehicleTypes",
         "aircraft": "AircraftTypes",
     }
     for kind, section in reg.items():
-        for name in parse_type_list(src_map, section):
-            add(kind, name)
-    for name in parse_type_list(src_map, "BuildingTypes"):
-        if not _exists(tgt_map, name):
-            add("building_dummy" if is_dummy(name) else "building", name)
+        for name in dict.fromkeys(parse_type_list(src_map, section)):
+            techno(kind, name)
+    for name in dict.fromkeys(parse_type_list(src_map, "BuildingTypes")):
+        techno("building_dummy" if is_dummy(name) else "building", name)
 
     # Reference closure: weapons → warheads/projectiles, over the new technos.
     #
@@ -225,9 +261,7 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None,
     # sections are still reused; a DIFFERENT one becomes a PortConflict with
     # a minted name ready, and the user resolves it on Run (keep the target's,
     # replace it as written / rebalanced, or keep both under the minted name).
-    seeds = [n for names in kinds.values() for n in names]
-    taken = {k: True for k in tgt_map}
-    taken.update({k: True for k in src_map})
+    seeds = techno_seeds
 
     def ref(name, tag):
         return _clean(get_val(src_map, name, tag))
@@ -252,14 +286,7 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None,
             decided[key] = "reuse"
         else:
             decided[key] = "rename"
-            new = make_safe_clone_name(name, COLLISION_SUFFIX, taken,
-                                       max_len=MAX_ID_LEN)
-            taken[new.lower()] = True
-            if renames is not None:
-                renames[name] = new
-            kinds.setdefault(kind, [])
-            if new not in kinds[kind]:
-                kinds[kind].append(new)
+            mint(kind, name)
         return decided[key] != "reuse"
 
     queue = []
@@ -563,6 +590,12 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                     f"the loaded mod already has a DIFFERENT [{src_name}] — "
                     f"resolved when you Run (default: import this as [{name}] "
                     "and leave the loaded mod's alone)")
+                if kind in _LIST_FOR_KIND:
+                    obj.warnings.append(
+                        f"kept as a copy, [{name}] draws with art "
+                        f"[{_art_name(src_map, src_name)}]; if the loaded mod "
+                        "already has that art entry, the copy uses the loaded "
+                        "mod's art")
             # rescale balance stats using THIS kind's factor
             for stat in stats:
                 old = _stat(src_map, src_name, stat)
@@ -583,7 +616,7 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
             # owner / prereq cleanup (technos & buildings)
             if kind in ("infantry", "vehicle", "aircraft", "building",
                         "building_dummy"):
-                ow = get_val(src_map, name, "Owner")
+                ow = get_val(src_map, src_name, "Owner")
                 if ow is not None:
                     obj.owner_before = _clean(ow)
                     kept, dropped = clean_owner(ow, cset)
@@ -596,7 +629,7 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                     elif dropped:
                         obj.warnings.append(
                             f"dropped unknown Owner: {', '.join(dropped)}")
-                pr = get_val(src_map, name, "Prerequisite")
+                pr = get_val(src_map, src_name, "Prerequisite")
                 if pr is not None:
                     obj.prereq_before = _clean(pr)
                     kept, dropped = clean_prereq(pr, tgt_map, moved_lower, generics)
@@ -608,7 +641,7 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                 # Ares InitialPayload: built-in (often open-topped) passengers are
                 # part of the unit — port them with it. Skip Prerequisite dummies
                 # (handled separately); these are real built-in units.
-                payload = _clean(get_val(src_map, name, "InitialPayload.Types"))
+                payload = _clean(get_val(src_map, src_name, "InitialPayload.Types"))
                 if payload:
                     deps = [t.strip() for t in payload.split(",") if t.strip()]
                     obj.deps = deps
@@ -621,24 +654,24 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                         obj.warnings.append(note)
             # asset references living in other files (report only)
             for tag in _ART_REF_TAGS:
-                v = _clean(get_val(src_map, name, tag))
+                v = _clean(get_val(src_map, src_name, tag))
                 if v and v.lower() not in ("none", ""):
                     obj.asset_refs.append((tag, v, "artmd.ini / assets"))
             for tag in _SOUND_REF_TAGS:
-                v = _clean(get_val(src_map, name, tag))
+                v = _clean(get_val(src_map, src_name, tag))
                 if v and v.lower() not in ("none", ""):
                     obj.asset_refs.append((tag, v, "soundmd.ini / assets"))
             # multi-file: resolve the actual art/sound entries + media files
             is_techno = kind in ("infantry", "vehicle", "aircraft", "building",
                                  "building_dummy")
             if is_techno and src_art_map is not None:
-                obj.art_entry, art_files = _resolve_art(name, src_map, src_art_map)
+                obj.art_entry, art_files = _resolve_art(src_name, src_map, src_art_map)
                 obj.media_files += art_files
                 if obj.art_entry is None:
                     obj.warnings.append("no art entry found in source artmd")
             if is_techno and src_sound_map is not None:
                 obj.sound_entries, snd_files = _resolve_sound(
-                    name, src_map, src_sound_map)
+                    src_name, src_map, src_sound_map)
                 obj.media_files += snd_files
             plan.objects.append(obj)
 
@@ -649,17 +682,25 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
     if renames:
         users = _chain_users(tgt_map)
         kind_of = {o.name.lower(): o.kind for o in plan.objects}
+        techno_users = None
         for old, new in renames.items():
+            kind = kind_of.get(new.lower(), "")
+            if kind in _LIST_FOR_KIND:
+                if techno_users is None:
+                    techno_users = _token_users(tgt_map)
+                used = techno_users.get(old.lower(), [])
+            else:
+                used = users.get(old.lower(), [])
             plan.conflicts.append(PortConflict(
-                name=old, kind=kind_of.get(new.lower(), ""), new_name=new,
+                name=old, kind=kind, new_name=new,
                 target_keys=[(k, _clean(v))
                              for k, v in _ordered_keys(tgt_map, old)],
-                used_by=users.get(old.lower(), [])))
+                used_by=used))
         plan.global_warnings.append(
-            f"{len(renames)} weapon/warhead/projectile name(s) exist in BOTH "
-            f"mods with different definitions; you choose per name on Run "
-            f"(default: import the old mod's as NAME{COLLISION_SUFFIX} and "
-            f"leave the loaded mod's alone).")
+            f"{len(renames)} unit/building/weapon/warhead/projectile name(s) "
+            f"exist in BOTH mods with different definitions; you choose per "
+            f"name on Run (default: import the old mod's as "
+            f"NAME{COLLISION_SUFFIX} and leave the loaded mod's alone).")
 
     if not plan.objects:
         plan.global_warnings.append("No new content found to port.")
@@ -738,27 +779,91 @@ def _chain_users(section_map):
     return out
 
 
+def _token_users(section_map):
+    """{name (lower): [sections naming it in any comma-separated value]} —
+    who in the loaded mod refers to a unit or building. Type lists are left
+    out: every techno is registered in one."""
+    lists = {v.lower() for v in _LIST_FOR_KIND.values()}
+    out = {}
+    for sl, sec in section_map.items():
+        if sl in lists:
+            continue
+        seen = set()
+        for _kl, (_li, _kr, vr) in sec["keys"].items():
+            for tok in _clean(vr).split(","):
+                tok = tok.strip().lower()
+                if tok and tok not in seen:
+                    seen.add(tok)
+                    out.setdefault(tok, []).append(sec["name_raw"])
+    return out
+
+
+def _art_name(src_map, name):
+    img = _clean(get_val(src_map, name, "Image"))
+    return img if img and img.lower() != "none" else name
+
+
+def _resolve(resolutions):
+    """Normalise resolutions → ({name (lower): choice},
+    {name (lower): {referrer (lower): ATTACH_*}}). A value is either a choice
+    string or {"choice": ..., "attach": {referrer object name: ATTACH_*}}."""
+    choices, attach = {}, {}
+    for k, v in (resolutions or {}).items():
+        if isinstance(v, dict):
+            choices[k.lower()] = v.get("choice", CONFLICT_DEFAULT)
+            attach[k.lower()] = {r.lower(): a
+                                 for r, a in (v.get("attach") or {}).items()}
+        else:
+            choices[k.lower()] = v
+    return choices, attach
+
+
 def _choices(plan, resolutions):
     """{shared name (lower): choice} for every conflict of the plan."""
-    res = {k.lower(): v for k, v in (resolutions or {}).items()}
+    res, _a = _resolve(resolutions)
     return {c.name.lower(): res.get(c.name.lower(), CONFLICT_DEFAULT)
             for c in plan.conflicts}
 
 
-def _refmap(plan, resolutions):
-    """{shared name (lower): minted name} for conflicts imported as "both" —
-    the only resolution under which references must be repointed."""
+def _refmap(plan, resolutions, obj=None):
+    """{shared name (lower): minted name} for conflicts kept as both — the
+    only resolutions under which references are repointed. With `obj`, the
+    names that object was told to keep attached to the loaded mod's own
+    version are left out."""
     ch = _choices(plan, resolutions)
+    _r, attach = _resolve(resolutions)
+    me = obj.name.lower() if obj is not None else None
     return {c.name.lower(): c.new_name for c in plan.conflicts
-            if ch[c.name.lower()] == CONFLICT_BOTH}
+            if ch[c.name.lower()] in _KEEP_BOTH
+            and attach.get(c.name.lower(), {}).get(me) != ATTACH_TARGET}
 
 
 def _written_name(obj, choice):
     """The section an object is written as: the shared name when it replaces
     the loaded mod's, else its own (possibly minted) name."""
-    if obj.conflict_of and choice in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+    if obj.conflict_of and choice in _REPLACE:
         return obj.conflict_of
     return obj.name
+
+
+def conflict_referrers(plan, conflict, selected, resolutions=None):
+    """[(object name, written name)] — the ported objects in a selection that
+    reference a conflict by a chain tag (Primary=, Warhead=, ...): the ones a
+    "keep both" can attach to either version."""
+    sel = _expand_selection(plan, selected, resolutions)
+    ch = _choices(plan, resolutions)
+    out = []
+    for o in plan.objects:
+        if o.name not in sel or o.conflict_of.lower() == conflict.name.lower():
+            continue
+        c = ch.get(o.conflict_of.lower(), "") if o.conflict_of else ""
+        if c == CONFLICT_KEEP_TARGET:
+            continue
+        if any(kr.lower() in _CHAIN_TAGS
+               and _clean(vr).lower() == conflict.name.lower()
+               for kr, vr in o.keys):
+            out.append((o.name, _written_name(o, c)))
+    return out
 
 
 def conflicts_in_selection(plan, selected, resolutions=None):
@@ -768,7 +873,7 @@ def conflicts_in_selection(plan, selected, resolutions=None):
     is followed — the full set the user may be asked about."""
     if resolutions is None:
         resolutions = {c.name: CONFLICT_BOTH for c in plan.conflicts}
-    sel = _expand_selection(plan, selected, resolutions)
+    sel = _expand_selection(plan, selected, resolutions) | set(selected)
     reached = {o.conflict_of.lower() for o in plan.objects
                if o.conflict_of and o.name in sel}
     return [c for c in plan.conflicts if c.name.lower() in reached]
@@ -807,9 +912,16 @@ def _expand_selection(plan, selected, resolutions=None):
     # shared name unless it resolves to the loaded mod's own section — then
     # nothing of it is imported, nor anything only it points at.
     ch = _choices(plan, resolutions)
+    kept = set()
     for o in plan.objects:
-        if o.conflict_of and ch.get(o.conflict_of.lower()) != CONFLICT_KEEP_TARGET:
+        if not o.conflict_of:
+            continue
+        if ch.get(o.conflict_of.lower()) == CONFLICT_KEEP_TARGET:
+            kept.add(o.name.lower())
+        else:
             by_name[o.conflict_of.lower()] = o
+    # A TICKED object resolved to the loaded mod's own brings nothing either.
+    selected = {n for n in selected if n.lower() not in kept}
 
     def _kv(obj, tag):
         for kr, vr in obj.keys:
@@ -866,7 +978,6 @@ def plan_to_files(plan, selected=None, overrides=None, resolutions=None):
     objs = [o for o in plan.objects if o.name in sel]
     files = {}
     ch = _choices(plan, resolutions)
-    refmap = _refmap(plan, resolutions)
 
     rules = []
     bk = plan.by_kind()
@@ -876,16 +987,20 @@ def plan_to_files(plan, selected=None, overrides=None, resolutions=None):
             continue
         rules.append(f"; --- {kind} ---")
         for o in kobjs:
-            rules.append("")
             c = ch.get(o.conflict_of.lower(), "") if o.conflict_of else ""
-            if c in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+            if c == CONFLICT_KEEP_TARGET:
+                continue
+            rules.append("")
+            if c in _REPLACE:
                 rules.append(f"; REPLACES the loaded mod's [{o.conflict_of}]")
             rules += [ln.rstrip("\n") for ln in _section_raw(
-                o, overrides, "\n", refmap=refmap, name=_written_name(o, c),
-                rebalance=c != CONFLICT_SOURCE)]
+                o, overrides, "\n", refmap=_refmap(plan, resolutions, o),
+                name=_written_name(o, c), rebalance=c not in _AS_WRITTEN)]
     if rules:
         files["rulesmd.ini"] = "\n".join(rules).strip() + "\n"
 
+    objs = [o for o in objs if not o.conflict_of
+            or ch.get(o.conflict_of.lower()) != CONFLICT_KEEP_TARGET]
     art, seen = [], set()
     for o in objs:
         if o.art_entry and o.art_entry[0].lower() not in seen:
@@ -923,7 +1038,15 @@ def _section_raw(obj, overrides, ending, refmap=None, name=None,
         ov = overrides.get((fkind, c.stat)) if overrides else None
         newvals[c.stat.lower()] = round(c.old * ov, 2) if ov else c.new
     refmap = refmap or {}
-    raw = [f"[{name or obj.name}]{ending}"]
+    header = name or obj.name
+    raw = [f"[{header}]{ending}"]
+    # A techno kept as a copy under a new name still draws with the art its
+    # original name gave it — without Image= the engine would look for art
+    # under the NEW name and find none.
+    if (obj.conflict_of and obj.kind in _LIST_FOR_KIND
+            and header.lower() != obj.conflict_of.lower()
+            and not any(kr.lower() == "image" for kr, _v in obj.keys)):
+        raw.append(f"Image={obj.conflict_of}{ending}")
     for kr, vr in obj.keys:
         kl = kr.lower()
         if kl in _CHAIN_TAGS and _clean(vr).lower() in refmap:
@@ -981,12 +1104,14 @@ def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
                "skipped_existing": 0, "replaced": [], "not_replaced": [],
                "media": []}
     ch = _choices(plan, resolutions)
-    refmap = _refmap(plan, resolutions)
     for obj in plan.objects:
         if obj.name not in selected:
             continue
         c = ch.get(obj.conflict_of.lower(), "") if obj.conflict_of else ""
-        if c in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+        if c == CONFLICT_KEEP_TARGET:
+            continue                     # a ticked unit kept as the loaded mod's
+        refmap = _refmap(plan, resolutions, obj)
+        if c in _REPLACE:
             raw = _section_raw(obj, overrides, ending, refmap=refmap,
                                name=obj.conflict_of,
                                rebalance=c == CONFLICT_REBALANCED)
@@ -1002,7 +1127,8 @@ def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
             summary["skipped_existing"] += 1
             continue
         append_raw_section(lines, section_map, obj.name,
-                           _section_raw(obj, overrides, ending, refmap=refmap),
+                           _section_raw(obj, overrides, ending, refmap=refmap,
+                                        rebalance=c not in _AS_WRITTEN),
                            ending)
         summary["sections"] += 1
         ls = _LIST_FOR_KIND.get(obj.kind)

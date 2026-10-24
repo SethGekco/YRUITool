@@ -205,9 +205,10 @@ EOF_GUARD = ";"
 
 
 def _is_bare_guard(line):
-    """A blank line, or a comment consisting of nothing but the marker."""
+    """A blank line, or a comment of nothing but semicolons — ';' or an
+    author's own ';;;;;' guard, which new content must go in front of."""
     s = line.strip()
-    return s == "" or s == EOF_GUARD
+    return s == "" or set(s) == {EOF_GUARD}
 
 
 def pop_eof_guard(lines):

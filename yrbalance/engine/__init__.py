@@ -199,6 +199,7 @@ from .portmod import (
     PortPlan, PortObject, StatFactor, StatChange, PortConflict,
     conflicts_in_selection, conflict_versions, CONFLICT_CHOICES,
     CONFLICT_KEEP_TARGET, CONFLICT_SOURCE, CONFLICT_REBALANCED, CONFLICT_BOTH,
+    CONFLICT_BOTH_SOURCE, ATTACH_COPY, ATTACH_TARGET, conflict_referrers,
 )
 from .portai import (
     build_ai_import_plan, apply_ai_import, AIImportPlan, AIEntry,
@@ -347,7 +348,8 @@ __all__ = [
     "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
     "PortConflict", "conflicts_in_selection", "conflict_versions",
     "CONFLICT_CHOICES", "CONFLICT_KEEP_TARGET", "CONFLICT_SOURCE",
-    "CONFLICT_REBALANCED", "CONFLICT_BOTH",
+    "CONFLICT_REBALANCED", "CONFLICT_BOTH", "CONFLICT_BOTH_SOURCE",
+    "ATTACH_COPY", "ATTACH_TARGET", "conflict_referrers",
     # portai
     "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",
     # ailib
