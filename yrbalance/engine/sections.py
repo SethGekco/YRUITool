@@ -105,6 +105,45 @@ def append_raw_section(lines, section_map, section_name, raw_lines, ending="\n")
     return section_name
 
 
+def replace_section_body(lines, section_map, section_name, raw_lines,
+                         ending="\n"):
+    """Replace the body of an EXISTING section with raw_lines (raw_lines[0] is
+    the header and is not written — the section keeps its own header line).
+    Comment/blank lines trailing the old body belong to whatever follows it
+    and are kept. Every later cached index is shifted. Returns False if the
+    section is not in this file."""
+    s = section_map.get(section_name.lower())
+    if s is None:
+        return False
+    start = s["start"]
+    end = start + 1
+    n = len(lines)
+    while end < n:
+        st = lines[end].strip()
+        if st.startswith("[") and st.endswith("]"):
+            break
+        end += 1
+    while end - 1 > start and (lines[end - 1].strip() == ""
+                               or lines[end - 1].strip().startswith(";")):
+        end -= 1
+    body = [ln.rstrip("\r\n") + ending for ln in raw_lines[1:]]
+    delta = len(body) - (end - (start + 1))
+    lines[start + 1:end] = body
+    if delta:
+        _shift_indices(section_map, end, delta)
+    keys = {}
+    for off, ln in enumerate(body):
+        st = ln.strip()
+        if not st or st.startswith(";"):
+            continue
+        m = re.match(r'^([^=;]+)=(.*)$', st)
+        if m and m.group(1).strip().lower() not in keys:
+            keys[m.group(1).strip().lower()] = (start + 1 + off,
+                                                m.group(1).strip(), m.group(2))
+    s["keys"] = keys
+    return True
+
+
 def _section_body_bounds(lines, start):
     """
     Given a section header index, return (last_content_idx, found_key_scan_range).

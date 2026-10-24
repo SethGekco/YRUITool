@@ -15,6 +15,7 @@ from .sections import (
     make_safe_clone_name,
     get_section_raw_lines,
     append_raw_section,
+    replace_section_body,
     set_key_in_appended_section,
     remove_key_from_section,
     new_registration_state,
@@ -195,7 +196,9 @@ from .modhistory import (
 from .portmod import (
     build_port_plan, classify_new_objects, compute_factors, plan_to_blueprint,
     plan_to_files, apply_port_plan, clean_owner, clean_prereq, target_countries,
-    PortPlan, PortObject, StatFactor, StatChange,
+    PortPlan, PortObject, StatFactor, StatChange, PortConflict,
+    conflicts_in_selection, conflict_versions, CONFLICT_CHOICES,
+    CONFLICT_KEEP_TARGET, CONFLICT_SOURCE, CONFLICT_REBALANCED, CONFLICT_BOTH,
 )
 from .portai import (
     build_ai_import_plan, apply_ai_import, AIImportPlan, AIEntry,
@@ -277,7 +280,7 @@ __all__ = [
     # selectors
     "build_category_lists", "resolve_scope", "available_keywords",
     # sections
-    "make_safe_clone_name", "get_section_raw_lines", "append_raw_section",
+    "make_safe_clone_name", "get_section_raw_lines", "append_raw_section", "replace_section_body",
     "set_key_in_appended_section", "remove_key_from_section",
     "new_registration_state", "register_in_list",
     # ini_model
@@ -342,6 +345,9 @@ __all__ = [
     "plan_to_blueprint", "plan_to_files", "apply_port_plan", "clean_owner",
     "clean_prereq",
     "target_countries", "PortPlan", "PortObject", "StatFactor", "StatChange",
+    "PortConflict", "conflicts_in_selection", "conflict_versions",
+    "CONFLICT_CHOICES", "CONFLICT_KEEP_TARGET", "CONFLICT_SOURCE",
+    "CONFLICT_REBALANCED", "CONFLICT_BOTH",
     # portai
     "build_ai_import_plan", "apply_ai_import", "AIImportPlan", "AIEntry",
     # ailib

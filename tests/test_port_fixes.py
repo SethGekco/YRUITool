@@ -214,33 +214,86 @@ Projectile=InvisibleLow
 [%s]
 Verses=100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%,100%%
 """ % (long_wh, long_wh)
-    with tempfile.TemporaryDirectory() as d:
+    from yrbalance.engine import (
+        conflicts_in_selection, conflict_versions, CONFLICT_KEEP_TARGET,
+        CONFLICT_SOURCE, CONFLICT_REBALANCED, CONFLICT_BOTH,
+    )
+
+    def port(resolutions):
+        d = tempfile.mkdtemp(prefix="yrbt_col_")
         sm = build_section_map(parse_ini_lines(_w(d, "s.ini", col_src)))[0]
         tl = parse_ini_lines(_w(d, "t.ini", col_tgt))
         tm = build_section_map(tl)[0]
         vm = build_section_map(parse_ini_lines(_w(d, "v.ini", VANILLA)))[0]
         plan = build_port_plan(sm, tm, vm)
-        rn = plan.renames
-        wh_new = rn.get(long_wh, "")
-        apply_port_plan(tl, tm, plan, selected={"TANK"})
-        pw = get_val(tm, "TANK", "Primary")
-        col_ok = (rn.get("ROCK") == "ROCK_P"
-                  and "M60" not in rn                    # identical: reused
-                  and 0 < len(wh_new) <= 24
-                  and pw == "ROCK_P"
-                  # the SOURCE's 90 through the culture factor, not the
-                  # target's 50
-                  and get_val(tm, "ROCK_P", "Damage") not in ("50", None)
-                  and get_val(tm, "ROCK_P", "Warhead") == wh_new
-                  and get_val(tm, "ROCK", "Damage") == "50"   # target's kept
-                  and get_val(tm, "TANK", "Secondary") == "M60"
-                  and any("ROCK_P" in w for o in plan.objects
-                          if o.name == "ROCK_P" for w in o.warnings)
-                  and any("DIFFERENT" in w for w in plan.global_warnings))
-        print(f"colliding weapon/warhead imported under a minted name, unit "
-              f"repointed, target's own left alone, identical reused: "
-              f"{'OK' if col_ok else 'FAIL'} renames={rn} Primary={pw}")
-        ok = ok and col_ok
+        summ = apply_port_plan(tl, tm, plan, selected={"TANK"},
+                               resolutions=resolutions)
+        # re-parse what would be written: the cached map must match the file
+        tm2 = build_section_map(guard_ini_text(tl).splitlines(True))[0]
+        return plan, summ, tl, tm, tm2
+
+    def dmg(m, s):
+        return get_val(m, s, "Damage")
+
+    # default ("both"): minted copies, unit repointed, loaded mod untouched
+    plan, summ, tl, tm, tm2 = port(None)
+    rn = plan.renames
+    wh_new = rn.get(long_wh, "")
+    found = {c.name for c in conflicts_in_selection(plan, {"TANK"})}
+    rock = next(c for c in plan.conflicts if c.name == "ROCK")
+    tgt_v, raw_v, bal_v = conflict_versions(plan, rock)
+    both_ok = (rn.get("ROCK") == "ROCK_P" and "M60" not in rn
+               and 0 < len(wh_new) <= 24
+               and found == {"ROCK", long_wh}
+               and rock.kind == "weapon"
+               and "Damage=50" in tgt_v and "Damage=90" in raw_v
+               and "Damage=90" not in bal_v      # culture factor applied
+               and get_val(tm2, "TANK", "Primary") == "ROCK_P"
+               and get_val(tm2, "TANK", "Secondary") == "M60"
+               and get_val(tm2, "ROCK_P", "Warhead") == wh_new
+               and dmg(tm2, "ROCK_P") not in ("50", "90", None)
+               and dmg(tm2, "ROCK") == "50"
+               and any("different definitions" in w
+                       for w in plan.global_warnings))
+    print(f"conflict 'keep both' (default): minted names, unit repointed, "
+          f"loaded mod's left alone, identical reused, versions shown: "
+          f"{'OK' if both_ok else 'FAIL'} renames={rn}")
+    ok = ok and both_ok
+
+    # keep the loaded mod's: nothing of ROCK (nor its warhead) is imported
+    plan, summ, tl, tm, tm2 = port({"ROCK": CONFLICT_KEEP_TARGET})
+    keep_ok = (get_val(tm2, "TANK", "Primary") == "ROCK"
+               and "rock_p" not in tm2 and wh_new.lower() not in tm2
+               and dmg(tm2, "ROCK") == "50" and not summ["replaced"])
+    print(f"conflict 'keep loaded mod's': unit uses it, no orphans imported: "
+          f"{'OK' if keep_ok else 'FAIL'}")
+    ok = ok and keep_ok
+
+    # replace, as written / rebalanced: the loaded mod's section is rewritten
+    # in place (its other users change too), header kept, indices stay true
+    plan, summ, tl, tm, tm2 = port({"ROCK": CONFLICT_SOURCE,
+                                     long_wh: CONFLICT_SOURCE})
+    src_ok = (get_val(tm2, "TANK", "Primary") == "ROCK"
+              and dmg(tm2, "ROCK") == "90"
+              and get_val(tm2, "ROCK", "Warhead") == long_wh
+              and get_val(tm2, long_wh, "Verses", ).startswith("100%")
+              and "rock_p" not in tm2
+              and sorted(summ["replaced"]) == sorted(["ROCK", long_wh])
+              and "".join(tl).count("[ROCK]") == 1
+              and tl[-1].strip() == ";"
+              and all(tm[k]["start"] == tm2[k]["start"] for k in tm2))
+    print(f"conflict 'replace, as written': rewritten in place, cached map "
+          f"still matches the file: {'OK' if src_ok else 'FAIL'}")
+    ok = ok and src_ok
+
+    plan, summ, tl, tm, tm2 = port({"ROCK": CONFLICT_REBALANCED})
+    bal_ok = (dmg(tm2, "ROCK") not in ("50", "90", None)
+              and get_val(tm2, "ROCK", "Warhead") == wh_new   # wh: default both
+              and get_val(tm2, "TANK", "Primary") == "ROCK"
+              and summ["replaced"] == ["ROCK"])
+    print(f"conflict 'replace, rebalanced' (warhead left on its default): "
+          f"{'OK' if bal_ok else 'FAIL'} Damage={dmg(tm2, 'ROCK')}")
+    ok = ok and bal_ok
 
     # ── 3. soundmd from loose, from a mix, or not at all ────────────────────
     with tempfile.TemporaryDirectory() as d:

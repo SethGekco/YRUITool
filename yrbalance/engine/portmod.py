@@ -27,7 +27,7 @@ from .config import ModConfig
 from .typelists import parse_type_list
 from .weapons import ALL_WEAPON_TAGS
 from .sections import (append_raw_section, set_key_in_appended_section,
-                       make_safe_clone_name)
+                       make_safe_clone_name, replace_section_body)
 from .obtain import classify_obtainability, OB_DUMMY
 
 # Stats the tool actively balances, and which section each applies to.
@@ -104,6 +104,28 @@ class PortObject:
     obtainability: object = None                     # Obtainability or None
     deps: list = field(default_factory=list)         # built-in part units (InitialPayload.Types) ported with it
     warnings: list = field(default_factory=list)
+    # For a chain section whose name the target already uses differently:
+    # the shared name. `name` is then the minted "keep both" name.
+    conflict_of: str = ""
+
+
+# How a same-named, differently-defined weapon/warhead/projectile is resolved.
+CONFLICT_KEEP_TARGET = "target"      # reuse the loaded mod's; import nothing
+CONFLICT_SOURCE = "source"           # replace it with the old mod's, as written
+CONFLICT_REBALANCED = "rebalanced"   # replace it with the old mod's, rebalanced
+CONFLICT_BOTH = "both"               # keep it; import the old mod's renamed
+CONFLICT_CHOICES = (CONFLICT_KEEP_TARGET, CONFLICT_SOURCE,
+                    CONFLICT_REBALANCED, CONFLICT_BOTH)
+CONFLICT_DEFAULT = CONFLICT_BOTH     # the only choice that changes nothing
+
+
+@dataclass
+class PortConflict:
+    name: str                    # the name both mods use
+    kind: str                    # weapon | warhead | projectile
+    new_name: str                # what "keep both" imports it as
+    target_keys: list = field(default_factory=list)   # [(k, v)] loaded mod
+    used_by: list = field(default_factory=list)       # loaded-mod sections using it
 
 
 @dataclass
@@ -115,6 +137,7 @@ class PortPlan:
     # {source_name: ported_name} for chain sections whose name the target
     # already uses for a DIFFERENT definition (see classify_new_objects).
     renames: dict = field(default_factory=dict)
+    conflicts: list = field(default_factory=list)        # [PortConflict]
 
     def by_kind(self):
         out = {}
@@ -196,12 +219,12 @@ def classify_new_objects(src_map, tgt_map, config=None, obtain=None,
     # A chain section whose NAME the target already has is not automatically
     # the same section. This used to drop every such name, so a ported unit
     # silently fired the TARGET's weapon of that name: porting R.I.P World
-    # Powers into the cncnet edition, 55 of 230 weapon references named a
-    # target weapon with a different definition (CAPOC's 120mmxx2 is 90 dmg /
-    # ROF 65 / AP in the source, 100 / 80 / ApocAP in the target). Identical
-    # sections are still reused; a DIFFERENT one is imported under a minted
-    # name, and build_port_plan repoints every reference at it. The target's
-    # own section is never touched, so its other users are unaffected.
+    # Powers into a loaded mod, 55 of 230 weapon references named a target
+    # weapon with a different definition (CAPOC's 120mmxx2 is 90 dmg / ROF 65
+    # / AP in the source, 100 / 80 / ApocAP in the target). Identical
+    # sections are still reused; a DIFFERENT one becomes a PortConflict with
+    # a minted name ready, and the user resolves it on Run (keep the target's,
+    # replace it as written / rebalanced, or keep both under the minted name).
     seeds = [n for names in kinds.values() for n in names]
     taken = {k: True for k in tgt_map}
     taken.update({k: True for k in src_map})
@@ -535,9 +558,11 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                              keys=_ordered_keys(src_map, src_name),
                              obtainability=obtain.get(src_name.lower()))
             if src_name != name:
+                obj.conflict_of = src_name
                 obj.warnings.append(
-                    f"ported as [{name}]: the target already has a DIFFERENT "
-                    f"[{src_name}], which is left as it is")
+                    f"the loaded mod already has a DIFFERENT [{src_name}] — "
+                    f"resolved when you Run (default: import this as [{name}] "
+                    "and leave the loaded mod's alone)")
             # rescale balance stats using THIS kind's factor
             for stat in stats:
                 old = _stat(src_map, src_name, stat)
@@ -617,20 +642,24 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
                 obj.media_files += snd_files
             plan.objects.append(obj)
 
-    # Repoint every chain reference at the minted names: a unit's Primary=,
-    # a weapon's Warhead=/Projectile=, a projectile's ShrapnelWeapon=, ...
+    # Same-named, differently-defined chain sections. References keep their
+    # SOURCE names in obj.keys; how each one is written — reused, replaced
+    # or imported under the minted name — is decided per conflict when the
+    # plan is applied (see resolve / apply_port_plan).
     if renames:
-        low = {k.lower(): v for k, v in renames.items()}
-        for o in plan.objects:
-            o.keys = [(kr, low[_clean(vr).lower()])
-                      if kr.lower() in _CHAIN_TAGS
-                      and _clean(vr).lower() in low else (kr, vr)
-                      for kr, vr in o.keys]
+        users = _chain_users(tgt_map)
+        kind_of = {o.name.lower(): o.kind for o in plan.objects}
+        for old, new in renames.items():
+            plan.conflicts.append(PortConflict(
+                name=old, kind=kind_of.get(new.lower(), ""), new_name=new,
+                target_keys=[(k, _clean(v))
+                             for k, v in _ordered_keys(tgt_map, old)],
+                used_by=users.get(old.lower(), [])))
         plan.global_warnings.append(
-            f"{len(renames)} weapon/warhead/projectile name(s) already exist "
-            f"in the target with a DIFFERENT definition; imported under new "
-            f"names ({COLLISION_SUFFIX} suffix) so the source units keep their "
-            f"own weapons and the target's are untouched.")
+            f"{len(renames)} weapon/warhead/projectile name(s) exist in BOTH "
+            f"mods with different definitions; you choose per name on Run "
+            f"(default: import the old mod's as NAME{COLLISION_SUFFIX} and "
+            f"leave the loaded mod's alone).")
 
     if not plan.objects:
         plan.global_warnings.append("No new content found to port.")
@@ -638,13 +667,16 @@ def build_port_plan(src_map, tgt_map, vanilla_map=None, config=None,
 
 
 # ── blueprint / preview text ────────────────────────────────────────────────
-def _rebuilt_section(obj):
+def _rebuilt_section(obj, refmap=None):
     """The [Name] + key=value lines for an object, with balanced stats applied."""
     newvals = {c.stat.lower(): c.new for c in obj.stat_changes}
+    refmap = refmap or {}
     out = [f"[{obj.name}]"]
     for kr, vr in obj.keys:
         kl = kr.lower()
-        if kl in newvals:
+        if kl in _CHAIN_TAGS and _clean(vr).lower() in refmap:
+            out.append(f"{kr}={refmap[_clean(vr).lower()]}")
+        elif kl in newvals:
             out.append(f"{kr}={_fmt(newvals[kl])}")
         elif kl == "owner" and obj.owner_before:
             out.append(f"{kr}={obj.owner_after}")
@@ -694,7 +726,69 @@ _CHAIN_TAGS = frozenset(
        "warhead", "projectile", "shrapnelweapon", "airburstweapon"})
 
 
-def _expand_selection(plan, selected):
+def _chain_users(section_map):
+    """{section name (lower): [sections that reference it by a chain tag]}."""
+    out = {}
+    for sec in section_map.values():
+        for kl, (_li, _kr, vr) in sec["keys"].items():
+            if kl in _CHAIN_TAGS:
+                v = _clean(vr).lower()
+                if v and v != "none":
+                    out.setdefault(v, []).append(sec["name_raw"])
+    return out
+
+
+def _choices(plan, resolutions):
+    """{shared name (lower): choice} for every conflict of the plan."""
+    res = {k.lower(): v for k, v in (resolutions or {}).items()}
+    return {c.name.lower(): res.get(c.name.lower(), CONFLICT_DEFAULT)
+            for c in plan.conflicts}
+
+
+def _refmap(plan, resolutions):
+    """{shared name (lower): minted name} for conflicts imported as "both" —
+    the only resolution under which references must be repointed."""
+    ch = _choices(plan, resolutions)
+    return {c.name.lower(): c.new_name for c in plan.conflicts
+            if ch[c.name.lower()] == CONFLICT_BOTH}
+
+
+def _written_name(obj, choice):
+    """The section an object is written as: the shared name when it replaces
+    the loaded mod's, else its own (possibly minted) name."""
+    if obj.conflict_of and choice in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+        return obj.conflict_of
+    return obj.name
+
+
+def conflicts_in_selection(plan, selected, resolutions=None):
+    """The conflicts a selection actually reaches, in plan order. With
+    `resolutions`, a conflict kept as the loaded mod's stops the walk there
+    (what only it pointed at is no longer reached); without, every conflict
+    is followed — the full set the user may be asked about."""
+    if resolutions is None:
+        resolutions = {c.name: CONFLICT_BOTH for c in plan.conflicts}
+    sel = _expand_selection(plan, selected, resolutions)
+    reached = {o.conflict_of.lower() for o in plan.objects
+               if o.conflict_of and o.name in sel}
+    return [c for c in plan.conflicts if c.name.lower() in reached]
+
+
+def conflict_versions(plan, conflict, overrides=None):
+    """(loaded mod's, old mod's as written, old mod's rebalanced) — each a list
+    of "key=value" lines under the shared name, for side-by-side review."""
+    obj = next(o for o in plan.objects
+               if o.conflict_of.lower() == conflict.name.lower())
+    tgt = [f"{k}={v}" for k, v in conflict.target_keys]
+    raw = [ln.rstrip("\n") for ln in
+           _section_raw(obj, overrides, "\n", name=conflict.name,
+                        rebalance=False)[1:]]
+    bal = [ln.rstrip("\n") for ln in
+           _section_raw(obj, overrides, "\n", name=conflict.name)[1:]]
+    return tgt, raw, bal
+
+
+def _expand_selection(plan, selected, resolutions=None):
     """Grow a selection to include each selected unit's built-in InitialPayload
     part units (transitively), and the WEAPON CHAIN of every selected unit —
     weapon, warhead, projectile and any weapon those fire in turn.
@@ -709,6 +803,13 @@ def _expand_selection(plan, selected):
     Returns a new set."""
     selected = set(selected)
     by_name = {o.name.lower(): o for o in plan.objects}
+    # Chain references carry SOURCE names. A conflict object is reached by the
+    # shared name unless it resolves to the loaded mod's own section — then
+    # nothing of it is imported, nor anything only it points at.
+    ch = _choices(plan, resolutions)
+    for o in plan.objects:
+        if o.conflict_of and ch.get(o.conflict_of.lower()) != CONFLICT_KEEP_TARGET:
+            by_name[o.conflict_of.lower()] = o
 
     def _kv(obj, tag):
         for kr, vr in obj.keys:
@@ -754,15 +855,18 @@ def _expand_selection(plan, selected):
     return selected
 
 
-def plan_to_files(plan, selected=None, overrides=None):
+def plan_to_files(plan, selected=None, overrides=None, resolutions=None):
     """Raw INI text per associated file for the selected objects (InitialPayload
     deps expanded, overrides applied) — exactly what each file receives on apply.
     Returns an ordered {filename: text} dict, only for files with content, so the
     UI can show rulesmd.ini / artmd.ini / soundmd.ini side by side."""
     sel = _expand_selection(
-        plan, selected if selected is not None else [o.name for o in plan.objects])
+        plan, selected if selected is not None else [o.name for o in plan.objects],
+        resolutions)
     objs = [o for o in plan.objects if o.name in sel]
     files = {}
+    ch = _choices(plan, resolutions)
+    refmap = _refmap(plan, resolutions)
 
     rules = []
     bk = plan.by_kind()
@@ -773,7 +877,12 @@ def plan_to_files(plan, selected=None, overrides=None):
         rules.append(f"; --- {kind} ---")
         for o in kobjs:
             rules.append("")
-            rules += [ln.rstrip("\n") for ln in _section_raw(o, overrides, "\n")]
+            c = ch.get(o.conflict_of.lower(), "") if o.conflict_of else ""
+            if c in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+                rules.append(f"; REPLACES the loaded mod's [{o.conflict_of}]")
+            rules += [ln.rstrip("\n") for ln in _section_raw(
+                o, overrides, "\n", refmap=refmap, name=_written_name(o, c),
+                rebalance=c != CONFLICT_SOURCE)]
     if rules:
         files["rulesmd.ini"] = "\n".join(rules).strip() + "\n"
 
@@ -802,18 +911,24 @@ def plan_to_files(plan, selected=None, overrides=None):
     return files
 
 
-def _section_raw(obj, overrides, ending):
+def _section_raw(obj, overrides, ending, refmap=None, name=None,
+                 rebalance=True):
     """[Name] + key=value lines with balanced (or overridden) stats and cleaned
-    Owner/Prerequisite applied."""
+    Owner/Prerequisite applied. `refmap` ({shared name (lower): minted}) repoints
+    chain references; `name` overrides the header; rebalance=False writes the
+    source's own stat values."""
     fkind = _OBJ_TO_FACTOR_KIND.get(obj.kind)
     newvals = {}
-    for c in obj.stat_changes:
+    for c in (obj.stat_changes if rebalance else ()):
         ov = overrides.get((fkind, c.stat)) if overrides else None
         newvals[c.stat.lower()] = round(c.old * ov, 2) if ov else c.new
-    raw = [f"[{obj.name}]{ending}"]
+    refmap = refmap or {}
+    raw = [f"[{name or obj.name}]{ending}"]
     for kr, vr in obj.keys:
         kl = kr.lower()
-        if kl in newvals:
+        if kl in _CHAIN_TAGS and _clean(vr).lower() in refmap:
+            raw.append(f"{kr}={refmap[_clean(vr).lower()]}{ending}")
+        elif kl in newvals:
             raw.append(f"{kr}={_fmt_stat(kl, newvals[kl])}{ending}")
         elif kl == "owner" and obj.owner_before:
             raw.append(f"{kr}={obj.owner_after}{ending}")
@@ -846,7 +961,7 @@ def _append_entry(lines, section_map, name, keys, ending):
 
 
 def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
-                    art=None, sound=None):
+                    art=None, sound=None, resolutions=None):
     """Write selected ported objects into the target rules (mutates lines/
     section_map in place). Appends each object's section (balanced/overridden +
     cleaned Owner/Prereq), registers technos in their type-list, and — when
@@ -854,20 +969,41 @@ def apply_port_plan(lines, section_map, plan, selected=None, overrides=None,
     given — appends the resolved art/sound entries. Returns a summary dict.
 
     `selected`: object names to port (default all). `overrides`: {(factor_kind,
-    stat): factor}. Existing sections in the target are skipped (never clobbered)."""
+    stat): factor}. Existing sections in the target are skipped (never
+    clobbered) — except a conflict the user resolved to "source"/"rebalanced"
+    (`resolutions`: {shared name: CONFLICT_*}), whose section is REPLACED in
+    place; the caller keeps a backup."""
     selected = _expand_selection(
-        plan, selected if selected is not None else [o.name for o in plan.objects])
+        plan, selected if selected is not None else [o.name for o in plan.objects],
+        resolutions)
     ending = _ending(lines)
     summary = {"sections": 0, "registered": 0, "art": 0, "sound": 0,
-               "skipped_existing": 0, "media": []}
+               "skipped_existing": 0, "replaced": [], "not_replaced": [],
+               "media": []}
+    ch = _choices(plan, resolutions)
+    refmap = _refmap(plan, resolutions)
     for obj in plan.objects:
         if obj.name not in selected:
+            continue
+        c = ch.get(obj.conflict_of.lower(), "") if obj.conflict_of else ""
+        if c in (CONFLICT_SOURCE, CONFLICT_REBALANCED):
+            raw = _section_raw(obj, overrides, ending, refmap=refmap,
+                               name=obj.conflict_of,
+                               rebalance=c == CONFLICT_REBALANCED)
+            if replace_section_body(lines, section_map, obj.conflict_of, raw,
+                                    ending):
+                summary["replaced"].append(obj.conflict_of)
+            else:
+                # Defined in one of the loaded mod's include files, not in
+                # this one — nothing here to replace, so nothing is changed.
+                summary["not_replaced"].append(obj.conflict_of)
             continue
         if _exists(section_map, obj.name):
             summary["skipped_existing"] += 1
             continue
         append_raw_section(lines, section_map, obj.name,
-                           _section_raw(obj, overrides, ending), ending)
+                           _section_raw(obj, overrides, ending, refmap=refmap),
+                           ending)
         summary["sections"] += 1
         ls = _LIST_FOR_KIND.get(obj.kind)
         if ls:
@@ -913,5 +1049,5 @@ def plan_to_blueprint(plan):
         lines.append(f"; --- {kind} ---")
         for obj in plan.by_kind()[kind]:
             lines.append("")
-            lines.extend(_rebuilt_section(obj))
+            lines.extend(_rebuilt_section(obj, _refmap(plan, None)))
     return "\n".join(lines)

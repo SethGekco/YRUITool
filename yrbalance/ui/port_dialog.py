@@ -27,7 +27,9 @@ from ..engine import (
     vanilla_asset_ids, classify_missing, load_bookmarks,
     build_ai_import_plan, apply_ai_import, lint_ai, parse_type_list,
     load_with_includes, include_graph, flatten_graph, load_ini_text,
+    conflicts_in_selection,
 )
+from .port_conflict_dialog import PortConflictDialog
 # Dialog split out in cleanup C3; re-exported here so existing imports resolve.
 from .include_select_dialog import _IncludeSelectDialog
 
@@ -61,6 +63,9 @@ class PortDialog(QDialog):
         self.plan = None
         self._worker = None
         self._factor_spins = {}   # (kind, stat) -> QDoubleSpinBox
+        # {shared name: CONFLICT_*} chosen in the conflict window; kept for
+        # the raw preview and re-offered on the next Run.
+        self._resolutions = {}
         self.setWindowTitle("Port mod content")
         self.resize(900, 680)
 
@@ -363,6 +368,7 @@ class PortDialog(QDialog):
 
     def _plan_ready(self, result):
         self.plan, had_art, snd_from, inc_files, src_missing = result
+        self._resolutions = {}
         self._busy(False)
         self._fill_factors()
         self._fill_tree()
@@ -511,7 +517,8 @@ class PortDialog(QDialog):
         current selection (deps expanded, overrides applied)."""
         if self.plan is None:
             return
-        files = plan_to_files(self.plan, self._selected_names(), self._overrides())
+        files = plan_to_files(self.plan, self._selected_names(),
+                              self._overrides(), self._resolutions)
         if not files:
             QMessageBox.information(
                 self, "Raw INI", "Nothing selected to show. Tick some content.")
@@ -549,6 +556,12 @@ class PortDialog(QDialog):
             return
         overrides = self._overrides()
         msgs = []
+        if conflicts_in_selection(self.plan, selected):
+            dlg = PortConflictDialog(self, self.plan, selected, overrides,
+                                     self._resolutions)
+            if not dlg.exec():
+                return
+            self._resolutions.update(dlg.resolutions())
 
         if self.bp_chk.isChecked():
             p, _ = QFileDialog.getSaveFileName(
@@ -605,7 +618,8 @@ class PortDialog(QDialog):
             art = (al, build_section_map(al)[0])
 
         summ = apply_port_plan(tlines, tmap, self.plan, selected=selected,
-                               overrides=overrides, art=art, sound=snd)
+                               overrides=overrides, art=art, sound=snd,
+                               resolutions=self._resolutions)
 
         # back up then write each touched file
         written = []
@@ -646,11 +660,19 @@ class PortDialog(QDialog):
         if self.ai_chk.isChecked():
             ai_msg = self._import_ai(selected, folder, tmap)
 
+        rep_msg = ""
+        if summ["replaced"]:
+            rep_msg += (f"\nReplaced in place: {', '.join(summ['replaced'])}.")
+        if summ["not_replaced"]:
+            rep_msg += ("\n⚠ Not replaced — defined in one of the loaded mod's "
+                        "include files, not in its rulesmd.ini: "
+                        f"{', '.join(summ['not_replaced'])}. Edit it there.")
+
         self.mw._load_rules_path(rules_path)   # refresh the loaded view
         return (f"Applied: {summ['sections']} section(s), "
                 f"{summ['registered']} registered, {summ['art']} art, "
                 f"{summ['sound']} sound. Wrote: {', '.join(written)} "
-                f"(backups kept).{snd_note}{media_msg}{ai_msg}")
+                f"(backups kept).{snd_note}{rep_msg}{media_msg}{ai_msg}")
 
     def _import_ai(self, selected, target_folder, target_rules_map):
         """Transplant the source mod's AI for the ported units into the target's
