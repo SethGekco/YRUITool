@@ -575,6 +575,61 @@ def pack_media_mixes(files, dest_folder, base_name, per_mix_limit=0,
 # (folder, filename, mix-signature) -> bytes|None. A deep mix search costs
 # 15-20s on a real game folder, and the porter needs the same file on Analyze
 # and again on Apply.
+# Where the stock game keeps its shared media (palettes, stock cameos), YR
+# first. build_media_catalog skips these archives on purpose, so a mod that
+# doesn't override cameo.pal had no cameo palette at all: cameos drew in
+# grayscale. A direct lookup here takes ~0.05 s; find_in_mixes, which reads
+# every entry of ra2md.mix looking for sub-mixes, took minutes on a USB drive.
+STOCK_CONTAINERS = (("ra2md.mix", "cachemd.mix"), ("ra2md.mix", "localmd.mix"),
+                    ("ra2.mix", "cache.mix"), ("ra2.mix", "local.mix"))
+_STOCK_SUB_CACHE = {}
+
+
+def _stock_sub(folder, outer, inner):
+    """The parsed sub-mix `inner` of `folder`/`outer` (case-insensitive
+    names), cached per file signature, or None."""
+    try:
+        low = {f.lower(): f for f in os.listdir(folder)}
+    except OSError:
+        return None
+    if outer not in low:
+        return None
+    path = os.path.join(folder, low[outer])
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    key = (os.path.realpath(path), inner, st.st_mtime, st.st_size)
+    if key not in _STOCK_SUB_CACHE:
+        try:
+            mf = MixFile(path)
+            sub = (MixFile.from_bytes(mf.read_id(mix_id(inner)))
+                   if mix_id(inner) in mf.by_id else None)
+        except (MixError, KeyError, OSError):
+            sub = None
+        _STOCK_SUB_CACHE[key] = sub
+    return _STOCK_SUB_CACHE[key]
+
+
+def read_stock_file(folders, filename):
+    """`filename`'s bytes from the stock game archives (STOCK_CONTAINERS) of
+    the first folder in `folders` that has it, or None."""
+    if isinstance(folders, str):
+        folders = [folders]
+    fid = mix_id(filename)
+    for folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        for outer, inner in STOCK_CONTAINERS:
+            sub = _stock_sub(folder, outer, inner)
+            if sub is not None and fid in sub.by_id:
+                try:
+                    return sub.read_id(fid)
+                except (MixError, KeyError, OSError):
+                    continue
+    return None
+
+
 _INI_FROM_MIX_CACHE = {}
 
 

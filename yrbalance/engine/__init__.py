@@ -169,6 +169,7 @@ from .obtain import (
 )
 from .mixlib import (
     mix_id, MixFile, write_mix, MixError, MixEncrypted, MixEntry,
+    read_stock_file, STOCK_CONTAINERS,
     is_vanilla_mix, is_stock_mix, stock_mix_names,
     VANILLA_MIX_NAMES, STOCK_MIX_NAMES, KNOWN_FRAMEWORK_FILES,
     build_media_catalog, resolve_media, pack_media_mixes, find_in_mixes,
@@ -428,6 +429,7 @@ __all__ = [
     "OB_DUMMY", "OB_UNKNOWN",
     # mixlib
     "mix_id", "MixFile", "write_mix", "MixError", "MixEncrypted", "MixEntry",
+    "read_stock_file", "STOCK_CONTAINERS",
     "is_vanilla_mix", "is_stock_mix", "stock_mix_names",
     "VANILLA_MIX_NAMES", "STOCK_MIX_NAMES", "KNOWN_FRAMEWORK_FILES",
     "build_media_catalog", "resolve_media", "pack_media_mixes", "find_in_mixes", "load_ini_text",

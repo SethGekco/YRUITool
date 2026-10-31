@@ -8,25 +8,46 @@ first — one click appends ';' to each (backup kept), nothing else changes.
 """
 
 import os
+import threading
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 from ..engine import scan_eof_guards, add_eof_guard, make_backup
 
 
-class _Scan(QThread):
+class _Relay(QObject):
+    """Lives on the UI thread; a worker's emit is queued back to it."""
     done = Signal(object)
 
-    def __init__(self, list_files):
-        super().__init__()
-        self._list_files = list_files
 
-    def run(self):
+class _Scan:
+    """A background scan on a DAEMON Python thread. A QThread here aborted
+    the process ("QThread: Destroyed while thread is still running") whenever
+    a dialog closed before its scan finished; a daemon thread can't block or
+    abort shutdown, and a result for a bar that is already gone is dropped."""
+
+    def __init__(self, list_files, relay):
+        self._list_files = list_files
+        self._relay = relay
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def wait(self, msecs=None):
+        self._thread.join(None if msecs is None else msecs / 1000)
+        return not self._thread.is_alive()
+
+    def _run(self):
         try:
-            self.done.emit(scan_eof_guards(self._list_files()))
+            result = scan_eof_guards(self._list_files())
         except Exception:
-            self.done.emit([])
+            result = []
+        try:
+            self._relay.done.emit((self, result))
+        except RuntimeError:
+            pass                         # the bar (and its relay) were deleted
 
 
 class EofGuardBar(QFrame):
@@ -48,20 +69,26 @@ class EofGuardBar(QFrame):
         lay.addWidget(close)
         self.missing = []
         self._scan = None
+        self._pending = {}
+        self._relay = _Relay(self)
+        self._relay.done.connect(self._scan_done)
         self.hide()
 
     def check_later(self, list_files, who, note=""):
         """check() off the UI thread: `list_files()` (finding a mod's include
         tree re-reads every file — seconds on a big mod) and the scan run in
         the background; the bar appears when they finish."""
-        scan = _Scan(list_files)
+        scan = _Scan(list_files, self._relay)
         self._scan = scan
-        # A scan that finishes after a newer one started is ignored.
-        scan.done.connect(lambda missing, s=scan: self._show(missing, who, note)
-                          if self._scan is s else None)
-        scan.finished.connect(scan.deleteLater)
+        self._pending[scan] = (who, note)
         scan.start()
         return scan
+
+    def _scan_done(self, payload):
+        scan, missing = payload
+        who, note = self._pending.pop(scan, (None, None))
+        if scan is self._scan and who is not None:  # a superseded scan is ignored
+            self._show(missing, who, note)
 
     def check(self, paths, who, note=""):
         """Scan `paths` (files belonging to `who`, e.g. "the loaded mod");

@@ -14,7 +14,8 @@ import sys
 import shutil
 import subprocess
 
-from ..engine import (load_palette, grayscale_palette, resolve_media, mix_id)
+from ..engine import (load_palette, grayscale_palette, resolve_media, mix_id,
+                       read_stock_file)
 
 # Unit/terrain palette candidates, best first.
 PAL_NAMES = ("unittem.pal", "temperat.pal", "isotemp.pal", "cameo.pal")
@@ -34,9 +35,19 @@ def _from_catalog(catalog, name):
     return None
 
 
-def unit_palette(folder, catalog):
-    """Unit/terrain palette: a loose palette in `folder`, then unittem.pal from the
-    catalog, else grayscale. Never raises."""
+def _from_stock(stock_folders, name):
+    """Load a palette from the stock game archives (ra2(md).mix), or None."""
+    try:
+        data = read_stock_file(stock_folders or [], name)
+        return load_palette(data) if data else None
+    except Exception:
+        return None
+
+
+def unit_palette(folder, catalog, stock_folders=None):
+    """Unit/terrain palette: a loose palette in `folder`, then unittem.pal from
+    the mod's catalog, then the stock game's (searched in `stock_folders`,
+    default `folder`), else grayscale. Never raises."""
     for name in PAL_NAMES:
         p = os.path.join(folder, name) if folder else ""
         if p and os.path.isfile(p):
@@ -44,22 +55,28 @@ def unit_palette(folder, catalog):
                 return load_palette(open(p, "rb").read())
             except Exception:
                 pass
-    return _from_catalog(catalog, "unittem.pal") or grayscale_palette()
+    return (_from_catalog(catalog, "unittem.pal")
+            or _from_stock(stock_folders or [folder], "unittem.pal")
+            or grayscale_palette())
 
 
-def cameo_palette(folder, catalog):
-    """Dedicated cameo palette (cameo.pal) for SHP cameos — loose first, then the
-    catalog. SHP cameos are NOT house-coloured. If cameo.pal can't be found, fall
-    back to GRAYSCALE rather than the unit/terrain palette — a cameo rendered with
-    the unit palette comes out as colour noise, whereas grayscale is at least a
-    readable silhouette."""
+def cameo_palette(folder, catalog, stock_folders=None):
+    """Dedicated cameo palette (cameo.pal) for SHP cameos — loose first, then
+    the mod's catalog, then the stock game's cameo.pal (ra2.mix > cache.mix;
+    searched in `stock_folders`, default `folder`). A mod that doesn't ship its
+    own cameo.pal uses the stock one in game, and the catalog skips stock
+    archives, so without that last step every such cameo drew in grayscale.
+    SHP cameos are NOT house-coloured. Grayscale stays the last resort — the
+    unit palette would turn a cameo into colour noise."""
     p = os.path.join(folder, "cameo.pal") if folder else ""
     if p and os.path.isfile(p):
         try:
             return load_palette(open(p, "rb").read())
         except Exception:
             pass
-    return _from_catalog(catalog, "cameo.pal") or grayscale_palette()
+    return (_from_catalog(catalog, "cameo.pal")
+            or _from_stock(stock_folders or [folder], "cameo.pal")
+            or grayscale_palette())
 
 
 def playable_bag_sounds(assets, catalog):

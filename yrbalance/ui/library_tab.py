@@ -39,7 +39,7 @@ from ..engine import (
     parse_shp, load_palette, grayscale_palette, frame_to_rgba, best_frame_index,
     house_remap_palette, HOUSE_COLORS, parse_pcx,
     bag_sample_to_wav, parse_vxl, render_vxl, render_parts, voxel_count,
-    parse_vpl, parse_hva, find_in_mixes, mix_id,
+    parse_vpl, parse_hva, find_in_mixes, mix_id, read_stock_file,
     load_addons, add_addon, remove_addon, scan_addon,
     spec_summary,
     extract_voice_set, store_samples, add_set, load_sets, idx_name_ok,
@@ -818,6 +818,11 @@ class LibraryTab(QWidget):
                         name.upper() in cat or mix_id(name) in cat):
                     seen.add(name.lower())
                     found.append(name)
+        for name in self._KNOWN_PALS:       # the stock game's, when not overridden
+            if name.lower() not in seen and read_stock_file(
+                    self._stock_folders(sid), name):
+                seen.add(name.lower())
+                found.append(name)
         found.sort(key=lambda n: (n.lower() != "unittem.pal", n.lower()))
         return found
 
@@ -867,6 +872,12 @@ class LibraryTab(QWidget):
                             break
                 except Exception:
                     pal = None
+        if pal is None:
+            try:
+                data = read_stock_file(self._stock_folders(sid), name)
+                pal = load_palette(data) if data else None
+            except Exception:
+                pal = None
         self._pal_cache[key] = pal
         return pal
 
@@ -888,6 +899,15 @@ class LibraryTab(QWidget):
         except (ValueError, TypeError):
             return 0.0
 
+    def _stock_folders(self, sid):
+        """Folders to find the stock game archives in: this source's own, then
+        every other source's — a bare mod folder has no ra2.mix, but the game
+        install another source lives in does."""
+        own = self._folder_for(sid)
+        rest = [os.path.dirname(s.rules_path) for s in self.sources
+                if s.id != sid and getattr(s, "rules_path", "")]
+        return [own] + [f for f in dict.fromkeys(rest) if f and f != own]
+
     def _folder_for(self, sid):
         src = next((s for s in self.sources if s.id == sid), None)
         return os.path.dirname(src.rules_path) if src else ""
@@ -901,14 +921,16 @@ class LibraryTab(QWidget):
         key = (sid, "cameo")
         if key not in self._pal_cache:
             self._pal_cache[key] = _cameo_pal(self._folder_for(sid),
-                                              self._catalog(scan))
+                                              self._catalog(scan),
+                                              self._stock_folders(sid))
         return self._pal_cache[key]
 
     def _preview_palette(self, sid, scan):
         """Cached unit/terrain palette (see media_preview.unit_palette)."""
         if sid not in self._pal_cache:
             self._pal_cache[sid] = _unit_palette(self._folder_for(sid),
-                                                 self._catalog(scan))
+                                                 self._catalog(scan),
+                                                 self._stock_folders(sid))
         return self._pal_cache[sid]
 
     def _house_palette(self, base):

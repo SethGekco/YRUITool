@@ -1,5 +1,11 @@
 """
-Westwood audio decoding — RA2/YR .bag samples (IMA-ADPCM) → PCM/WAV, pure Python.
+Westwood audio decoding — RA2/YR .bag samples → PCM/WAV, pure Python.
+
+A sample's format is in its .idx `flags`: 0x01 stereo, 0x02 16-bit, 0x08
+IMA-ADPCM (0x04 is always set). Stock voices are flags 12 (mono ADPCM, 512-byte
+blocks) but mods ship plain PCM too: in one real mod's audio.bag 231 of 2,510
+samples are flags 6/7 (16-bit PCM, chunk_size 0) — decoding those as ADPCM rails
+~50% of samples to full scale, i.e. loud static.
 
 A sample's bytes in an audio .bag are a Westwood IMA-ADPCM stream decoded in
 independent blocks of `chunk_size` compressed bytes (from the .idx entry): the
@@ -132,16 +138,83 @@ def decode_ima_adpcm_blocks(data, block_size=512):
     return bytes(out)
 
 
+def decode_ima_adpcm_stereo_blocks(data, block_size=1024):
+    """Stereo block IMA-ADPCM (idx flags 0x09): each block opens with a 4-byte
+    header per channel (int16 predictor, uint8 step index, pad), then 4-byte
+    groups alternate left / right, 8 nibbles each. Returns interleaved 16-bit
+    L/R PCM. Measured on real flags-13 samples: 0.01% of samples railed, versus
+    2-7% when the same bytes are decoded as mono."""
+    out = bytearray()
+    n = len(data)
+    bs = block_size if (block_size and block_size >= 8) else n
+    pos = 0
+    while pos + 8 <= n:
+        end = min(pos + bs, n)
+        state = []
+        for c in (0, 4):
+            state.append([struct.unpack_from("<h", data, pos + c)[0],
+                          min(88, data[pos + c + 2])])
+        chans = ([state[0][0]], [state[1][0]])
+        p = pos + 8
+        while p + 8 <= end:
+            for c in (0, 1):
+                cur, idx = state[c]
+                dst = chans[c]
+                for byte in data[p:p + 4]:
+                    for nib in (byte & 0x0F, byte >> 4):
+                        step = _STEP[idx]
+                        delta = step >> 3
+                        if nib & 1:
+                            delta += step >> 2
+                        if nib & 2:
+                            delta += step >> 1
+                        if nib & 4:
+                            delta += step
+                        cur = cur - delta if nib & 8 else cur + delta
+                        if cur > 32767:
+                            cur = 32767
+                        elif cur < -32768:
+                            cur = -32768
+                        idx += _INDEX[nib & 7]
+                        if idx < 0:
+                            idx = 0
+                        elif idx > 88:
+                            idx = 88
+                        dst.append(cur)
+                state[c] = [cur, idx]
+                p += 4
+        for left, right in zip(*chans):
+            out += struct.pack("<hh", left, right)
+        pos += bs
+    return bytes(out)
+
+
+# .idx flag bits
+BAG_STEREO = 0x01
+BAG_16BIT = 0x02
+BAG_ADPCM = 0x08
+
+
 def decode_bag_sample(raw, sample_rate, flags, chunk_size):
     """Decode a raw .bag sample (bytes) using its .idx fields → AudioSample.
 
-    The sample is block-IMA-ADPCM (header per `chunk_size` block). Output is
-    ALWAYS mono — our decoder emits one mono stream, and honouring a stereo flag
-    (channels=2) would play the mono data at ~2x speed / half length. RA2/YR .bag
-    voice samples are mono in practice."""
-    pcm = decode_ima_adpcm_blocks(raw, chunk_size or 0)
-    return AudioSample(sample_rate=sample_rate or 22050, channels=1,
-                       bits=16, pcm=pcm)
+    `flags` picks the format: IMA-ADPCM (0x08; block header per `chunk_size`
+    block, stereo if 0x01) or plain PCM (16-bit if 0x02, else unsigned 8-bit;
+    stereo if 0x01), whose bytes are already what a WAV holds."""
+    rate = sample_rate or 22050
+    stereo = bool(flags & BAG_STEREO)
+    if flags & BAG_ADPCM:
+        if stereo:
+            pcm = decode_ima_adpcm_stereo_blocks(raw, chunk_size or 0)
+        else:
+            pcm = decode_ima_adpcm_blocks(raw, chunk_size or 0)
+        return AudioSample(sample_rate=rate, channels=2 if stereo else 1,
+                           bits=16, pcm=pcm)
+    bits = 16 if flags & BAG_16BIT else 8
+    align = (2 if stereo else 1) * bits // 8
+    pcm = raw[:len(raw) - len(raw) % align]          # drop a torn last frame
+    return AudioSample(sample_rate=rate, channels=2 if stereo else 1,
+                       bits=bits, pcm=pcm)
 
 
 def bag_sample_to_wav(catalog, name):

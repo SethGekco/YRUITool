@@ -82,18 +82,37 @@ def main():
     else:
         print("real-sample check: SKIP (no game audio.bag on this machine)")
 
-    # mono output regardless of the stereo flag: our decoder emits one mono
-    # stream, so a stereo-flagged sample must NOT be written as 2 channels
-    # (which would play ~2x fast / half length).
+    # the idx flags pick the format: 0x08 ADPCM (0x01 stereo), else PCM
+    # (0x02 16-bit, else 8-bit). Mods ship flags 6/7 PCM voices; decoding
+    # them as ADPCM was loud static.
     from yrbalance.engine.audio import decode_bag_sample
     import struct as _st
-    s = decode_bag_sample(b"\x00" * 64, 22050, 0x0D, 512)   # 0x0D has stereo bit
-    wav = to_wav(s.pcm, s.sample_rate, s.channels, s.bits)
-    hdr_channels = _st.unpack_from("<H", wav, 22)[0]         # WAVE fmt channels
-    mono_ok = s.channels == 1 and hdr_channels == 1
-    print(f"stereo-flag sample stays mono: {'OK' if mono_ok else 'FAIL'} "
-          f"(ch={s.channels}, hdr={hdr_channels})")
-    ok = ok and mono_ok
+    pcm16 = _st.pack("<8h", 0, 100, 200, 300, -300, -200, -100, 0)
+    s6 = decode_bag_sample(pcm16, 22050, 6, 0)
+    s7 = decode_bag_sample(pcm16 + b"\x01", 22050, 7, 0)   # torn last frame
+    s4 = decode_bag_sample(b"\x80\x90\x70", 11025, 4, 0)
+    pcm_ok = (s6.pcm == pcm16 and (s6.channels, s6.bits) == (1, 16)
+              and s7.pcm == pcm16 and s7.channels == 2
+              and s4.pcm == b"\x80\x90\x70" and s4.bits == 8
+              and s4.sample_rate == 11025)
+    print(f"PCM samples (flags 6/7/4) pass through as PCM, channels/bits "
+          f"from the flags: {'OK' if pcm_ok else 'FAIL'}")
+    ok = ok and pcm_ok
+
+    # stereo ADPCM: per-channel headers, then 4-byte groups alternate L/R.
+    # Zero nibbles at step index 0 add nothing, so each channel holds its
+    # header predictor: L=1000, R=-1000 throughout.
+    block = (_st.pack("<hBB", 1000, 0, 0) + _st.pack("<hBB", -1000, 0, 0)
+             + b"\x00" * 16)                      # 2 rounds of L4+R4 bytes
+    s13 = decode_bag_sample(block * 2, 22050, 13, len(block))
+    frames = _st.unpack(f"<{len(s13.pcm) // 2}h", s13.pcm)
+    wav = to_wav(s13.pcm, s13.sample_rate, s13.channels, s13.bits)
+    st_ok = (s13.channels == 2 and _st.unpack_from("<H", wav, 22)[0] == 2
+             and len(frames) == 2 * 2 * (1 + 16)  # 2 blocks x (hdr + 16) x L/R
+             and set(frames[0::2]) == {1000} and set(frames[1::2]) == {-1000})
+    print(f"stereo ADPCM (flags 13) decodes to two channels: "
+          f"{'OK' if st_ok else 'FAIL'}")
+    ok = ok and st_ok
 
     print("\nPASS" if ok else "\nFAIL")
     return 0 if ok else 1

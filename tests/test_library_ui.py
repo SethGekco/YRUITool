@@ -410,6 +410,29 @@ def main():
               f"{'OK' if cam_ok else 'FAIL'}")
         ok = ok and cam_ok
 
+        # A bare mod folder ships no cameo.pal and no ra2.mix: the cameo
+        # palette comes from the stock archives of another source's game
+        # folder (ra2.mix > cache.mix), not grayscale.
+        from yrbalance.engine import write_mix as _wm
+        bare = _tf.mkdtemp()
+        game = _tf.mkdtemp()
+        stock_pal = bytearray(768); stock_pal[3:6] = bytes((0, 63, 0))
+        inner = os.path.join(game, "_cache.mix")
+        _wm(inner, {"cameo.pal": bytes(stock_pal)})
+        _wm(os.path.join(game, "ra2.mix"), {"cache.mix": open(inner, "rb").read()})
+        os.remove(inner)
+        tab.sources = [
+            _t.SimpleNamespace(id="bare", rules_path=os.path.join(bare, "rulesmd.ini")),
+            _t.SimpleNamespace(id="game", rules_path=os.path.join(game, "rulesmd.ini"))]
+        tab._pal_cache = {}
+        stock = tab._cameo_palette("bare", None)
+        pals = tab._available_palettes("bare", None)
+        stock_ok = stock[1] == (0, 63 << 2 | 63 >> 4, 0) and "cameo.pal" in pals
+        print(f"cameo palette falls back to the stock game's cameo.pal (another "
+              f"source's ra2.mix), and the picker offers it: "
+              f"{'OK' if stock_ok else 'FAIL'} {stock[1]} {pals}")
+        ok = ok and stock_ok
+
         real_bag = ("/mnt/wwn-0x50014ee6b383afb8-part1/(3) Games Data/RA2 & "
                     "Yuri's Revenge/0 World Powers/000-RA2YR Data - cncnet "
                     "edition/audio.idx")

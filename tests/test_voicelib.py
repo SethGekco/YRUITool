@@ -59,7 +59,8 @@ def _write_bag(folder, names):
     payload = _BLOCK * 2
     blob, entries, off = bytearray(), {}, 0
     for n in names:
-        entries[n] = (off, len(payload), 22050, 0, _CHUNK)
+        # flags 12 = mono IMA-ADPCM, as stock voices are (0 would mean 8-bit PCM)
+        entries[n] = (off, len(payload), 22050, 12, _CHUNK)
         blob += payload
         off += len(payload)
     with open(os.path.join(folder, "audio.bag"), "wb") as fh:

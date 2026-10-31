@@ -72,6 +72,32 @@ def main():
         print(f"extract_all ({len(written)} files): {'OK' if ex_ok else 'FAIL'}")
         ok = ok and ex_ok
 
+        # stock archives: cameo.pal lives in ra2.mix > cache.mix, which the
+        # media catalog skips; YR's ra2md.mix > cachemd.mix wins over RA2's
+        from yrbalance.engine import read_stock_file
+
+        def mixbytes(files):
+            tmp = os.path.join(d, "_inner.mix")
+            write_mix(tmp, files)
+            return open(tmp, "rb").read()
+        game = os.path.join(d, "game")
+        os.makedirs(game)
+        write_mix(os.path.join(game, "RA2.MIX"),
+                  {"cache.mix": mixbytes({"cameo.pal": b"R" * 768,
+                                          "unittem.pal": b"U" * 768})})
+        none = read_stock_file([os.path.join(d, "nogame")], "cameo.pal")
+        ra2 = read_stock_file([os.path.join(d, "nogame"), game], "cameo.pal")
+        write_mix(os.path.join(game, "ra2md.mix"),
+                  {"cachemd.mix": mixbytes({"cameo.pal": b"Y" * 768})})
+        yr = read_stock_file(game, "cameo.pal")
+        unit = read_stock_file(game, "unittem.pal")
+        stock_ok = (none is None and ra2 == b"R" * 768 and yr == b"Y" * 768
+                    and unit == b"U" * 768
+                    and read_stock_file(game, "nothere.pal") is None)
+        print(f"read_stock_file: ra2(md).mix > cache(md).mix, YR first, "
+              f"later folders as fallback: {'OK' if stock_ok else 'FAIL'}")
+        ok = ok and stock_ok
+
         # ── Blowfish cipher: standard known-answer vector ───────────────────
         bf = Blowfish(bytes(8))                        # all-zero key
         el, er = bf._enc(0, 0)                         # encipher all-zero block
